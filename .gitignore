@@ -1,0 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May 14 21:59:41 2026
+
+@author: mohak
+"""
+
+venv/
+__pycache__/
+.env
+.ipynb_checkpoints/
