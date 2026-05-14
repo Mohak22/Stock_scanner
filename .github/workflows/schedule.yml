@@ -1,9 +1,6 @@
 name: Stock Scanner Scheduler
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
-
   workflow_dispatch:
 
 jobs:
@@ -22,8 +19,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install yfinance pandas
+        run: pip install yfinance pandas
 
       - name: Run email script
         env:
