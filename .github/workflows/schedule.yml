@@ -1,6 +1,9 @@
 name: Stock Scanner Scheduler
 
 on:
+  schedule:
+    - cron: '30 8 * * 1-5'
+
   workflow_dispatch:
 
 jobs:
@@ -19,11 +22,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install yfinance pandas
+        run: |
+          pip install yfinance pandas pydantic
 
-      - name: Run email script
+      - name: Run RSI Scanner
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
-        run: python send_email.py
+        run: python main.py
