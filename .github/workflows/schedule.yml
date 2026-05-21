@@ -2,7 +2,8 @@ name: Stock Scanner Scheduler
 
 on:
   schedule:
-    - cron: '30 16 * * *'
+       - cron: '36 22  * * *'  # Runs at 08:30 local time
+         timezone: "Asia/Kolkata"
 
   workflow_dispatch:
 
