@@ -15,11 +15,11 @@ import pandas as pd
 # =========================================================
 # EMAIL CONFIGURATION
 # =========================================================
-#SENDER_EMAIL = "mohak.wagle@gmail.com"
+
 SENDER_EMAIL = os.getenv(
-   "SENDER_EMAIL"
+    "SENDER_EMAIL"
 )
-#EMAIL_PASSWORD = "qeuk bfni brne glib"
+
 EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
@@ -36,6 +36,10 @@ RECEIVER_EMAILS = [
 def send_email_report(
     oversold_dataframe: pd.DataFrame
 ) -> None:
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
 
     if oversold_dataframe.empty:
 
@@ -59,13 +63,9 @@ def send_email_report(
                 f"RSI14: {row['RSI_14']}\n"
             )
 
-    message = MIMEText(body)
-
-    message["Subject"] = (
-        "Daily RSI Scanner Report"
-    )
-
-    message["From"] = SENDER_EMAIL
+    # =====================================================
+    # SMTP SESSION
+    # =====================================================
 
     with smtplib.SMTP(
         "smtp.gmail.com",
@@ -79,7 +79,19 @@ def send_email_report(
             EMAIL_PASSWORD
         )
 
+        # =================================================
+        # SEND TO ALL RECEIVERS
+        # =================================================
+
         for receiver in RECEIVER_EMAILS:
+
+            message = MIMEText(body)
+
+            message["Subject"] = (
+                "Daily RSI Scanner Report"
+            )
+
+            message["From"] = SENDER_EMAIL
 
             message["To"] = receiver
 
