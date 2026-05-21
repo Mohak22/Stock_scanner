@@ -30,15 +30,22 @@ RECEIVER_EMAILS = [
 ]
 
 # =========================================================
-# SEND EMAIL
+# SEND EMAIL REPORT
 # =========================================================
 
 def send_email_report(
     oversold_dataframe: pd.DataFrame
 ) -> None:
+    """
+    Send RSI scanner report to all receivers.
+
+    Args:
+        oversold_dataframe:
+            Dataframe containing oversold stocks.
+    """
 
     # =====================================================
-    # EMAIL BODY
+    # BUILD EMAIL BODY
     # =====================================================
 
     if oversold_dataframe.empty:
@@ -58,13 +65,14 @@ def send_email_report(
         ):
 
             body += (
-                f"{row['Stock']} | "
-                f"RSI9: {row['RSI_9']} | "
-                f"RSI14: {row['RSI_14']}\n"
+                f"Stock: {row['Stock']}\n"
+                f"RSI 9: {row['RSI_9']}\n"
+                f"RSI 14: {row['RSI_14']}\n"
+                "--------------------------\n"
             )
 
     # =====================================================
-    # SMTP SESSION
+    # CREATE SMTP SESSION
     # =====================================================
 
     with smtplib.SMTP(
@@ -72,7 +80,15 @@ def send_email_report(
         587
     ) as server:
 
+        # =================================================
+        # SECURE CONNECTION
+        # =================================================
+
         server.starttls()
+
+        # =================================================
+        # LOGIN
+        # =================================================
 
         server.login(
             SENDER_EMAIL,
@@ -80,10 +96,14 @@ def send_email_report(
         )
 
         # =================================================
-        # SEND TO ALL RECEIVERS
+        # SEND MAIL TO ALL RECEIVERS
         # =================================================
 
         for receiver in RECEIVER_EMAILS:
+
+            # =============================================
+            # CREATE FRESH EMAIL MESSAGE
+            # =============================================
 
             message = MIMEText(body)
 
@@ -91,9 +111,17 @@ def send_email_report(
                 "Daily RSI Scanner Report"
             )
 
-            message["From"] = SENDER_EMAIL
+            message["From"] = (
+                SENDER_EMAIL
+            )
 
-            message["To"] = receiver
+            message["To"] = (
+                receiver
+            )
+
+            # =============================================
+            # SEND EMAIL
+            # =============================================
 
             server.sendmail(
                 SENDER_EMAIL,
@@ -101,6 +129,10 @@ def send_email_report(
                 message.as_string()
             )
 
+            print(
+                f"Email sent to: {receiver}"
+            )
+
     print(
-        "Email report sent successfully."
+        "\nAll email reports sent successfully."
     )
