@@ -2,7 +2,7 @@ name: Stock Scanner Scheduler
 
 on:
   schedule:
-       - cron: '28 08  * * *'  
+       - cron: '33 18 * * *'
      
 
   workflow_dispatch:
@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance pandas pydantic
+          pip install yfinance pandas pydantic numpy
 
       - name: Run RSI Scanner
         env:
