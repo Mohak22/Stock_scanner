@@ -1,0 +1,44 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May 25 15:13:57 2026
+
+@author: mohak
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+# =========================================================
+# FILTER WEAK STOCKS
+# =========================================================
+
+def filter_weak_stocks(
+    stock_dataframe: pd.DataFrame
+) -> pd.DataFrame:
+
+    filtered_dataframe = (
+
+        stock_dataframe[
+
+            (stock_dataframe["RSI_14"] < 35)
+
+            &
+
+            (
+                stock_dataframe["RSI_9"]
+                <
+                stock_dataframe["RSI_14"]
+            )
+        ]
+
+        .sort_values(
+            by="RSI_14"
+        )
+
+        .reset_index(
+            drop=True
+        )
+    )
+
+    return filtered_dataframe

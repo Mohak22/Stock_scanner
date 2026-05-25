@@ -9,6 +9,13 @@ from __future__ import annotations
 import os
 import smtplib
 from email.mime.text import MIMEText
+from email.mime.multipart import (
+    MIMEMultipart
+)
+
+from email.mime.application import (
+    MIMEApplication
+)
 
 import pandas as pd
 
@@ -19,10 +26,13 @@ import pandas as pd
 SENDER_EMAIL = os.getenv(
     "SENDER_EMAIL"
 )
+#ENDER_EMAIL = "mohak.wagle@gmail.com"
+
 
 EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
+#MAIL_PASSWORD = "qeuk bfni brne glib"
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
@@ -135,4 +145,298 @@ def send_email_report(
 
     print(
         "\nAll email reports sent successfully."
+    )
+    
+# =========================================================
+# SEND MARKET WARNING EMAIL
+# =========================================================
+
+def send_market_warning_email(
+    market_dataframe: pd.DataFrame,
+    market_status: str
+) -> None:
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
+
+    body = (
+        "MARKET WARNING\n\n"
+    )
+
+    body += (
+        f"Current Market Status: "
+        f"{market_status}\n\n"
+    )
+
+    body += (
+        "Broader market conditions "
+        "appear weak.\n"
+    )
+
+    body += (
+        "New buying positions are "
+        "not recommended currently.\n\n"
+    )
+
+    body += (
+        "Market RSI Summary:\n\n"
+    )
+
+    for _, row in (
+        market_dataframe.iterrows()
+    ):
+
+        body += (
+            f"{row['Market']} | "
+            f"RSI9: {row['RSI_9']} | "
+            f"RSI14: {row['RSI_14']}\n"
+        )
+
+    # =====================================================
+    # SMTP SESSION
+    # =====================================================
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    ) as server:
+
+        server.starttls()
+
+        server.login(
+            SENDER_EMAIL,
+            EMAIL_PASSWORD
+        )
+
+        for receiver in RECEIVER_EMAILS:
+
+            message = MIMEText(body)
+
+            message["Subject"] = (
+                "Market Panic Warning"
+            )
+
+            message["From"] = (
+                SENDER_EMAIL
+            )
+
+            message["To"] = (
+                receiver
+            )
+
+            server.sendmail(
+                SENDER_EMAIL,
+                receiver,
+                message.as_string()
+            )
+
+    print(
+        "Market warning email sent."
+    )
+    
+# =========================================================
+# SEND NO WEAK SECTOR EMAIL
+# =========================================================
+
+def send_no_sector_email() -> None:
+
+    body = (
+
+        "No weak sectors detected "
+        "today.\n\n"
+
+        "Market conditions do not "
+        "currently satisfy the "
+        "sector weakness criteria."
+    )
+
+    message = MIMEText(body)
+
+    message["Subject"] = (
+        "No Weak Sectors Today"
+    )
+
+    message["From"] = (
+        SENDER_EMAIL
+    )
+
+    message["To"] = (
+        ", ".join(RECEIVER_EMAILS)
+    )
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    ) as server:
+
+        server.starttls()
+
+        server.login(
+            SENDER_EMAIL,
+            EMAIL_PASSWORD
+        )
+
+        server.sendmail(
+            SENDER_EMAIL,
+            RECEIVER_EMAILS,
+            message.as_string()
+        )
+
+    print(
+        "No sector email sent."
+    )
+    
+# =========================================================
+# SEND NO STOCK EMAIL
+# =========================================================
+
+def send_no_stock_email() -> None:
+
+    body = (
+
+        "Weak sectors were detected, "
+        "but no stocks satisfied "
+        "the stock filtering criteria."
+    )
+
+    message = MIMEText(body)
+
+    message["Subject"] = (
+        "No Weak Stocks Today"
+    )
+
+    message["From"] = (
+        SENDER_EMAIL
+    )
+
+    message["To"] = (
+        ", ".join(RECEIVER_EMAILS)
+    )
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    ) as server:
+
+        server.starttls()
+
+        server.login(
+            SENDER_EMAIL,
+            EMAIL_PASSWORD
+        )
+
+        server.sendmail(
+            SENDER_EMAIL,
+            RECEIVER_EMAILS,
+            message.as_string()
+        )
+
+    print(
+        "No stock email sent."
+    )
+    
+# =========================================================
+# SEND FINAL STOCK REPORT
+# =========================================================
+
+# =========================================================
+# SEND FINAL STOCK REPORT
+# =========================================================
+
+def send_stock_report_email(
+    weak_stock_dataframe: pd.DataFrame
+) -> None:
+
+    body = (
+
+        "Daily stock scanner report "
+        "attached.\n\n"
+
+        "Please check the attached "
+        "Excel file for shortlisted "
+        "stocks."
+    )
+
+    # =====================================================
+    # MULTIPART MESSAGE
+    # =====================================================
+
+    message = MIMEMultipart()
+
+    message["Subject"] = (
+        "Daily Stock Scanner Report"
+    )
+
+    message["From"] = (
+        SENDER_EMAIL
+    )
+
+    message["To"] = (
+        ", ".join(RECEIVER_EMAILS)
+    )
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
+
+    message.attach(
+        MIMEText(body)
+    )
+
+    # =====================================================
+    # ATTACH EXCEL FILE
+    # =====================================================
+
+    report_path = (
+        "reports/daily_scan_report.xlsx"
+    )
+
+    with open(
+        report_path,
+        "rb"
+    ) as file:
+
+        attachment = MIMEApplication(
+            file.read(),
+            _subtype="xlsx"
+        )
+
+    attachment.add_header(
+
+        "Content-Disposition",
+
+        "attachment",
+
+        filename="daily_scan_report.xlsx"
+    )
+
+    message.attach(
+        attachment
+    )
+
+    # =====================================================
+    # SEND EMAIL
+    # =====================================================
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    ) as server:
+
+        server.starttls()
+
+        server.login(
+            SENDER_EMAIL,
+            EMAIL_PASSWORD
+        )
+
+        server.sendmail(
+            SENDER_EMAIL,
+            RECEIVER_EMAILS,
+            message.as_string()
+        )
+
+    print(
+        "Final report email sent."
     )

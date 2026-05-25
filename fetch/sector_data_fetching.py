@@ -141,7 +141,15 @@ def fetch_yahoo_sector_index(
         CLOSE_COLUMN
     ]
 
-    return standardized_data
+    return (
+        standardized_data[
+            CLOSE_COLUMN
+        ].dropna()
+        )
+
+# =========================================================
+# FETCH STOCK CLOSE PRICES
+# =========================================================
 
 # =========================================================
 # FETCH STOCK CLOSE PRICES
@@ -151,75 +159,99 @@ def fetch_stock_close_prices(
     tickers: List[str]
 ) -> pd.DataFrame:
 
-    close_prices = pd.DataFrame()
+    try:
 
-    for ticker in tickers:
+        data = yf.download(
+            tickers,
+            period=DATA_PERIOD,
+            progress=False,
+            auto_adjust=True,
+            group_by="ticker"
+        )
 
-        try:
+        close_price_dict = {}
 
-            stock_data = yf.download(
-                ticker,
-                period=DATA_PERIOD,
-                progress=False,
-                auto_adjust=True
-            )
+        for ticker in tickers:
 
-            if stock_data.empty:
+            try:
+
+                close_price_dict[ticker] = (
+                    data[ticker][CLOSE_COLUMN]
+                )
+
+            except Exception:
 
                 logger.warning(
                     "No data for %s",
                     ticker
                 )
 
-                continue
+        close_prices = pd.DataFrame(
+            close_price_dict
+        )
 
-            close_prices[ticker] = (
-                stock_data[CLOSE_COLUMN]
-            )
+        close_prices.dropna(
+            axis=1,
+            how="all",
+            inplace=True
+        )
 
-        except Exception as error:
+        return close_prices
 
-            logger.error(
-                "Failed fetching %s | %s",
-                ticker,
-                error
-            )
+    except Exception as error:
 
-    close_prices.dropna(inplace=True)
+        logger.error(
+            "Bulk stock fetch failed | %s",
+            error
+        )
 
-    return close_prices
-
+        return pd.DataFrame()
 # =========================================================
 # BUILD SYNTHETIC SECTOR
 # =========================================================
 
 def build_synthetic_sector_index(
     close_prices: pd.DataFrame
-) -> pd.DataFrame:
+) -> pd.Series:
 
     if close_prices.empty:
+
         raise ValueError(
             "Empty close price data."
         )
+
+    # =====================================================
+    # DAILY RETURNS
+    # =====================================================
 
     daily_returns = (
         close_prices.pct_change()
     )
 
+    # =====================================================
+    # AVERAGE SECTOR RETURN
+    # =====================================================
+
     sector_returns = (
-        daily_returns.mean(axis=1)
+        daily_returns.mean(
+            axis=1
+        )
     )
+
+    # =====================================================
+    # SYNTHETIC INDEX
+    # =====================================================
 
     synthetic_close = (
         (1 + sector_returns)
         .cumprod() * 100
     )
 
-    synthetic_dataframe = pd.DataFrame({
-        CLOSE_COLUMN: synthetic_close
-    })
+    # =====================================================
+    # RETURN SERIES ONLY
+    # =====================================================
 
-    return synthetic_dataframe
+    return synthetic_close.dropna()
 
 # =========================================================
 # PROCESS SINGLE SECTOR
@@ -228,7 +260,7 @@ def build_synthetic_sector_index(
 def process_sector(
     sector: str,
     master_dataframe: pd.DataFrame
-) -> pd.DataFrame:
+) -> pd.Series:
 
     yahoo_ticker = (
         SECTOR_INDEX_MAP.get(sector)
@@ -283,7 +315,7 @@ def process_sector(
 # FETCH ALL SECTORS
 # =========================================================
 
-def fetch_all_sector_data(
+def fetch_sector_data(
     master_dataframe: pd.DataFrame
 ) -> Dict[str, pd.DataFrame]:
 

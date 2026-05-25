@@ -7,118 +7,105 @@ Created on Wed May 20 22:09:34 2026
 
 from __future__ import annotations
 
-import logging
 from typing import Dict
 
 import pandas as pd
 import yfinance as yf
 
 # =========================================================
-# LOGGER
+# FETCH STOCK DATA
 # =========================================================
 
-logger = logging.getLogger(__name__)
-
-# =========================================================
-# CONSTANTS
-# =========================================================
-
-DATA_PERIOD = "3mo"
-CLOSE_COLUMN = "Close"
-
-# =========================================================
-# LOAD MASTER UNIVERSE
-# =========================================================
-
-def load_master_universe(
-    file_path: str
-) -> pd.DataFrame:
-
-    dataframe = pd.read_csv(file_path)
-
-    dataframe["Symbol"] = (
-        dataframe["Symbol"]
-        .astype(str)
-        .str.strip()
-    )
-
-    dataframe.drop_duplicates(
-        subset=["Symbol"],
-        inplace=True
-    )
-
-    dataframe.reset_index(
-        drop=True,
-        inplace=True
-    )
-
-    logger.info(
-        "Unique stocks loaded: %s",
-        len(dataframe)
-    )
-
-    return dataframe
-
-# =========================================================
-# FETCH ALL STOCK DATA
-# =========================================================
-
-def fetch_all_stock_data(
+def fetch_stock_data(
+    weak_sector_dataframe: pd.DataFrame,
     master_dataframe: pd.DataFrame
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, pd.Series]:
 
     stock_data = {}
 
-    symbols = (
-        master_dataframe["Symbol"]
+    # =====================================================
+    # EXTRACT WEAK SECTORS
+    # =====================================================
+
+    weak_sectors = (
+        weak_sector_dataframe["Sector"]
         .tolist()
     )
 
+    # =====================================================
+    # FILTER STOCKS
+    # =====================================================
+
+    filtered_dataframe = (
+
+        master_dataframe[
+
+            master_dataframe["sector"]
+            .isin(weak_sectors)
+        ]
+    )
+
+    # =====================================================
+    # UNIQUE STOCKS
+    # =====================================================
+
+    symbols = (
+
+        filtered_dataframe["Symbol"]
+        .dropna()
+        .unique()
+        .tolist()
+    )
+
+    # =====================================================
+    # FETCH STOCKS
+    # =====================================================
+
     for symbol in symbols:
 
-        ticker = symbol + ".NS"
+        ticker = (
+            f"{symbol}.NS"
+        )
 
         try:
 
-            logger.info(
-                "Fetching: %s",
+            print(
+                f"Fetching {ticker}"
+            )
+
+            ticker_object = yf.Ticker(
                 ticker
             )
 
-            data = yf.download(
-                ticker,
-                period=DATA_PERIOD,
-                progress=False,
+            data = ticker_object.history(
+                period="3mo",
                 auto_adjust=True
             )
 
             if data.empty:
 
-                logger.warning(
-                    "No data for %s",
-                    ticker
-                )
+                continue
+
+            close_prices = (
+                data["Close"]
+                .dropna()
+            )
+
+            if close_prices.empty:
 
                 continue
 
-            standardized_data = data[
-                [CLOSE_COLUMN]
-            ].copy()
-
-            standardized_data.columns = [
-                CLOSE_COLUMN
-            ]
-
             stock_data[symbol] = (
-                standardized_data
+                close_prices
             )
 
         except Exception as error:
 
-            logger.error(
-                "Failed fetching %s | %s",
-                ticker,
-                error
+            print(
+                f"Error fetching "
+                f"{ticker}"
             )
+
+            print(error)
 
     return stock_data
