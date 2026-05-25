@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, List
-
+from typing import Optional
 import pandas as pd
 import yfinance as yf
 from pydantic import BaseModel, field_validator
@@ -55,7 +55,7 @@ SECTOR_INDEX_MAP: Dict[str, str] = {
 class UniverseSchema(BaseModel):
 
     Symbol: str
-    sector: str
+    sector: Optional[str] = None
 
     @field_validator("Symbol", "sector")
     @classmethod
