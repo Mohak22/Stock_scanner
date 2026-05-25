@@ -1,9 +1,6 @@
 name: Stock Scanner Scheduler
 
 on:
-  schedule:
-       - cron: '33 18 * * *'
-     
 
   workflow_dispatch:
 
