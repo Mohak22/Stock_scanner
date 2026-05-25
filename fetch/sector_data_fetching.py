@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, List
-from typing import Optional
+
 import pandas as pd
 import yfinance as yf
-from pydantic import BaseModel, field_validator
+
 
 # =========================================================
 # LOGGING
@@ -47,26 +47,6 @@ SECTOR_INDEX_MAP: Dict[str, str] = {
     "HOUSING": "NIFTY_HEALTHCARE.NS",
     "PSE": "^CNXPSE"
 }
-
-# =========================================================
-# PYDANTIC SCHEMA
-# =========================================================
-
-class UniverseSchema(BaseModel):
-
-    Symbol: str
-    sector: Optional[str] = None
-
-    @field_validator("Symbol", "sector")
-    @classmethod
-    def validate_non_empty(cls, value: str) -> str:
-
-        cleaned_value = value.strip()
-
-        if not cleaned_value:
-            raise ValueError("Field cannot be empty.")
-
-        return cleaned_value
 
 # =========================================================
 # LOAD MASTER UNIVERSE
