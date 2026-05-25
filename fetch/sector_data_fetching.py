@@ -78,6 +78,13 @@ def load_master_universe(
 
     dataframe = pd.read_csv(file_path)
 
+    dataframe = (
+        dataframe.where(
+        pd.notnull(dataframe),
+        None
+        )
+    )
+    
     dataframe["Symbol"] = (
         dataframe["Symbol"]
         .astype(str)
