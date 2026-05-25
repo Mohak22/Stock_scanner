@@ -76,33 +76,31 @@ def load_master_universe(
     file_path: str
 ) -> pd.DataFrame:
 
-    dataframe = pd.read_csv(file_path)
-
-    dataframe = (
-        dataframe.where(
-        pd.notnull(dataframe),
-        None
-        )
+    dataframe = pd.read_csv(
+        file_path
     )
-    
+
+    # =====================================================
+    # CLEAN COLUMNS
+    # =====================================================
+
     dataframe["Symbol"] = (
+
         dataframe["Symbol"]
+
         .astype(str)
+
         .str.strip()
     )
 
     dataframe["sector"] = (
+
         dataframe["sector"]
+
         .astype(str)
+
         .str.strip()
     )
-
-    records = dataframe[
-        ["Symbol", "sector"]
-    ].to_dict("records")
-
-    for record in records:
-        UniverseSchema(**record)
 
     logger.info(
         "Master universe loaded successfully."
