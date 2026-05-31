@@ -7,6 +7,7 @@ Created on Thu May 14 21:47:48 2026
 from __future__ import annotations
 
 import os
+from io import BytesIO
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import (
@@ -26,13 +27,13 @@ import pandas as pd
 SENDER_EMAIL = os.getenv(
     "SENDER_EMAIL"
 )
-#ENDER_EMAIL = "mohak.wagle@gmail.com"
+# SENDER_EMAIL = "mohak.wagle@gmail.com"
 
 
 EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
-#MAIL_PASSWORD = "qeuk bfni brne glib"
+# EMAIL_PASSWORD = "qeuk bfni brne glib"
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
@@ -340,13 +341,13 @@ def send_no_stock_email() -> None:
 # SEND FINAL STOCK REPORT
 # =========================================================
 
-# =========================================================
-# SEND FINAL STOCK REPORT
-# =========================================================
-
 def send_stock_report_email(
     weak_stock_dataframe: pd.DataFrame
 ) -> None:
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
 
     body = (
 
@@ -377,7 +378,7 @@ def send_stock_report_email(
     )
 
     # =====================================================
-    # EMAIL BODY
+    # ATTACH BODY
     # =====================================================
 
     message.attach(
@@ -385,22 +386,26 @@ def send_stock_report_email(
     )
 
     # =====================================================
-    # ATTACH EXCEL FILE
+    # CREATE EXCEL IN MEMORY
     # =====================================================
 
-    report_path = (
-        "reports/daily_scan_report.xlsx"
+    excel_buffer = BytesIO()
+
+    weak_stock_dataframe.to_excel(
+        excel_buffer,
+        index=False
     )
 
-    with open(
-        report_path,
-        "rb"
-    ) as file:
+    excel_buffer.seek(0)
 
-        attachment = MIMEApplication(
-            file.read(),
-            _subtype="xlsx"
-        )
+    # =====================================================
+    # ATTACH EXCEL
+    # =====================================================
+
+    attachment = MIMEApplication(
+        excel_buffer.read(),
+        _subtype="xlsx"
+    )
 
     attachment.add_header(
 
@@ -438,5 +443,5 @@ def send_stock_report_email(
         )
 
     print(
-        "Final report email sent."
+        "\nFinal report email sent."
     )

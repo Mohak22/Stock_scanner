@@ -21,19 +21,19 @@ def filter_weak_stocks(
 
         stock_dataframe[
 
-            (stock_dataframe["RSI_14"] < 35)
+            (stock_dataframe["rsi_14"] < 35)
 
             &
 
             (
-                stock_dataframe["RSI_9"]
+                stock_dataframe["rsi_9"]
                 <
-                stock_dataframe["RSI_14"]
+                stock_dataframe["rsi_14"]
             )
         ]
 
         .sort_values(
-            by="RSI_14"
+            by="rsi_14"
         )
 
         .reset_index(
