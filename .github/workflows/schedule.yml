@@ -1,7 +1,6 @@
 name: Stock Scanner Scheduler
 
 on:
-
 workflow_dispatch:
 
 jobs:
@@ -78,4 +77,3 @@ steps:
 
       git push
 ```
-
