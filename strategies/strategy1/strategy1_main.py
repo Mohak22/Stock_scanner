@@ -68,7 +68,7 @@ def build_market_dataframe(
 
             "close_price":
                 round(
-                    close_prices[-1],
+                    close_prices.iloc[0],
                     2
                 ),
 
@@ -115,7 +115,7 @@ def build_sector_dataframe(
 
             "close_price":
                 round(
-                    close_prices[-1],
+                    close_prices.iloc[0],
                     2
                 ),
 
