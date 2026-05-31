@@ -10,8 +10,15 @@ from __future__ import annotations
 import pandas as pd
 from pathlib import Path
 
-DATA_REPO_PATH = Path(
-    "../STOCK_SCANNER_DATA"
+BASE_PATH = (
+    Path(__file__)
+    .resolve()
+    .parents[1]
+)
+
+DATA_REPO_PATH = (
+    BASE_PATH
+    / "STOCK_SCANNER_DATA"
 )
 
 # =========================================================

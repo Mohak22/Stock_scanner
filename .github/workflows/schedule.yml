@@ -41,7 +41,7 @@ jobs:
 
         run: |
 
-          cd ../STOCK_SCANNER_DATA
+          cd STOCK_SCANNER_DATA
 
           git config user.name "github-actions"
 
