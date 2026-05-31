@@ -18,7 +18,7 @@ jobs:
         with:
           repository: Mohak22/STOCK_SCANNER_DATA
           token: ${{ secrets.DATA_REPO_TOKEN }}
-          path: ../STOCK_SCANNER_DATA
+          path: STOCK_SCANNER_DATA
 
       - name: Set up Python
         uses: actions/setup-python@v5
