@@ -1,79 +1,55 @@
 name: Stock Scanner Scheduler
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
+  run-scanner:
 
-run-scanner:
+    runs-on: ubuntu-latest
 
-```
-runs-on: ubuntu-latest
+    steps:
 
-steps:
+      - name: Checkout STOCK_SCANNER
+        uses: actions/checkout@v4
 
-  # ===================================================
-  # CHECKOUT MAIN CODE REPO
-  # ===================================================
+      - name: Checkout STOCK_SCANNER_DATA
+        uses: actions/checkout@v4
+        with:
+          repository: Mohak22/STOCK_SCANNER_DATA
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: ../STOCK_SCANNER_DATA
 
-  - name: Checkout STOCK_SCANNER
-    uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-  # ===================================================
-  # CHECKOUT DATA REPO
-  # ===================================================
+      - name: Install dependencies
+        run: |
+          pip install yfinance pandas pydantic numpy openpyxl
 
-  - name: Checkout STOCK_SCANNER_DATA
-    uses: actions/checkout@v4
-    with:
-      repository: Mohak22/STOCK_SCANNER_DATA
-      token: ${{ secrets.DATA_REPO_TOKEN }}
-      path: ../STOCK_SCANNER_DATA
+      - name: Run Stock Scanner
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
-  # ===================================================
-  # SETUP PYTHON
-  # ===================================================
+        run: |
+          python orchestrator_main.py
 
-  - name: Set up Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.11"
+      - name: Push strategy outputs
 
-  # ===================================================
-  # INSTALL DEPENDENCIES
-  # ===================================================
+        run: |
 
-  - name: Install dependencies
-    run: |
-      pip install yfinance pandas pydantic numpy openpyxl
+          cd ../STOCK_SCANNER_DATA
 
-  # ===================================================
-  # RUN ORCHESTRATOR
-  # ===================================================
+          git config user.name "github-actions"
 
-  - name: Run Stock Scanner
-    env:
-      SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          git config user.email "github-actions@github.com"
 
-    run: |
-      python orchestrator_main.py
+          git add .
 
-  # ===================================================
-  # PUSH UPDATED DATA REPO
-  # ===================================================
+          git commit -m "Update scanner outputs" || echo "No changes to commit"
 
-  - name: Push strategy outputs
-    run: |
+          git push
 
-      cd ../STOCK_SCANNER_DATA
-
-      git config user.name "github-actions"
-      git config user.email "github-actions@github.com"
-
-      git add .
-
-      git commit -m "Update scanner outputs" || echo "No changes to commit"
-
-      git push
-```
