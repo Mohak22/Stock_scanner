@@ -2,30 +2,80 @@ name: Stock Scanner Scheduler
 
 on:
 
-  workflow_dispatch:
+workflow_dispatch:
 
 jobs:
-  run-script:
 
-    runs-on: ubuntu-latest
+run-scanner:
 
-    steps:
+```
+runs-on: ubuntu-latest
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+steps:
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+  # ===================================================
+  # CHECKOUT MAIN CODE REPO
+  # ===================================================
 
-      - name: Install dependencies
-        run: |
-          pip install yfinance pandas pydantic numpy openpyxl
+  - name: Checkout STOCK_SCANNER
+    uses: actions/checkout@v4
 
-      - name: Run RSI Scanner
-        env:
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+  # ===================================================
+  # CHECKOUT DATA REPO
+  # ===================================================
 
-        run: python main.py
+  - name: Checkout STOCK_SCANNER_DATA
+    uses: actions/checkout@v4
+    with:
+      repository: Mohak22/STOCK_SCANNER_DATA
+      token: ${{ secrets.DATA_REPO_TOKEN }}
+      path: ../STOCK_SCANNER_DATA
+
+  # ===================================================
+  # SETUP PYTHON
+  # ===================================================
+
+  - name: Set up Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: "3.11"
+
+  # ===================================================
+  # INSTALL DEPENDENCIES
+  # ===================================================
+
+  - name: Install dependencies
+    run: |
+      pip install yfinance pandas pydantic numpy openpyxl
+
+  # ===================================================
+  # RUN ORCHESTRATOR
+  # ===================================================
+
+  - name: Run Stock Scanner
+    env:
+      SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+
+    run: |
+      python orchestrator_main.py
+
+  # ===================================================
+  # PUSH UPDATED DATA REPO
+  # ===================================================
+
+  - name: Push strategy outputs
+    run: |
+
+      cd ../STOCK_SCANNER_DATA
+
+      git config user.name "github-actions"
+      git config user.email "github-actions@github.com"
+
+      git add .
+
+      git commit -m "Update scanner outputs" || echo "No changes to commit"
+
+      git push
+```
+
