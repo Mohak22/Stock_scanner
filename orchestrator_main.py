@@ -12,7 +12,7 @@ from selector.select_best_strategy import select_best_strategy
 
 from reports.final_mail_sender import send_final_email
 
-save_output_flag = False
+save_output_flag = True
 
 strategy_1_result = run_strategy_1(save_output_flag)
 
