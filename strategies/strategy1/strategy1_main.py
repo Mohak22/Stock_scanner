@@ -72,7 +72,7 @@ def build_market_dataframe(
 
             "close_price":
                 round(
-                    close_prices.iloc[0],
+                    close_prices.iloc[-1],
                     2
                 ),
 
@@ -119,7 +119,7 @@ def build_sector_dataframe(
 
             "close_price":
                 round(
-                    close_prices.iloc[0],
+                    close_prices.iloc[-1],
                     2
                 ),
 
@@ -170,7 +170,7 @@ def build_stock_dataframe(
                 == stock_name
             ]
 
-            .iloc[0]
+            .iloc[-1]
         )
 
         sector_name = (
@@ -184,7 +184,7 @@ def build_stock_dataframe(
                 == sector_name
             ]
 
-            .iloc[0]["RSI_14"]
+            .iloc[-1]["RSI_14"]
         )
         
         
@@ -196,7 +196,7 @@ def build_stock_dataframe(
             == "NIFTY50"
             ]
 
-            .iloc[0]["close_price"]
+            .iloc[-1]["close_price"]
         )
 
         sector_price = (
@@ -206,7 +206,7 @@ def build_stock_dataframe(
                 == sector_name
             ]
 
-            .iloc[0]["close_price"]
+            .iloc[-1]["close_price"]
         )
 
         rows.append({
@@ -262,7 +262,7 @@ def build_stock_dataframe(
 
             "entry_close_price":
                 round(
-                    close_prices.iloc[0],
+                    close_prices.iloc[-1],
                     2
                 ),
 
