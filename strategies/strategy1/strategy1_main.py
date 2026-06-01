@@ -170,21 +170,28 @@ def build_stock_dataframe(
                 == stock_name
             ]
 
-            .iloc[-1]
+            .iloc[0]
         )
 
         sector_name = (
             stock_information["sector"]
         )
 
-        sector_rsi_14 = (
+        matching_sector = (
 
             sector_dataframe[
                 sector_dataframe["Sector"]
                 == sector_name
             ]
+        )
 
-            .iloc[-1]["RSI_14"]
+        if matching_sector.empty:
+
+             continue
+
+        sector_rsi_14 = (
+            matching_sector
+            .iloc[0]["RSI_14"]
         )
         
         
