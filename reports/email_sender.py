@@ -24,16 +24,16 @@ import pandas as pd
 # EMAIL CONFIGURATION
 # =========================================================
 
-SENDER_EMAIL = os.getenv(
-    "SENDER_EMAIL"
-)
-# SENDER_EMAIL = "mohak.wagle@gmail.com"
+# SENDER_EMAIL = os.getenv(
+#     "SENDER_EMAIL"
+# )
+SENDER_EMAIL = "mohak.wagle@gmail.com"
 
 
-EMAIL_PASSWORD = os.getenv(
-    "EMAIL_PASSWORD"
-)
-# EMAIL_PASSWORD = "qeuk bfni brne glib"
+# EMAIL_PASSWORD = os.getenv(
+#     "EMAIL_PASSWORD"
+# )
+EMAIL_PASSWORD = "qeuk bfni brne glib"
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
