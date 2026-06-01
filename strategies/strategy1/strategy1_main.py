@@ -26,6 +26,10 @@ from indicators.rsi_engine import (
     calculate_rsi
 )
 
+from indicators.ema_engine import (
+    calculate_ema
+) 
+
 from filters.market_filter import (
     analyze_market_condition
 )
@@ -183,6 +187,8 @@ def build_stock_dataframe(
             .iloc[0]["RSI_14"]
         )
         
+        
+        
         nifty_50_price = (
 
             market_dataframe[
@@ -245,6 +251,14 @@ def build_stock_dataframe(
                     ),
                     2
                 ),
+                
+            "ema_50": round(
+                calculate_ema(
+                    close_prices,
+                    50
+                ).iloc[-1],
+                2
+            ),
 
             "entry_close_price":
                 round(
