@@ -23,7 +23,7 @@ from fetch.stock_data_fetching import (
 )
 
 from indicators.rsi_engine import (
-    calculate_rsi
+    calculate_rsi, calculate_rsi_series
 )
 
 from indicators.ema_engine import (
@@ -161,8 +161,10 @@ def build_stock_dataframe(
 
     rows = []
 
-    for stock_name, close_prices in stock_data.items():
-
+    for stock_name, stock_dataframe_raw  in stock_data.items():
+        
+        close_prices = (stock_dataframe_raw["Close"])
+        
         stock_information = (
 
             master_dataframe[
@@ -187,35 +189,51 @@ def build_stock_dataframe(
 
         if matching_sector.empty:
 
-             continue
+            continue
 
         sector_rsi_14 = (
             matching_sector
             .iloc[0]["RSI_14"]
         )
-        
-        
-        
+
         nifty_50_price = (
 
             market_dataframe[
-            market_dataframe["Market"]
-            == "NIFTY50"
+                market_dataframe["Market"]
+                == "NIFTY50"
             ]
 
-            .iloc[-1]["close_price"]
+            .iloc[0]["close_price"]
         )
 
         sector_price = (
-
-            sector_dataframe[
-                sector_dataframe["Sector"]
-                == sector_name
-            ]
-
-            .iloc[-1]["close_price"]
+            matching_sector
+            .iloc[0]["close_price"]
         )
 
+        rsi_14_series = calculate_rsi_series(
+            close_prices,
+            14
+        )
+
+        current_rsi_14 = round(
+            rsi_14_series.iloc[-1],
+            2
+        )
+
+        previous_rsi_14 = round(
+            rsi_14_series.iloc[-2],
+            2
+        )
+        
+        current_volume = (
+            stock_dataframe_raw["Volume"]
+            .iloc[-1])
+
+        avg_20_volume = (stock_dataframe_raw["Volume"].rolling(20).mean().iloc[-1])
+
+        volume_ratio = round(current_volume / avg_20_volume, 2)
+        
         rows.append({
 
             "recommendation_date":
@@ -251,21 +269,22 @@ def build_stock_dataframe(
                 ),
 
             "rsi_14":
+                current_rsi_14,
+
+            "previous_rsi_14":
+                previous_rsi_14,
+
+            "volume_ratio":
+                volume_ratio,
+                
+            "ema_50":
                 round(
-                    calculate_rsi(
+                    calculate_ema(
                         close_prices,
-                        14
-                    ),
+                        50
+                    ).iloc[-1],
                     2
                 ),
-                
-            "ema_50": round(
-                calculate_ema(
-                    close_prices,
-                    50
-                ).iloc[-1],
-                2
-            ),
 
             "entry_close_price":
                 round(
@@ -301,7 +320,6 @@ def build_stock_dataframe(
 
         .reset_index(drop=True)
     )
-
 
     return dataframe
 

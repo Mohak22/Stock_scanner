@@ -79,3 +79,46 @@ def calculate_rsi(
     )
 
     return latest_rsi
+
+
+def calculate_rsi_series(
+    close_prices: pd.Series,
+    period: int
+) -> pd.Series:
+
+    price_change = close_prices.diff()
+
+    gain = (
+        price_change
+        .clip(lower=0)
+    )
+
+    loss = (
+        -price_change
+        .clip(upper=0)
+    )
+
+    average_gain = gain.rolling(
+        window=period
+    ).mean()
+
+    average_loss = loss.rolling(
+        window=period
+    ).mean()
+
+    rs = (
+        average_gain
+        / average_loss
+    )
+
+    rsi_series = (
+        100
+        -
+        (
+            100
+            /
+            (1 + rs)
+        )
+    )
+
+    return rsi_series

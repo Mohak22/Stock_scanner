@@ -19,16 +19,20 @@ def filter_weak_stocks(
 
     filtered_dataframe = (
 
-        stock_dataframe[
-            (stock_dataframe["rsi_14"] < 45)
-            &
-            (stock_dataframe["entry_close_price"] >
-             stock_dataframe["ema_50"])
-            &
-            (stock_dataframe["rsi_9"] >
-             stock_dataframe["rsi_14"])
+        # stock_dataframe[
+        #     (stock_dataframe["rsi_14"] < 45)
+        #     &
+        #     (stock_dataframe["entry_close_price"] >
+        #      stock_dataframe["ema_50"])
+        #     &
+        #     (stock_dataframe["rsi_9"] >
+        #      stock_dataframe["rsi_14"])
+        # ]
+          stock_dataframe[
+              (stock_dataframe["rsi_14"] < 40)
+              &
+              (stock_dataframe["rsi_14"] > stock_dataframe["previous_rsi_14"])
         ]
-
         .sort_values(
             by="rsi_14"
         )

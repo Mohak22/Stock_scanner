@@ -19,7 +19,7 @@ import yfinance as yf
 def fetch_stock_data(
     weak_sector_dataframe: pd.DataFrame,
     master_dataframe: pd.DataFrame
-) -> Dict[str, pd.Series]:
+) -> Dict[str, pd.DataFrame]:
 
     stock_data = {}
 
@@ -86,17 +86,14 @@ def fetch_stock_data(
 
                 continue
 
-            close_prices = (
-                data["Close"]
-                .dropna()
-            )
+            data = data.dropna()
 
-            if close_prices.empty:
+            if data.empty:
 
                 continue
 
             stock_data[symbol] = (
-                close_prices
+                data
             )
 
         except Exception as error:
