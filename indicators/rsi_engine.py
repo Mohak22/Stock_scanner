@@ -18,97 +18,45 @@ def calculate_rsi(
     period: int
 ) -> float:
 
-    # =====================================================
-    # PRICE DIFFERENCE
-    # =====================================================
-
-    delta = close_prices.diff()
-
-    # =====================================================
-    # GAINS & LOSSES
-    # =====================================================
-
-    gains = delta.clip(
-        lower=0
+    rsi_series = calculate_rsi_series(
+        close_prices,
+        period
     )
-
-    losses = -delta.clip(
-        upper=0
-    )
-
-    # =====================================================
-    # EXPONENTIAL MOVING AVERAGES
-    # =====================================================
-
-    average_gain = gains.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
-
-    average_loss = losses.ewm(
-        alpha=1 / period,
-        adjust=False
-    ).mean()
-
-    # =====================================================
-    # RELATIVE STRENGTH
-    # =====================================================
-
-    relative_strength = (
-        average_gain / average_loss
-    )
-
-    # =====================================================
-    # RSI
-    # =====================================================
-
-    rsi = 100 - (
-
-        100 / (
-            1 + relative_strength
-        )
-    )
-
-    # =====================================================
-    # LATEST RSI VALUE
-    # =====================================================
 
     latest_rsi = round(
-        rsi.iloc[-1],
+        rsi_series.iloc[-1],
         2
     )
 
     return latest_rsi
-
 
 def calculate_rsi_series(
     close_prices: pd.Series,
     period: int
 ) -> pd.Series:
 
-    price_change = close_prices.diff()
+    delta = close_prices.diff()
 
-    gain = (
-        price_change
-        .clip(lower=0)
-    )
+    gain = delta.clip(lower=0)
 
-    loss = (
-        -price_change
-        .clip(upper=0)
-    )
+    loss = -delta.clip(upper=0)
 
-    average_gain = gain.rolling(
-        window=period
+    average_gain = gain.ewm(
+        com=period - 1,
+        min_periods=period,
+        adjust=False
     ).mean()
 
-    average_loss = loss.rolling(
-        window=period
+    average_loss = loss.ewm(
+        com=period - 1,
+        min_periods=period,
+        adjust=False
     ).mean()
 
-    rs = (
+    relative_strength = (
         average_gain
-        / average_loss
+        /
+        average_loss
     )
 
     rsi_series = (
@@ -117,7 +65,9 @@ def calculate_rsi_series(
         (
             100
             /
-            (1 + rs)
+            (
+                1 + relative_strength
+            )
         )
     )
 

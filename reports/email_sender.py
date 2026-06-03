@@ -18,6 +18,10 @@ from email.mime.application import (
     MIMEApplication
 )
 
+from openpyxl.utils import (
+    get_column_letter
+)
+
 import pandas as pd
 
 # =========================================================
@@ -391,10 +395,45 @@ def send_stock_report_email(
 
     excel_buffer = BytesIO()
 
-    weak_stock_dataframe.to_excel(
+    with pd.ExcelWriter(
         excel_buffer,
-        index=False
-    )
+        engine="openpyxl"
+    ) as writer:
+
+        weak_stock_dataframe.to_excel(
+            writer,
+            sheet_name="Shortlisted Stocks",
+            index=False
+        )
+
+        worksheet = writer.sheets[
+            "Shortlisted Stocks"
+        ]
+
+        # =================================================
+        # AUTO ADJUST COLUMN WIDTH
+        # =================================================
+
+        for column_cells in worksheet.columns:
+
+            max_length = max(
+
+                len(str(cell.value))
+                if cell.value is not None
+                else 0
+
+                for cell in column_cells
+            )
+
+            column_letter = (
+                get_column_letter(
+                    column_cells[0].column
+                )
+            )
+
+            worksheet.column_dimensions[
+                column_letter
+            ].width = max_length + 4
 
     excel_buffer.seek(0)
 

@@ -79,7 +79,7 @@ def fetch_stock_data(
 
             data = ticker_object.history(
                 period="3mo",
-                auto_adjust=True
+                auto_adjust=False
             )
 
             if data.empty:
