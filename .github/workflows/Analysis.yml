@@ -8,6 +8,7 @@ on:
 jobs:
   run-analysis:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout STOCK_SCANNER
         uses: actions/checkout@v4
@@ -15,18 +16,17 @@ jobs:
       - name: Checkout STOCK_SCANNER_DATA
         uses: actions/checkout@v4
         with:
-          repository: YOUR_USERNAME/STOCK_SCANNER_DATA
-          token: ${{ secrets.PAT_TOKEN }}
-          path: ../STOCK_SCANNER_DATA
+          repository: Mohak22/STOCK_SCANNER_DATA
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+          path: STOCK_SCANNER_DATA
 
-      - name: Set Up Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install pandas yfinance openpyxl
 
       - name: Run Analysis Pipeline
@@ -35,3 +35,12 @@ jobs:
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
           python analysis/main.py
+
+      - name: Push Analysis Outputs
+        run: |
+          cd STOCK_SCANNER_DATA
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "Update analysis outputs" || echo "No changes to commit"
+          git push
