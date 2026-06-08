@@ -51,6 +51,18 @@ REPORT_FOLDER.mkdir(
     exist_ok=True
 )
 
+print("PROJECT_ROOT =", PROJECT_ROOT)
+print("PROJECT_ROOT EXISTS =", PROJECT_ROOT.exists())
+
+print(
+    "PROJECT_ROOT/STOCK_SCANNER_DATA =",
+    (PROJECT_ROOT / "STOCK_SCANNER_DATA").exists()
+)
+
+print(
+    "PROJECT_ROOT.parent/STOCK_SCANNER_DATA =",
+    (PROJECT_ROOT.parent / "STOCK_SCANNER_DATA").exists()
+)
 
 def load_recommendations(
     folder_path: Path,
