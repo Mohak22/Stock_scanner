@@ -6,14 +6,11 @@ schedule:
 workflow_dispatch:
 
 jobs:
-
 run-analysis:
-
-```
 runs-on: ubuntu-latest
 
+```
 steps:
-
   - name: Checkout STOCK_SCANNER
     uses: actions/checkout@v4
 
