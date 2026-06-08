@@ -22,22 +22,23 @@ from openpyxl.utils import (
     get_column_letter
 )
 
+from pathlib import Path
 import pandas as pd
 
 # =========================================================
 # EMAIL CONFIGURATION
 # =========================================================
 
-# SENDER_EMAIL = os.getenv(
-#     "SENDER_EMAIL"
-# )
-SENDER_EMAIL = "mohak.wagle@gmail.com"
+SENDER_EMAIL = os.getenv(
+    "SENDER_EMAIL"
+)
+# SENDER_EMAIL = "mohak.wagle@gmail.com"
 
 
-# EMAIL_PASSWORD = os.getenv(
-#     "EMAIL_PASSWORD"
-# )
-EMAIL_PASSWORD = "qeuk bfni brne glib"
+EMAIL_PASSWORD = os.getenv(
+    "EMAIL_PASSWORD"
+)
+# EMAIL_PASSWORD = "qeuk bfni brne glib"
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
@@ -483,4 +484,86 @@ def send_stock_report_email(
 
     print(
         "\nFinal report email sent."
+    )
+    
+
+def send_analysis_report(
+    report_path: Path
+) -> None:
+
+    body = (
+        "Stock Scanner Analysis Report\n\n"
+        f"Analysis Date: {pd.Timestamp.today().date()}\n\n"
+        "Sheets Included:\n"
+        "- Summary\n"
+        "- Final Recommendations\n"
+        "- Strategy 1\n"
+    )
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    ) as server:
+
+        server.starttls()
+
+        server.login(
+            SENDER_EMAIL,
+            EMAIL_PASSWORD
+        )
+
+        for receiver in RECEIVER_EMAILS:
+
+            message = MIMEMultipart()
+
+            message["Subject"] = (
+                "Stock Scanner Analysis Report"
+            )
+
+            message["From"] = (
+                SENDER_EMAIL
+            )
+
+            message["To"] = (
+                receiver
+            )
+
+            message.attach(
+                MIMEText(body)
+            )
+
+            with open(
+                report_path,
+                "rb"
+            ) as file:
+
+                attachment = (
+                    MIMEApplication(
+                        file.read(),
+                        _subtype="xlsx"
+                    )
+                )
+
+            attachment.add_header(
+                "Content-Disposition",
+                "attachment",
+                filename=report_path.name
+            )
+
+            message.attach(
+                attachment
+            )
+
+            server.sendmail(
+                SENDER_EMAIL,
+                receiver,
+                message.as_string()
+            )
+
+            print(
+                f"Email sent to: {receiver}"
+            )
+
+    print(
+        "\nAnalysis report sent successfully."
     )
