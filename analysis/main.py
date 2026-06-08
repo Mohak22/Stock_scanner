@@ -25,13 +25,36 @@ PROJECT_ROOT = (
     Path(__file__).resolve().parent.parent
 )
 
-PIPELINE_ROOT = (
-    PROJECT_ROOT.parent
+GITHUB_DATA_REPO = (
+    PROJECT_ROOT
+    / "STOCK_SCANNER_DATA"
 )
 
-DATA_REPO = (
-    PIPELINE_ROOT
+LOCAL_DATA_REPO = (
+    PROJECT_ROOT.parent
     / "STOCK_SCANNER_DATA"
+)
+
+if GITHUB_DATA_REPO.exists():
+
+    DATA_REPO = (
+        GITHUB_DATA_REPO
+    )
+
+elif LOCAL_DATA_REPO.exists():
+
+    DATA_REPO = (
+        LOCAL_DATA_REPO
+    )
+
+else:
+
+    raise FileNotFoundError(
+        "STOCK_SCANNER_DATA repository not found."
+    )
+
+print(
+    f"DATA_REPO = {DATA_REPO}"
 )
 
 FINAL_RECOMMENDATIONS_FOLDER = (
