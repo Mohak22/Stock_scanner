@@ -216,6 +216,13 @@ def build_stock_dataframe(
             14
         )
 
+        if len(rsi_14_series) < 2:
+
+            print(
+                f"RSI history is insufficient."
+            )
+
+            continue
         current_rsi_14 = round(
             rsi_14_series.iloc[-1],
             2
