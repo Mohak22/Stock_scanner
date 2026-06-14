@@ -1,0 +1,42 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jun 14 14:31:30 2026
+
+@author: mohak
+"""
+
+from datetime import date
+import pandas as pd
+
+from config.paths import DATA_REPO
+
+def save_analysis(
+    analysis_df: pd.DataFrame,
+    strategy_name: str
+) -> None:
+
+    output_folder = (
+        DATA_REPO
+        / "analysis"
+        / strategy_name
+    )
+
+    output_folder.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    output_file = (
+        output_folder
+        / f"analysis_{date.today()}.xlsx"
+    )
+
+    analysis_df.to_excel(
+        output_file,
+        index=False
+    )
+
+    print(
+        f"Saved: {output_file}"
+    )
+    
