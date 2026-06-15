@@ -31,6 +31,20 @@ def save_analysis(
         / f"analysis_{date.today()}.xlsx"
     )
 
+    columns_to_remove = [
+        "strategy_name",
+        "nifty_50_price",
+        "sector_price",
+        "ema_50",
+        "rsi_9",
+        "previous_rsi_14"
+    ]
+
+    analysis_df = analysis_df.drop(
+        columns=columns_to_remove,
+        errors="ignore"
+    )
+
     analysis_df.to_excel(
         output_file,
         index=False
@@ -39,4 +53,3 @@ def save_analysis(
     print(
         f"Saved: {output_file}"
     )
-    

@@ -15,7 +15,15 @@ def create_summary(
     return pd.DataFrame(
         {
             "strategy_name": [strategy_name],
-            "total_picks": [len(analysis_df)],
+
+            "total_picks": [
+                len(analysis_df)
+            ],
+
+            # =====================================
+            # BTST
+            # =====================================
+
             "avg_btst_return_pct": [
                 round(
                     analysis_df[
@@ -24,6 +32,32 @@ def create_summary(
                     2
                 )
             ],
+
+            "btst_win_rate_pct": [
+                round(
+                    (
+                        analysis_df[
+                            "btst_return_pct"
+                        ] > 0
+                    ).mean()
+                    * 100,
+                    2
+                )
+            ],
+
+            "avg_btst_outperformance_pct": [
+                round(
+                    analysis_df[
+                        "btst_outperformance_pct"
+                    ].mean(),
+                    2
+                )
+            ],
+
+            # =====================================
+            # 3 DAY
+            # =====================================
+
             "avg_3d_return_pct": [
                 round(
                     analysis_df[
@@ -32,6 +66,32 @@ def create_summary(
                     2
                 )
             ],
+
+            "return_3d_win_rate_pct": [
+                round(
+                    (
+                        analysis_df[
+                            "return_3d_pct"
+                        ] > 0
+                    ).mean()
+                    * 100,
+                    2
+                )
+            ],
+
+            "avg_3d_outperformance_pct": [
+                round(
+                    analysis_df[
+                        "outperformance_3d_pct"
+                    ].mean(),
+                    2
+                )
+            ],
+
+            # =====================================
+            # CURRENT
+            # =====================================
+
             "avg_current_return_pct": [
                 round(
                     analysis_df[
@@ -40,23 +100,8 @@ def create_summary(
                     2
                 )
             ],
-            "avg_highest_return_pct": [
-                round(
-                    analysis_df[
-                        "highest_return_pct"
-                    ].mean(),
-                    2
-                )
-            ],
-            "avg_lowest_return_pct": [
-                round(
-                    analysis_df[
-                        "lowest_return_pct"
-                    ].mean(),
-                    2
-                )
-            ],
-            "win_rate_pct": [
+
+            "current_win_rate_pct": [
                 round(
                     (
                         analysis_df[
@@ -66,6 +111,37 @@ def create_summary(
                     * 100,
                     2
                 )
+            ],
+
+            "avg_current_outperformance_pct": [
+                round(
+                    analysis_df[
+                        "current_outperformance_pct"
+                    ].mean(),
+                    2
+                )
+            ],
+
+            # =====================================
+            # EXTREMES
+            # =====================================
+
+            "avg_highest_return_pct": [
+                round(
+                    analysis_df[
+                        "highest_return_pct"
+                    ].mean(),
+                    2
+                )
+            ],
+
+            "avg_lowest_return_pct": [
+                round(
+                    analysis_df[
+                        "lowest_return_pct"
+                    ].mean(),
+                    2
+                )
             ]
         }
-    )
+    )   
