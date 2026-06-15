@@ -41,6 +41,4 @@ def autofit_columns(
 
         worksheet.column_dimensions[
             column_letter
-        ].width = (
-            max_length + 2, 40
-        )
+        ].width = min(max_length + 2, 40)
