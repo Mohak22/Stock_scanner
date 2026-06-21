@@ -1,0 +1,60 @@
+name: Silver Tracker
+
+on:
+
+  workflow_dispatch:
+
+  schedule:
+
+    - cron: "30 19 * * *"
+
+jobs:
+
+  silver_tracker:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Code Repo
+        uses: actions/checkout@v4
+
+      - name: Checkout Data Repo
+        uses: actions/checkout@v4
+        with:
+          repository: Mohak22/STOCK_SCANNER_DATA
+          token: ${{ secrets.PAT_TOKEN }}
+          path: STOCK_SCANNER_DATA
+
+      - name: Set Up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          pip install requests
+          pip install pdfplumber
+          pip install pandas
+
+      - name: Run Silver Tracker
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        run: |
+          python commodities/silver/main.py
+
+      - name: Commit Data Changes
+        run: |
+          cd STOCK_SCANNER_DATA
+
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add .
+
+          git commit -m "Silver Tracker Update" || echo "No changes"
+
+          git push
