@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Mohak22/STOCK_SCANNER_DATA
-          token: ${{ secrets.PAT_TOKEN }}
+          token: ${{ secrets.DATA_REPO_TOKEN }}
           path: STOCK_SCANNER_DATA
 
       - name: Set Up Python
