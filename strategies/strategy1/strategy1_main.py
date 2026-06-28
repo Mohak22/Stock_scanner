@@ -11,6 +11,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from typing import Dict
+
 from fetch.market_data_fetching import fetch_market_data
 
 from fetch.sector_data_fetching import (
@@ -30,15 +32,15 @@ from indicators.ema_engine import (
     calculate_ema
 ) 
 
-from filters.market_filter import (
+from strategies.strategy1.filters.market_filter import (
     analyze_market_condition
 )
 
-from filters.sector_filter import (
+from strategies.strategy1.filters.sector_filter import (
     filter_weak_sectors
 )
 
-from filters.stock_filter import (
+from strategies.strategy1.filters.stock_filter import (
     filter_weak_stocks
 )
 
@@ -52,13 +54,30 @@ from reports.excel_report_generator import (
 
 STRATEGY_NAME = "strategy_1"
 
+DATA_PERIOD = "3mo"
 
+MARKET_INDEX_MAP = {
+
+    "NIFTY50": "^NSEI",
+
+    "MIDCAP":
+        "NIFTY_MIDCAP_100.NS",
+
+    "BANKNIFTY":
+        "^NSEBANK"
+}
+
+RSI_SHORT_PERIOD = 9
+
+RSI_LONG_PERIOD = 14
+
+EMA_PERIOD = 50
 # =========================================================
 # BUILD MARKET DATAFRAME
 # =========================================================
 
 def build_market_dataframe(
-    market_data: dict
+    market_data: Dict[str, pd.Series]
 ) -> pd.DataFrame:
 
     rows = []
@@ -77,15 +96,15 @@ def build_market_dataframe(
                 ),
 
             "RSI_9":
-                round(
-                    calculate_rsi(close_prices, 9),
-                    2
+                calculate_rsi(
+                    close_prices,
+                    RSI_SHORT_PERIOD
                 ),
-
+            
             "RSI_14":
-                round(
-                    calculate_rsi(close_prices, 14),
-                    2
+                calculate_rsi(
+                    close_prices,
+                    RSI_LONG_PERIOD
                 )
         })
 
@@ -105,7 +124,7 @@ def build_market_dataframe(
 # =========================================================
 
 def build_sector_dataframe(
-    sector_data: dict
+    sector_data: Dict[str, pd.Series]
 ) -> pd.DataFrame:
 
     rows = []
@@ -124,15 +143,15 @@ def build_sector_dataframe(
                 ),
 
             "RSI_9":
-                round(
-                    calculate_rsi(close_prices, 9),
-                    2
+                calculate_rsi(
+                    close_prices,
+                    RSI_SHORT_PERIOD
                 ),
-
+            
             "RSI_14":
-                round(
-                    calculate_rsi(close_prices, 14),
-                    2
+                calculate_rsi(
+                    close_prices,
+                    RSI_LONG_PERIOD
                 )
         })
 
@@ -161,39 +180,64 @@ def build_stock_dataframe(
 
     rows = []
 
+    master_lookup = (
+    
+        master_dataframe
+    
+        .drop_duplicates(
+            subset="Symbol",
+            keep="first"
+        )
+    
+        .set_index("Symbol")
+    
+        .to_dict(
+            orient="index"
+        )
+    )
+
+    sector_lookup = (
+    
+        sector_dataframe
+    
+        .drop_duplicates(
+            subset="Sector",
+            keep="first"
+        )
+    
+        .set_index("Sector")
+    
+        .to_dict(
+            orient="index"
+        )
+    )
+
     for stock_name, stock_dataframe_raw  in stock_data.items():
         
         close_prices = (stock_dataframe_raw["Close"])
         
         stock_information = (
-
-            master_dataframe[
-                master_dataframe["Symbol"]
-                == stock_name
-            ]
-
-            .iloc[0]
+            master_lookup.get(
+                stock_name
+            )
         )
 
         sector_name = (
             stock_information["sector"]
         )
-
+        
         matching_sector = (
-
-            sector_dataframe[
-                sector_dataframe["Sector"]
-                == sector_name
-            ]
+            sector_lookup.get(
+                sector_name
+            )
         )
 
-        if matching_sector.empty:
-
+        if matching_sector is None:
+        
             continue
 
         sector_rsi_14 = (
-            matching_sector
-            .iloc[0]["RSI_14"]
+            matching_sector["RSI_14"]
         )
 
         nifty_50_price = (
@@ -207,13 +251,12 @@ def build_stock_dataframe(
         )
 
         sector_price = (
-            matching_sector
-            .iloc[0]["close_price"]
+            matching_sector["close_price"]
         )
 
         rsi_14_series = calculate_rsi_series(
             close_prices,
-            14
+            RSI_LONG_PERIOD
         )
 
         if len(rsi_14_series) < 2:
@@ -239,7 +282,17 @@ def build_stock_dataframe(
 
         avg_20_volume = (stock_dataframe_raw["Volume"].rolling(20).mean().iloc[-1])
 
-        volume_ratio = round(current_volume / avg_20_volume, 2)
+        if avg_20_volume <= 0:
+        
+            volume_ratio = None
+        
+        else:
+        
+            volume_ratio = round(
+                current_volume /
+                avg_20_volume,
+                2
+            )
         
         rows.append({
 
@@ -267,12 +320,9 @@ def build_stock_dataframe(
                 ),
 
             "rsi_9":
-                round(
-                    calculate_rsi(
-                        close_prices,
-                        9
-                    ),
-                    2
+                calculate_rsi(
+                    close_prices,
+                    RSI_SHORT_PERIOD
                 ),
 
             "rsi_14":
@@ -288,7 +338,7 @@ def build_stock_dataframe(
                 round(
                     calculate_ema(
                         close_prices,
-                        50
+                        EMA_PERIOD
                     ).iloc[-1],
                     2
                 ),
@@ -347,7 +397,10 @@ def run_strategy_1(
     # MARKET ANALYSIS
     # =====================================================
 
-    market_data = fetch_market_data()
+    market_data = fetch_market_data(
+        market_index_map=MARKET_INDEX_MAP,
+        period=DATA_PERIOD
+    )
 
     market_dataframe = build_market_dataframe(
         market_data
@@ -396,7 +449,13 @@ def run_strategy_1(
     sector_data = fetch_sector_data(
         master_dataframe
     )
+    
+    for sector_name, close_prices in sector_data.items():
 
+       print(
+        sector_name,
+        type(close_prices)
+    )
     sector_dataframe = build_sector_dataframe(
         sector_data
     )
@@ -437,9 +496,40 @@ def run_strategy_1(
     # STOCK ANALYSIS
     # =====================================================
 
+    weak_sectors = (
+        weak_sector_dataframe["Sector"]
+        .tolist()
+    )
+    
+    filtered_dataframe = (
+    
+        master_dataframe[
+    
+            master_dataframe["sector"]
+            .isin(weak_sectors)
+        ]
+    )
+    
+    symbols = (
+    
+        filtered_dataframe["Symbol"]
+    
+        .dropna()
+    
+        .unique()
+    
+        .tolist()
+    )
+    
     stock_data = fetch_stock_data(
-        weak_sector_dataframe,
-        master_dataframe
+    
+        symbols=symbols,
+    
+        period=DATA_PERIOD,
+    
+        auto_adjust=False,
+    
+        exchange_suffix=".NS"
     )
 
     stock_dataframe = build_stock_dataframe(

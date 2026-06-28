@@ -7,7 +7,7 @@ Created on Wed May 20 22:09:34 2026
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List
 
 import pandas as pd
 import yfinance as yf
@@ -17,54 +17,34 @@ import yfinance as yf
 # =========================================================
 
 def fetch_stock_data(
-    weak_sector_dataframe: pd.DataFrame,
-    master_dataframe: pd.DataFrame
+    symbols: List[str],
+    period: str = "3mo",
+    auto_adjust: bool = False,
+    exchange_suffix: str = ".NS"
 ) -> Dict[str, pd.DataFrame]:
 
-    stock_data = {}
+    stock_data: Dict[
+        str,
+        pd.DataFrame
+    ] = {}
 
     # =====================================================
-    # EXTRACT WEAK SECTORS
+    # REMOVE DUPLICATES
     # =====================================================
 
-    weak_sectors = (
-        weak_sector_dataframe["Sector"]
-        .tolist()
+    symbols = list(
+        set(symbols)
     )
 
     # =====================================================
-    # FILTER STOCKS
-    # =====================================================
-
-    filtered_dataframe = (
-
-        master_dataframe[
-
-            master_dataframe["sector"]
-            .isin(weak_sectors)
-        ]
-    )
-
-    # =====================================================
-    # UNIQUE STOCKS
-    # =====================================================
-
-    symbols = (
-
-        filtered_dataframe["Symbol"]
-        .dropna()
-        .unique()
-        .tolist()
-    )
-
-    # =====================================================
-    # FETCH STOCKS
+    # FETCH EACH STOCK
     # =====================================================
 
     for symbol in symbols:
 
         ticker = (
-            f"{symbol}.NS"
+            f"{symbol}"
+            f"{exchange_suffix}"
         )
 
         try:
@@ -78,23 +58,45 @@ def fetch_stock_data(
             )
 
             data = ticker_object.history(
-                period="3mo",
-                auto_adjust=False
+                period=period,
+                auto_adjust=auto_adjust
             )
+
+            # =====================================`========
+            # EMPTY DATA CHECK
+            # =============================================
 
             if data.empty:
 
+                print(
+                    f"No data found for "
+                    f"{ticker}"
+                )
+
                 continue
+
+            # =============================================
+            # CLEAN DATA
+            # =============================================
 
             data = data.dropna()
 
             if data.empty:
 
+                print(
+                    f"Only NaN data found "
+                    f"for {ticker}"
+                )
+
                 continue
 
-            stock_data[symbol] = (
-                data
-            )
+            # =============================================
+            # STORE DATA
+            # =============================================
+
+            stock_data[
+                symbol
+            ] = data
 
         except Exception as error:
 

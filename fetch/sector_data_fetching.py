@@ -20,11 +20,13 @@ import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
+
 # =========================================================
 # CONSTANTS
 # =========================================================
 
 DATA_PERIOD = "3mo"
+
 CLOSE_COLUMN = "Close"
 
 SECTOR_INDEX_MAP: Dict[str, str] = {
@@ -48,6 +50,7 @@ SECTOR_INDEX_MAP: Dict[str, str] = {
     "PSE": "^CNXPSE"
 }
 
+
 # =========================================================
 # LOAD MASTER UNIVERSE
 # =========================================================
@@ -60,25 +63,15 @@ def load_master_universe(
         file_path
     )
 
-    # =====================================================
-    # CLEAN COLUMNS
-    # =====================================================
-
     dataframe["Symbol"] = (
-
         dataframe["Symbol"]
-
         .astype(str)
-
         .str.strip()
     )
 
     dataframe["sector"] = (
-
         dataframe["sector"]
-
         .astype(str)
-
         .str.strip()
     )
 
@@ -88,6 +81,7 @@ def load_master_universe(
 
     return dataframe
 
+
 # =========================================================
 # EXTRACT UNIQUE SECTORS
 # =========================================================
@@ -96,59 +90,72 @@ def extract_unique_sectors(
     dataframe: pd.DataFrame
 ) -> List[str]:
 
-    return dataframe["sector"].unique().tolist()
+    return (
+        dataframe["sector"]
+        .unique()
+        .tolist()
+    )
+
 
 # =========================================================
-# FETCH YAHOO INDEX
+# FETCH INDEX DATA
 # =========================================================
 
-def fetch_yahoo_sector_index(
-    ticker: str
-) -> pd.DataFrame:
+def fetch_index_data(
+    ticker: str,
+    period: str = DATA_PERIOD
+) -> pd.Series:
 
     data = yf.download(
         ticker,
-        period=DATA_PERIOD,
+        period=period,
         progress=False,
         auto_adjust=True
     )
 
     if data.empty:
+
         raise ValueError(
             f"No data returned for {ticker}"
         )
 
-    standardized_data = data[
-        [CLOSE_COLUMN]
-    ].copy()
+    close_prices = data[CLOSE_COLUMN]
 
-    standardized_data.columns = [
-        CLOSE_COLUMN
-    ]
+    # =====================================
+    # FORCE SERIES
+    # =====================================
 
-    return (
-        standardized_data[
-            CLOSE_COLUMN
-        ].dropna()
+    if isinstance(
+        close_prices,
+        pd.DataFrame
+    ):
+
+        close_prices = (
+            close_prices.iloc[:, 0]
         )
 
-# =========================================================
-# FETCH STOCK CLOSE PRICES
-# =========================================================
+    close_prices = (
+        close_prices
+        .dropna()
+    )
+
+    return close_prices
+
 
 # =========================================================
 # FETCH STOCK CLOSE PRICES
 # =========================================================
 
 def fetch_stock_close_prices(
-    tickers: List[str]
+    tickers: List[str],
+    period: str = DATA_PERIOD
 ) -> pd.DataFrame:
 
     try:
 
         data = yf.download(
             tickers,
-            period=DATA_PERIOD,
+            period=period,
             progress=False,
             auto_adjust=True,
             group_by="ticker"
@@ -161,7 +168,9 @@ def fetch_stock_close_prices(
             try:
 
                 close_price_dict[ticker] = (
-                    data[ticker][CLOSE_COLUMN]
+                    data[ticker][
+                        CLOSE_COLUMN
+                    ]
                 )
 
             except Exception:
@@ -191,12 +200,15 @@ def fetch_stock_close_prices(
         )
 
         return pd.DataFrame()
+
+
 # =========================================================
-# BUILD SYNTHETIC SECTOR
+# BUILD SYNTHETIC INDEX
 # =========================================================
 
-def build_synthetic_sector_index(
-    close_prices: pd.DataFrame
+def build_synthetic_index(
+    close_prices: pd.DataFrame,
+    base_value: float = 100.0
 ) -> pd.Series:
 
     if close_prices.empty:
@@ -205,38 +217,46 @@ def build_synthetic_sector_index(
             "Empty close price data."
         )
 
-    # =====================================================
-    # DAILY RETURNS
-    # =====================================================
-
     daily_returns = (
         close_prices.pct_change()
     )
 
-    # =====================================================
-    # AVERAGE SECTOR RETURN
-    # =====================================================
-
-    sector_returns = (
+    basket_returns = (
         daily_returns.mean(
             axis=1
         )
     )
 
-    # =====================================================
-    # SYNTHETIC INDEX
-    # =====================================================
-
-    synthetic_close = (
-        (1 + sector_returns)
-        .cumprod() * 100
+    synthetic_index = (
+        (1 + basket_returns)
+        .cumprod()
+        * base_value
     )
 
-    # =====================================================
-    # RETURN SERIES ONLY
-    # =====================================================
+    return (
+        synthetic_index
+        .dropna()
+    )
 
-    return synthetic_close.dropna()
+
+# =========================================================
+# BUILD BASKET DATA
+# =========================================================
+
+def build_basket_data(
+    tickers: List[str]
+) -> pd.Series:
+
+    close_prices = (
+        fetch_stock_close_prices(
+            tickers=tickers
+        )
+    )
+
+    return build_synthetic_index(
+        close_prices=close_prices
+    )
+
 
 # =========================================================
 # PROCESS SINGLE SECTOR
@@ -247,81 +267,93 @@ def process_sector(
     master_dataframe: pd.DataFrame
 ) -> pd.Series:
 
-    yahoo_ticker = (
-        SECTOR_INDEX_MAP.get(sector)
+    official_ticker = (
+        SECTOR_INDEX_MAP.get(
+            sector
+        )
     )
 
-    if yahoo_ticker:
+    # =====================================================
+    # TRY OFFICIAL INDEX
+    # =====================================================
+
+    if official_ticker:
 
         try:
 
             logger.info(
-                "Fetching official sector index for %s",
+                "Fetching official index for %s",
                 sector
             )
 
-            return fetch_yahoo_sector_index(
-                yahoo_ticker
+            return fetch_index_data(
+                ticker=official_ticker
             )
 
         except Exception as error:
 
             logger.warning(
-                "Official sector fetch failed for %s | %s",
+                "Official index failed for %s | %s",
                 sector,
                 error
             )
 
+    # =====================================================
+    # FALLBACK TO SYNTHETIC
+    # =====================================================
+
     logger.info(
-        "Creating synthetic sector for %s",
+        "Building synthetic basket for %s",
         sector
     )
 
-    sector_dataframe = master_dataframe[
-        master_dataframe["sector"] == sector
-    ]
+    sector_dataframe = (
+        master_dataframe[
+            master_dataframe[
+                "sector"
+            ] == sector
+        ]
+    )
 
     tickers = (
-        sector_dataframe["Symbol"]
-        + ".NS"
+        sector_dataframe[
+            "Symbol"
+        ] + ".NS"
     ).tolist()
 
-    close_prices = (
-        fetch_stock_close_prices(
-            tickers
-        )
+    return build_basket_data(
+        tickers=tickers
     )
 
-    return build_synthetic_sector_index(
-        close_prices
-    )
 
 # =========================================================
-# FETCH ALL SECTORS
+# FETCH ALL SECTOR DATA
 # =========================================================
 
 def fetch_sector_data(
     master_dataframe: pd.DataFrame
-) -> Dict[str, pd.DataFrame]:
+) -> Dict[str, pd.Series]:
 
     sector_data: Dict[
         str,
-        pd.DataFrame
+        pd.Series
     ] = {}
 
-    sectors = extract_unique_sectors(
-        master_dataframe
+    sectors = (
+        extract_unique_sectors(
+            master_dataframe
+        )
     )
 
     for sector in sectors:
 
         try:
 
-            sector_data[sector] = (
-                process_sector(
-                    sector,
-                    master_dataframe
-                )
+            sector_data[
+                sector
+            ] = process_sector(
+                sector=sector,
+                master_dataframe=master_dataframe
             )
 
             logger.info(

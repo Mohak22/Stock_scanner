@@ -14,19 +14,6 @@ import time
 import pandas as pd
 import yfinance as yf
 
-# =========================================================
-# MARKET INDEX MAP
-# =========================================================
-
-MARKET_INDEX_MAP = {
-
-    "NIFTY50": "^NSEI",
-
-    "MIDCAP":
-        "NIFTY_MIDCAP_100.NS",
-
-    "BANKNIFTY": "^NSEBANK"
-}
 
 # =========================================================
 # FETCH SINGLE MARKET
@@ -34,7 +21,8 @@ MARKET_INDEX_MAP = {
 
 def fetch_single_market_data(
     market_name: str,
-    ticker: str
+    ticker: str,
+    period: str = "3mo"
 ) -> tuple[str, pd.Series]:
 
     max_retries = 3
@@ -52,13 +40,13 @@ def fetch_single_market_data(
             )
 
             ticker_object = yf.Ticker(
-               ticker
+                ticker
             )
 
             data = ticker_object.history(
-                 period="3mo",
-                 auto_adjust=True
-                 )
+                period=period,
+                auto_adjust=True
+            )
 
             # =====================================
             # EMPTY DATA CHECK
@@ -75,7 +63,9 @@ def fetch_single_market_data(
             # CLOSE PRICE EXTRACTION
             # =====================================
 
-            close_prices = data["Close"]
+            close_prices = data[
+                "Close"
+            ]
 
             # =====================================
             # FORCE CLEAN SERIES
@@ -144,11 +134,14 @@ def fetch_single_market_data(
         pd.Series(dtype=float)
     )
 
+
 # =========================================================
-# FETCH ALL MARKET DATA
+# FETCH MULTIPLE MARKETS
 # =========================================================
 
 def fetch_market_data(
+    market_index_map: Dict[str, str],
+    period: str = "3mo"
 ) -> Dict[str, pd.Series]:
 
     market_data = {}
@@ -156,14 +149,15 @@ def fetch_market_data(
     for (
         market_name,
         ticker
-    ) in MARKET_INDEX_MAP.items():
+    ) in market_index_map.items():
 
         (
             fetched_market_name,
             close_prices
         ) = fetch_single_market_data(
-            market_name,
-            ticker
+            market_name=market_name,
+            ticker=ticker,
+            period=period
         )
 
         if not close_prices.empty:
