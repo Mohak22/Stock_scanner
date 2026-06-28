@@ -5,38 +5,82 @@ Created on Sun May 31 14:42:53 2026
 @author: mohak
 """
 
-from reports.email_sender import send_market_warning_email, send_no_sector_email, send_no_stock_email, send_stock_report_email 
+from reports.email_sender import (
+    send_no_stock_email,
+    send_stock_report_email,
+    send_strategy_output_email
+)
+
+from reports.recommendation_workbook import (
+    generate_recommendation_workbook
+)
+
 
 def send_final_email(
     final_result: dict
-):
-
-    market_status = (
-        final_result["market_status"]
-    )
-
-    sector_dataframe = (
-        final_result["sector_dataframe"]
-    )
+) -> None:
 
     recommendations = (
         final_result["recommendations"]
     )
 
-    if market_status == "PANIC":
+    workbook_result = (
+        generate_recommendation_workbook()
+    )
 
-        send_market_warning_email()
+    workbook_path = (
+        workbook_result["workbook_path"]
+    )
 
-    elif sector_dataframe.empty:
+    final_recommendations_found = (
+        workbook_result[
+            "final_recommendations_found"
+        ]
+    )
 
-        send_no_sector_email()
+    strategy_outputs_found = (
+        workbook_result[
+            "strategy_outputs_found"
+        ]
+    )
 
-    elif recommendations.empty:
+    # =============================================
+    # CASE 1
+    # FINAL RECOMMENDATIONS AVAILABLE
+    # =============================================
 
-        send_no_stock_email()
-
-    else:
+    if final_recommendations_found:
 
         send_stock_report_email(
-            recommendations
+
+            recommendations=
+                recommendations,
+
+            workbook_path=
+                workbook_path
         )
+
+        return
+
+    # =============================================
+    # CASE 2
+    # STRATEGY OUTPUTS AVAILABLE
+    # BUT NO FINAL RECOMMENDATION
+    # =============================================
+
+    if strategy_outputs_found:
+
+        send_strategy_output_email(
+
+            workbook_path=
+                workbook_path
+        )
+
+        return
+
+    # =============================================
+    # CASE 3
+    # NOTHING GENERATED TODAY
+    # =============================================
+
+    send_no_stock_email()

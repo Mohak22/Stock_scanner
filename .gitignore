@@ -9,3 +9,4 @@ venv/
 __pycache__/
 .env
 .ipynb_checkpoints/
+STOCK_SCANNER_DATA/temp/
