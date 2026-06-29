@@ -55,23 +55,23 @@ def create_summary(
             ],
 
             # =====================================
-            # 3 DAY
+            # 7 DAY
             # =====================================
 
-            "avg_3d_return_pct": [
+            "avg_7d_return_pct": [
                 round(
                     analysis_df[
-                        "return_3d_pct"
+                        "return_7d_pct"
                     ].mean(),
                     2
                 )
             ],
 
-            "return_3d_win_rate_pct": [
+            "return_7d_win_rate_pct": [
                 round(
                     (
                         analysis_df[
-                            "return_3d_pct"
+                            "return_7d_pct"
                         ] > 0
                     ).mean()
                     * 100,
@@ -79,10 +79,10 @@ def create_summary(
                 )
             ],
 
-            "avg_3d_outperformance_pct": [
+            "avg_7d_outperformance_pct": [
                 round(
                     analysis_df[
-                        "outperformance_3d_pct"
+                        "outperformance_7d_pct"
                     ].mean(),
                     2
                 )
@@ -92,20 +92,20 @@ def create_summary(
             # CURRENT
             # =====================================
 
-            "avg_current_return_pct": [
+            "avg_14d_return_pct": [
                 round(
                     analysis_df[
-                        "return_till_today_pct"
+                        "return_14d_pct"
                     ].mean(),
                     2
                 )
             ],
 
-            "current_win_rate_pct": [
+            "return_14d_win_rate_pct": [
                 round(
                     (
                         analysis_df[
-                            "return_till_today_pct"
+                            "return_14d_pct"
                         ] > 0
                     ).mean()
                     * 100,
@@ -113,10 +113,10 @@ def create_summary(
                 )
             ],
 
-            "avg_current_outperformance_pct": [
+            "avg_14d_outperformance_pct": [
                 round(
                     analysis_df[
-                        "current_outperformance_pct"
+                        "outperformance_14d_pct"
                     ].mean(),
                     2
                 )
