@@ -102,47 +102,47 @@ def calculate_returns(
         )
 
         # =====================================
-        # 3 DAY RETURN
+        # 7 DAY RETURN
         # =====================================
 
         if (
-            len(price_df) >= 4
-            and len(nifty_df) >= 4
+            len(price_df) >= 8
+            and len(nifty_df) >= 8
         ):
 
-            day_3_close = (
-                price_df.iloc[3]["Close"]
+            day_7_close = (
+                price_df.iloc[7]["Close"]
             )
 
-            return_3d = (
+            return_7d = (
                 (
-                    day_3_close
+                    day_7_close
                     - entry_price
                 )
                 / entry_price
             ) * 100
 
-            nifty_day_3_close = (
-                nifty_df.iloc[3]["Close"]
+            nifty_day_7_close = (
+                nifty_df.iloc[7]["Close"]
             )
 
-            nifty_3d_return = (
+            nifty_7d_return = (
                 (
-                    nifty_day_3_close
+                    nifty_day_7_close
                     - nifty_entry_price
                 )
                 / nifty_entry_price
             ) * 100
 
-            outperformance_3d = (
-                return_3d
-                - nifty_3d_return
+            outperformance_7d = (
+                return_7d
+                - nifty_7d_return
             )
 
         else:
 
-            return_3d = None
-            outperformance_3d = None
+            return_7d = None
+            outperformance_7d = None
 
         # =====================================
         # CURRENT RETURN
@@ -218,25 +218,25 @@ def calculate_returns(
                     btst_outperformance, 2
                 ),
 
-                "return_3d_pct": (
-                    round(return_3d, 2)
-                    if return_3d is not None
+                "return_7d_pct": (
+                    round(return_7d, 2)
+                    if return_7d is not None
                     else None
                 ),
 
-                "outperformance_3d_pct": (
+                "outperformance_7d_pct": (
                     round(
-                        outperformance_3d, 2
+                        outperformance_7d, 2
                     )
-                    if outperformance_3d is not None
+                    if outperformance_7d is not None
                     else None
                 ),
 
-                "return_till_today_pct": round(
+                "return_14d_pct": round(
                     return_till_today, 2
                 ),
 
-                "current_outperformance_pct": round(
+                "outperformance_14d_pct": round(
                     current_outperformance, 2
                 ),
 

@@ -19,7 +19,7 @@ def main():
 
     target_date = (
         date.today()
-        - timedelta(days=7)
+        - timedelta(days=14)
     )
 
     final_df = load_recommendations(
