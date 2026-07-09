@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install yfinance pandas pydantic numpy openpyxl
+          pip install yfinance pandas pydantic numpy openpyxl pyarrow
 
       - name: Run Stock Scanner
         env:
