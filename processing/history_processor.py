@@ -61,10 +61,18 @@ class HistoryProcessor:
         )
 
         for raw_file in history:
-
-            self.cleaner.clean_file(
-                raw_file
-            )
+        
+            try:
+        
+                self.cleaner.clean_file(
+                    raw_file
+                )
+        
+            except Exception as error:
+        
+                print(f"\nError while processing {raw_file.name}")
+                print(error)
+                raise
 
         print(
             f"\nProcessed {len(history)} trading days."
