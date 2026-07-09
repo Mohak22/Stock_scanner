@@ -218,6 +218,7 @@ pandocfilters @ file:///opt/conda/conda-bld/pandocfilters_1643405455980/work
 panel @ file:///C:/b/abs_a4rd7zrkc6/croot/panel_1695145945642/work
 param @ file:///C:/b/abs_f5xzp6ism6/croot/param_1684915326009/work
 paramiko @ file:///opt/conda/conda-bld/paramiko_1640109032755/work
+pyarrow>=18.0.0
 parsel @ file:///C:/ci_311/parsel_1676443327188/work
 parso @ file:///opt/conda/conda-bld/parso_1641458642106/work
 partd @ file:///C:/b/abs_4e2m_ds81n/croot/partd_1693937921136/work
