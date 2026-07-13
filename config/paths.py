@@ -9,18 +9,33 @@ Created on Sun Jul  5 11:27:45 2026
 
 from pathlib import Path
 
-
 # STOCK_SCANNER repository
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Parent folder containing both repositories
-WORKSPACE_ROOT = PROJECT_ROOT.parent
-
-# STOCK_SCANNER_DATA repository
-DATA_REPOSITORY = (
-    WORKSPACE_ROOT
+# Possible locations of STOCK_SCANNER_DATA
+GITHUB_DATA_REPOSITORY = (
+    PROJECT_ROOT
     / "STOCK_SCANNER_DATA"
 )
+
+LOCAL_DATA_REPOSITORY = (
+    PROJECT_ROOT.parent
+    / "STOCK_SCANNER_DATA"
+)
+
+if GITHUB_DATA_REPOSITORY.exists():
+
+    DATA_REPOSITORY = GITHUB_DATA_REPOSITORY
+
+elif LOCAL_DATA_REPOSITORY.exists():
+
+    DATA_REPOSITORY = LOCAL_DATA_REPOSITORY
+
+else:
+
+    raise FileNotFoundError(
+        "STOCK_SCANNER_DATA repository not found."
+    )
 
 # Raw Data
 RAW_DATA_DIRECTORY = (
