@@ -36,7 +36,7 @@ Daily_Data_Preparation().run(
 # =========================================================
 
 strategy_results = [
-    run_strategy_1(SAVE_OUTPUT),
+    run_strategy_1(SAVE_OUTPUT)
     
     # run_strategy_2(
     #     recommendation_date=TODAY,
