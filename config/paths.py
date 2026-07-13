@@ -59,3 +59,26 @@ MASTER_UNIVERSE_FILE = (
     DATA_REPOSITORY
     / "master_universe.csv"
 )
+
+FINAL_RECOMMENDATIONS_FOLDER = (
+    DATA_REPOSITORY / "final_recommendations"
+)
+
+STRATEGIES_FOLDER = (
+    DATA_REPOSITORY / "strategies"
+)
+
+REPORT_FOLDER = (
+    DATA_REPOSITORY / "analysis" / "reports"
+)
+
+BACKTESTING_FOLDER = (
+    DATA_REPOSITORY
+    / "backtesting"
+)
+
+BACKTEST_RESULTS_FOLDER = (
+    BACKTESTING_FOLDER
+    / "results"
+)
+

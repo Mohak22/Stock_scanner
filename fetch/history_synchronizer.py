@@ -51,12 +51,16 @@ class HistorySynchronizer:
         file_name: str
     ) -> bool:
     
-        return (
-    
+        file_path = (
             self.downloader.raw_data_dir
             / file_name
+        )
     
-        ).exists()
+        print(f"Checking : {file_path}")
+    
+        print(f"Exists   : {file_path.exists()}")
+    
+        return file_path.exists()
     
     def _download_if_available(
         self,

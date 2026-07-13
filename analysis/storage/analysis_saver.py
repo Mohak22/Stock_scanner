@@ -8,7 +8,7 @@ Created on Sun Jun 14 14:31:30 2026
 from datetime import date
 import pandas as pd
 
-from config.paths import DATA_REPO
+from config.paths import DATA_REPOSITORY
 
 def save_analysis(
     analysis_df: pd.DataFrame,
@@ -16,7 +16,7 @@ def save_analysis(
 ) -> None:
 
     output_folder = (
-        DATA_REPO
+        DATA_REPOSITORY
         / "analysis"
         / strategy_name
     )

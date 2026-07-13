@@ -9,14 +9,17 @@ from pathlib import Path
 
 import pandas as pd
 
+from reports.excel_report_generator import (
+    save_output
+)
 
 def build_master_universe(
     processed_directory: Path,
-    output_file: Path,
     liquidity_window: int = 20,
-    minimum_traded_value: float = 1_00_00_000
+    minimum_traded_value: float = 1_00_00_000,
+    save_output_flag: bool = True
 ) -> pd.DataFrame:
- 
+
     parquet_files = sorted(
         processed_directory.glob("*.parquet"),
         reverse=True
@@ -73,29 +76,22 @@ def build_master_universe(
         ["SYMBOL"]
     ]
 
-    master_universe = master_universe.sort_values(
-        "SYMBOL"
-    ).reset_index(
-        drop=True
+    master_universe = (
+        master_universe
+        .sort_values("SYMBOL")
+        .reset_index(drop=True)
     )
 
-    output_file.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    master_universe.to_csv(
-        output_file,
-        index=False
+    save_output(
+        dataframe=master_universe,
+        folder_name="",
+        file_name="master_universe.csv",
+        save_output=save_output_flag
     )
 
     print(
         f"\nMaster Universe Created : "
         f"{len(master_universe)} Stocks"
-    )
-
-    print(
-        f"Saved : {output_file}"
     )
 
     return master_universe

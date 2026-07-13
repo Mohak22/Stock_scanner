@@ -15,16 +15,7 @@ from openpyxl.utils import (
     get_column_letter
 )
 
-BASE_PATH = (
-    Path(__file__)
-    .resolve()
-    .parents[1]
-)
-
-DATA_REPO_PATH = (
-    BASE_PATH
-    / "STOCK_SCANNER_DATA"
-)
+from config.paths import DATA_REPOSITORY
 
 # =========================================================
 # GENERATE EXCEL REPORT
@@ -111,9 +102,10 @@ def save_output(
         return
 
     save_folder = (
-
-        DATA_REPO_PATH
+    
+        DATA_REPOSITORY
         / folder_name
+    
     )
 
     save_folder.mkdir(
@@ -122,16 +114,32 @@ def save_output(
     )
 
     file_path = (
-
         save_folder
         / file_name
     )
 
-    dataframe.to_csv(
-        file_path,
-        index=False
-    )
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".csv":
+
+        dataframe.to_csv(
+            file_path,
+            index=False
+        )
+
+    elif suffix == ".parquet":
+
+        dataframe.to_parquet(
+            file_path,
+            index=False
+        )
+
+    else:
+
+        raise ValueError(
+            f"Unsupported file type : {suffix}"
+        )
 
     print(
-        f"\nSaved: {file_path}"
+        f"\nSaved : {file_path}"
     )

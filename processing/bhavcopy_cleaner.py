@@ -8,6 +8,10 @@ Created on Mon Jul  6 11:03:40 2026
 from pathlib import Path
 import pandas as pd 
 
+from reports.excel_report_generator import (
+    save_output
+)
+
 class BhavcopyCleaner:
     COLUMN_MAPPING = {
         "DATE1": "TIMESTAMP",
@@ -198,27 +202,23 @@ class BhavcopyCleaner:
         raw_file_path: Path
     ) -> Path:
     
-        output_path = (
+        file_name = raw_file_path.with_suffix(
+            ".parquet"
+        ).name
     
+        save_output(
+    
+            dataframe=dataframe,
+    
+            folder_name="processed_bhavcopy",
+    
+            file_name=file_name,
+    
+            save_output=True
+    
+        )
+    
+        return (
             self.processed_directory
-    
-            / raw_file_path.with_suffix(".parquet").name
-    
+            / file_name
         )
-    
-        dataframe.to_parquet(
-    
-            output_path,
-    
-            index=False
-    
-        )
-    
-        print(
-    
-            f"Saved : {output_path.name}"
-    
-        )
-    
-        return output_path
-    

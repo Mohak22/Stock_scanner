@@ -8,56 +8,30 @@ Created on Sun Jun 28 14:25:52 2026
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 
 from openpyxl.utils import get_column_letter
 
-from datetime import datetime 
-
-# =========================================================
-# PATHS
-# =========================================================
-
-BASE_PATH = (
-    Path(__file__)
-    .resolve()
-    .parents[1]
-)
-
-DATA_REPO_PATH = (
-    BASE_PATH
-    / "STOCK_SCANNER_DATA"
-)
-
-FINAL_RECOMMENDATION_PATH = (
-    DATA_REPO_PATH
-    / "final_recommendations"
-)
-
-STRATEGIES_PATH = (
-    DATA_REPO_PATH
-    / "strategies"
+from config.paths import (
+    FINAL_RECOMMENDATIONS_FOLDER,
+    STRATEGIES_FOLDER,
+    DATA_REPOSITORY
 )
 
 TEMP_FOLDER = (
-
-    DATA_REPO_PATH
-
+    DATA_REPOSITORY
     / "temp"
 )
 
 TEMP_FOLDER.mkdir(
-
     parents=True,
-
     exist_ok=True
 )
 
 REPORT_PATH = (
-
     TEMP_FOLDER
-
     / "recommendation_workbook.xlsx"
 )
 
@@ -102,7 +76,7 @@ def generate_recommendation_workbook() -> Path:
     )
     
     final_file = (
-        FINAL_RECOMMENDATION_PATH
+        FINAL_RECOMMENDATIONS_FOLDER
         / f"final_recommendations_{current_date}.csv"
     )
     
@@ -143,13 +117,13 @@ def generate_recommendation_workbook() -> Path:
         
         strategy_outputs_found = False
         
-        if STRATEGIES_PATH.exists():
+        if STRATEGIES_FOLDER.exists():
 
             strategy_folders = sorted(
 
                 folder
 
-                for folder in STRATEGIES_PATH.iterdir()
+                for folder in STRATEGIES_FOLDER.iterdir()
 
                 if folder.is_dir()
             )

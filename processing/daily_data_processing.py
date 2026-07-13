@@ -115,9 +115,8 @@ class Daily_Data_Preparation:
     ):
 
         build_master_universe(
-
+        
             processed_directory=PROCESSED_BHAVCOPY_DIRECTORY,
-
-            output_file=MASTER_UNIVERSE_FILE
-
+        
+            save_output_flag=True
         )

@@ -9,8 +9,8 @@ import pandas as pd
 from datetime import date
 from pathlib import Path
 
-from reports.excel_formatter import autofit_columns
-from reports.summary_generator import create_summary
+from analysis.reports.excel_formatter import autofit_columns
+from analysis.reports.summary_generator import create_summary
 from config.paths import REPORT_FOLDER
 
 def generate_excel_report(
