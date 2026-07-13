@@ -34,7 +34,7 @@ jobs:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
-          python analysis/analysis_orchestrator.py
+          python -m analysis.analysis_orchestrator
 
       - name: Push Analysis Outputs
         run: |
