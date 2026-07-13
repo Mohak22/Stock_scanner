@@ -12,8 +12,6 @@ from reports.excel_report_generator import (
     save_output
 )
 
-from config.paths import PROCESSED_BHAVCOPY_FOLDER
-
 class BhavcopyCleaner:
     COLUMN_MAPPING = {
         "DATE1": "TIMESTAMP",
@@ -212,7 +210,7 @@ class BhavcopyCleaner:
     
             dataframe=dataframe,
     
-            folder_name=PROCESSED_BHAVCOPY_FOLDER,
+            folder_name="processed/bhavcopy",
     
             file_name=file_name,
     
