@@ -53,6 +53,5 @@ EMAIL_PASSWORD = os.getenv(
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
-    "prasadwagle08@gmail.com",
-    "neetapwagle@gmail.com"
+    "prasadwagle08@gmail.com"
 ]
