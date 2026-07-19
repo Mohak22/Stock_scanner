@@ -135,7 +135,7 @@ class NSEReportDownloader:
         trading_date: str = "",
         display_name: str = "",
         file_size: str = ""
-    ) -> ReportMetadata:
+    ) -> ReportMetadata | None:
     
         output_path = (
             self.raw_data_dir
@@ -160,67 +160,46 @@ class NSEReportDownloader:
         print(
             f"\nDownloading : {file_name}"
         )
-
+    
         print(
             f"Download URL : {download_url}"
         )
-
-        print("\nChecking NSE homepage...")
-        
-        homepage_response = self.session.get(
-            "https://www.nseindia.com",
-            timeout=20
-        )
-        
-        print(
-            f"NSE Homepage Status : {homepage_response.status_code}"
-        )
-
-        max_attempts = 3
     
-        for attempt in range(1, max_attempts + 1):
+        try:
     
-            try:
+            response = self.session.get(
+                download_url,
+                timeout=60
+            )
     
-                response = self.session.get(
-                    download_url,
-                    timeout=60
-                )
+            response.raise_for_status()
     
-                response.raise_for_status()
+            output_path.write_bytes(
+                response.content
+            )
     
-                output_path.write_bytes(
-                    response.content
-                )
+            print(
+                f"Downloaded : {output_path}"
+            )
     
-                print(
-                    f"Downloaded : {output_path}"
-                )
+            return ReportMetadata(
+                file_name=file_name,
+                file_path=output_path,
+                trading_date=trading_date,
+                display_name=display_name,
+                file_size=file_size,
+                downloaded=True
+            )
     
-                return ReportMetadata(
-                    file_name=file_name,
-                    file_path=output_path,
-                    trading_date=trading_date,
-                    display_name=display_name,
-                    file_size=file_size,
-                    downloaded=True
-                )
+        except Exception as e:
     
-            except requests.exceptions.ReadTimeout:
+            print(
+                f"\nFailed to download : {file_name}"
+            )
     
-                print(
-                    f"\nAttempt {attempt} of {max_attempts} timed out."
-                )
+            print(e)
     
-                if attempt == max_attempts:
-    
-                    raise
-    
-                print(
-                    "Retrying in 5 seconds..."
-                )
-    
-                time.sleep(5)
+            return None
 
     def download_report(
         self,
