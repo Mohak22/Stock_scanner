@@ -67,24 +67,14 @@ class HistorySynchronizer:
         file_name: str
     ) -> bool:
     
-        try:
+        metadata = self.downloader.download_raw_file(
     
-            self.downloader.download_raw_file(
+            file_name=file_name
     
-                file_name=file_name
+        )
     
-            )
-    
-            return True
-    
-        except requests.HTTPError as error:
-    
-            if error.response.status_code == 404:
-    
-                return False
-    
-            raise
-            
+        return metadata is not None
+
     def synchronize_history(
         self
     ):
@@ -102,6 +92,17 @@ class HistorySynchronizer:
     
         while history_count < self.history_window:
     
+            # Skip Saturday and Sunday
+            if current_date.weekday() >= 5:
+    
+                print(
+                    f"Skipping weekend : {current_date.strftime('%d-%m-%Y')}"
+                )
+    
+                current_date -= timedelta(days=1)
+    
+                continue
+    
             file_name = self._build_filename(
                 current_date
             )
@@ -112,11 +113,21 @@ class HistorySynchronizer:
     
                 history_count += 1
     
-            elif self._download_if_available(
-                file_name
-            ):
+            else:
     
-                history_count += 1
+                downloaded = self._download_if_available(
+                    file_name
+                )
+    
+                if downloaded:
+    
+                    history_count += 1
+    
+                else:
+    
+                    print(
+                        f"Skipping : {file_name}"
+                    )
     
             current_date -= timedelta(days=1)
     
