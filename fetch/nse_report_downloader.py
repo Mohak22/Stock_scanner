@@ -7,7 +7,7 @@ Created on Thu Jul  2 22:08:26 2026
 
 from dataclasses import dataclass
 from pathlib import Path
-
+import time
 import requests
 
 @dataclass
@@ -152,29 +152,55 @@ class NSEReportDownloader:
                 downloaded=False
             )
     
-        print(f"\nDownloading : {file_name}")
-    
-        response = self.session.get(
-            download_url,
-            timeout=60
+        print(
+            f"\nDownloading : {file_name}"
         )
     
-        response.raise_for_status()
+        max_attempts = 3
     
-        output_path.write_bytes(
-            response.content
-        )
+        for attempt in range(1, max_attempts + 1):
     
-        print(f"Downloaded : {output_path}")
+            try:
     
-        return ReportMetadata(
-            file_name=file_name,
-            file_path=output_path,
-            trading_date=trading_date,
-            display_name=display_name,
-            file_size=file_size,
-            downloaded=True
-        )
+                response = self.session.get(
+                    download_url,
+                    timeout=60
+                )
+    
+                response.raise_for_status()
+    
+                output_path.write_bytes(
+                    response.content
+                )
+    
+                print(
+                    f"Downloaded : {output_path}"
+                )
+    
+                return ReportMetadata(
+                    file_name=file_name,
+                    file_path=output_path,
+                    trading_date=trading_date,
+                    display_name=display_name,
+                    file_size=file_size,
+                    downloaded=True
+                )
+    
+            except requests.exceptions.ReadTimeout:
+    
+                print(
+                    f"\nAttempt {attempt} of {max_attempts} timed out."
+                )
+    
+                if attempt == max_attempts:
+    
+                    raise
+    
+                print(
+                    "Retrying in 5 seconds..."
+                )
+    
+                time.sleep(5)
 
     def download_report(
         self,
