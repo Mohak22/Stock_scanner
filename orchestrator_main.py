@@ -26,11 +26,10 @@ TODAY = date.today()
 
 HISTORY_WINDOW = 60
 
-# Daily_Data_Preparation().run(
-#     recommendation_date=TODAY,
-#     history_window=HISTORY_WINDOW
-
-# )
+Daily_Data_Preparation().run(
+    recommendation_date=TODAY,
+    history_window=HISTORY_WINDOW
+)
 # =========================================================
 # RUN STRATEGIES
 # =========================================================
