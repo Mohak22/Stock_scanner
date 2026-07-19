@@ -63,12 +63,17 @@ class NSEReportDownloader:
     
         self.session = requests.Session()
     
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0",
-                "Referer": "https://www.nseindia.com/all-reports"
-            }
-        )
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/138.0.0.0 Safari/537.36"
+            ),
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.nseindia.com/all-reports",
+            "Connection": "keep-alive"
+        })
     
     def _fetch_report_catalogue(
         self,
@@ -155,7 +160,22 @@ class NSEReportDownloader:
         print(
             f"\nDownloading : {file_name}"
         )
-    
+
+        print(
+            f"Download URL : {download_url}"
+        )
+
+        print("\nChecking NSE homepage...")
+        
+        homepage_response = self.session.get(
+            "https://www.nseindia.com",
+            timeout=20
+        )
+        
+        print(
+            f"NSE Homepage Status : {homepage_response.status_code}"
+        )
+
         max_attempts = 3
     
         for attempt in range(1, max_attempts + 1):
