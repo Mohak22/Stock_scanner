@@ -18,7 +18,7 @@ from config.paths import (
     MASTER_UNIVERSE_FILE
 )
 
-from indicators.ema import calculate_ema
+from indicators.ema_engine import calculate_ema
 
 
 from strategies.strategy2.strategy2_config import (
@@ -42,166 +42,90 @@ class Strategy2:
     ) -> pd.DataFrame:
         """
         Generate recommendations for a given recommendation date.
-        
+
         Production:
             history=None
-        
+
         Backtesting:
             Supply preloaded history to avoid repeated disk I/O.
-        
+
         Returns
         -------
         pd.DataFrame
             Top-ranked recommendations.
         """
+
         # Production: load history internally
         if history is None:
-    
+
             history = self._load_history(
                 recommendation_date
             )
-    
+
         # Feature Engineering
         history = self._build_features(
             history
         )
-    
+
         # Keep only recommendation date
         history = self._keep_latest_trading_day(
             history
         )
-    
+
         # Score Calculation
         history = self._calculate_delivery_score(
             history
         )
-    
+
         history = self._calculate_volume_score(
             history
         )
-    
+
         history = self._calculate_final_score(
             history
         )
-    
+
         # Remove rows without enough history
         history = history.dropna(
             subset=["FINAL_SCORE"]
         )
-    
+
         # Ranking
         history = self._rank_recommendations(
             history
         )
-    
-        return history
-        self,
-        recommendation_date: date,
-        history: pd.DataFrame | None = None
-    ) -> pd.DataFrame:
-    
-        # Production: load history internally
-        if history is None:
-    
-            history = self._load_history(
-                recommendation_date
-            )
-    
-        # Feature Engineering
-        history = self._build_features(
-            history
-        )
-    
-        # Keep only recommendation date
-        history = self._keep_latest_trading_day(
-            history
-        )
-    
-        # Score Calculation
-        history = self._calculate_delivery_score(
-            history
-        )
-    
-        history = self._calculate_volume_score(
-            history
-        )
-    
-        history = self._calculate_final_score(
-            history
-        )
-    
-        # Ranking
-        history = self._rank_recommendations(
-            history
-        )
-    
-        return history
-        self,
-        recommendation_date: date,
-        save_output: bool
-    ):
 
-        history = self._load_history(recommendation_date)
-
-        history = self._add_moving_averages(
-            history
-        )
-
-        history = self._classify_direction(
-            history
-        )
-
-        history = self._add_delivery_features(
-            history
-        )
-        
-        history = self._add_volume_features(
-            history
-        )
-        
-        history = self._keep_latest_trading_day(
-            history
-        )
-        
-        history = history.replace(
-        
-            [np.inf, -np.inf],
-        
-            np.nan
-        
-        )
-        
         return history
 
     def _build_features(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
+
         history = self._add_moving_averages(
             history
         )
-    
+
         history = self._classify_direction(
             history
         )
-    
+
         history = self._add_delivery_features(
             history
         )
-    
+
         history = self._add_volume_features(
             history
         )
-    
+
         history = history.replace(
-    
+
             [np.inf, -np.inf],
-    
+
             np.nan
-    
+
         )
-    
+
         return history
     
     def _load_history(

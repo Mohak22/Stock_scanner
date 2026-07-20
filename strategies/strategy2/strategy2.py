@@ -7,8 +7,6 @@ Created on Sun Jul 12 10:03:24 2026
 
 from datetime import date, datetime
 
-from reports.save_output import save_output
-
 from strategies.strategy2.accumulation import (
     Strategy2
 )
@@ -17,6 +15,9 @@ from strategies.strategy2.strategy2_config import (
     Strategy2Config
 )
 
+from reports.excel_report_generator import (
+    save_output
+)
 
 STRATEGY_NAME = "accumulation"
 
