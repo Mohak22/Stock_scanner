@@ -97,3 +97,8 @@ BACKTEST_RESULTS_FOLDER = (
     / "results"
 )
 
+BACKTEST_STRATEGIES_FOLDER = (
+    BACKTESTING_FOLDER
+    / "strategies"
+)
+

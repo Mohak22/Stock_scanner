@@ -12,6 +12,8 @@ from datetime import date
 @dataclass
 class Experiment:
 
+    experiment_id: str
+
     strategy: object
 
     config: object

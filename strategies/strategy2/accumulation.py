@@ -21,27 +21,121 @@ from config.paths import (
 from indicators.ema import calculate_ema
 
 
+from strategies.strategy2.strategy2_config import (
+    Strategy2Config
+)
+
+
 class Strategy2:
 
-    HISTORY_WINDOW = 60
+    def __init__(
+        self,
+        config: Strategy2Config
+    ):
 
-    EMA20_PERIOD = 20
-
-    EMA50_PERIOD = 50
-    
-    DELIVERY_SHORT_WINDOW = 5
-
-    DELIVERY_MEDIUM_WINDOW = 20
-   
-    DELIVERY_LONG_WINDOW = 60
-    
-    VOLUME_SHORT_WINDOW = 5
-
-    VOLUME_MEDIUM_WINDOW = 20
-    
-    VOLUME_LONG_WINDOW = 60
+        self.config = config
 
     def run(
+        self,
+        recommendation_date: date,
+        history: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+        """
+        Generate recommendations for a given recommendation date.
+        
+        Production:
+            history=None
+        
+        Backtesting:
+            Supply preloaded history to avoid repeated disk I/O.
+        
+        Returns
+        -------
+        pd.DataFrame
+            Top-ranked recommendations.
+        """
+        # Production: load history internally
+        if history is None:
+    
+            history = self._load_history(
+                recommendation_date
+            )
+    
+        # Feature Engineering
+        history = self._build_features(
+            history
+        )
+    
+        # Keep only recommendation date
+        history = self._keep_latest_trading_day(
+            history
+        )
+    
+        # Score Calculation
+        history = self._calculate_delivery_score(
+            history
+        )
+    
+        history = self._calculate_volume_score(
+            history
+        )
+    
+        history = self._calculate_final_score(
+            history
+        )
+    
+        # Remove rows without enough history
+        history = history.dropna(
+            subset=["FINAL_SCORE"]
+        )
+    
+        # Ranking
+        history = self._rank_recommendations(
+            history
+        )
+    
+        return history
+        self,
+        recommendation_date: date,
+        history: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
+    
+        # Production: load history internally
+        if history is None:
+    
+            history = self._load_history(
+                recommendation_date
+            )
+    
+        # Feature Engineering
+        history = self._build_features(
+            history
+        )
+    
+        # Keep only recommendation date
+        history = self._keep_latest_trading_day(
+            history
+        )
+    
+        # Score Calculation
+        history = self._calculate_delivery_score(
+            history
+        )
+    
+        history = self._calculate_volume_score(
+            history
+        )
+    
+        history = self._calculate_final_score(
+            history
+        )
+    
+        # Ranking
+        history = self._rank_recommendations(
+            history
+        )
+    
+        return history
         self,
         recommendation_date: date,
         save_output: bool
@@ -78,27 +172,86 @@ class Strategy2:
         )
         
         return history
-    
-    def _load_history(
-        self,  recommendation_date
+
+    def _build_features(
+        self,
+        history: pd.DataFrame
     ) -> pd.DataFrame:
     
-        parquet_files = sorted(
+        history = self._add_moving_averages(
+            history
+        )
     
-            PROCESSED_BHAVCOPY_DIRECTORY.glob(
-                "*.parquet"
-            ),
+        history = self._classify_direction(
+            history
+        )
     
-            reverse=True
+        history = self._add_delivery_features(
+            history
+        )
     
-        )[:self.HISTORY_WINDOW]
+        history = self._add_volume_features(
+            history
+        )
+    
+        history = history.replace(
+    
+            [np.inf, -np.inf],
+    
+            np.nan
+    
+        )
+    
+        return history
+    
+    def _load_history(
+        self,
+        recommendation_date: date
+    ) -> pd.DataFrame:
+    
+        parquet_files = []
+    
+        for file in PROCESSED_BHAVCOPY_DIRECTORY.glob(
+            "*.parquet"
+        ):
+    
+            file_date = date.fromisoformat(
+                f"{file.stem[-4:]}-{file.stem[-6:-4]}-{file.stem[-8:-6]}"
+            )
+    
+            if file_date <= recommendation_date:
+    
+                parquet_files.append(
+                    (
+                        file_date,
+                        file
+                    )
+                )
+    
+        parquet_files = [
+    
+            file
+    
+            for _, file in sorted(
+    
+                parquet_files,
+    
+                key=lambda x: x[0],
+    
+                reverse=True
+    
+            )[:self.config.history_window]
+    
+        ]
     
         history = pd.concat(
     
             [
+    
                 pd.read_parquet(file)
     
                 for file in parquet_files
+    
             ],
     
             ignore_index=True
@@ -110,9 +263,13 @@ class Strategy2:
         )
     
         history = history[
+    
             history["SYMBOL"].isin(
+    
                 master_universe["SYMBOL"]
+    
             )
+    
         ]
     
         history = history.sort_values(
@@ -139,47 +296,47 @@ class Strategy2:
     ) -> pd.DataFrame:
     
         history["EMA20"] = (
-    
+        
             history
-    
+        
             .groupby("SYMBOL")["CLOSE"]
-    
+        
             .transform(
-    
+        
                 lambda close_prices:
-    
+        
                 calculate_ema(
-    
+        
                     close_prices,
-    
-                    self.EMA20_PERIOD
-    
+        
+                    self.config.ema_fast_period
+        
                 )
-    
+        
             )
-    
+        
         )
-    
+        
         history["EMA50"] = (
-    
+        
             history
-    
+        
             .groupby("SYMBOL")["CLOSE"]
-    
+        
             .transform(
-    
+        
                 lambda close_prices:
-    
+        
                 calculate_ema(
-    
+        
                     close_prices,
-    
-                    self.EMA50_PERIOD
-    
+        
+                    self.config.ema_slow_period
+        
                 )
-    
+        
             )
-    
+        
         )
     
         return history
@@ -249,9 +406,9 @@ class Strategy2:
         
                 delivery.rolling(
         
-                    window=self.DELIVERY_SHORT_WINDOW,
+                    window=self.config.delivery_short_window,
         
-                    min_periods=self.DELIVERY_SHORT_WINDOW
+                    min_periods=self.config.delivery_short_window
         
                 ).mean()
         
@@ -271,9 +428,9 @@ class Strategy2:
         
                 delivery.rolling(
         
-                    window=self.DELIVERY_MEDIUM_WINDOW,
+                    window=self.config.delivery_medium_window,
         
-                    min_periods=self.DELIVERY_MEDIUM_WINDOW
+                    min_periods=self.config.delivery_medium_window
         
                 ).mean()
         
@@ -293,9 +450,9 @@ class Strategy2:
         
                 delivery.rolling(
         
-                    window=self.DELIVERY_LONG_WINDOW,
+                    window=self.config.delivery_long_window,
         
-                    min_periods=self.DELIVERY_LONG_WINDOW
+                    min_periods=self.config.delivery_long_window
         
                 ).mean()
         
@@ -345,9 +502,9 @@ class Strategy2:
     
                 volume.rolling(
     
-                    window=self.VOLUME_SHORT_WINDOW,
+                    window=self.config.volume_short_window,
     
-                    min_periods=self.VOLUME_SHORT_WINDOW
+                    min_periods=self.config.volume_short_window
     
                 ).mean()
     
@@ -367,9 +524,9 @@ class Strategy2:
     
                 volume.rolling(
     
-                    window=self.VOLUME_MEDIUM_WINDOW,
+                    window=self.config.volume_medium_window,
     
-                    min_periods=self.VOLUME_MEDIUM_WINDOW
+                    min_periods=self.config.volume_medium_window
     
                 ).mean()
     
@@ -389,9 +546,9 @@ class Strategy2:
     
                 volume.rolling(
     
-                    window=self.VOLUME_LONG_WINDOW,
+                    window=self.config.volume_long_window,
     
-                    min_periods=self.VOLUME_LONG_WINDOW
+                    min_periods=self.config.volume_long_window
     
                 ).mean()
     
@@ -444,3 +601,75 @@ class Strategy2:
         )
     
         return history
+        
+    def _calculate_delivery_score(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+    
+        history["DELIVERY_SCORE"] = (
+    
+            self.config.delivery_recent_weight
+            * history["DELIVERY_RATIO_5_20"]
+    
+            +
+    
+            self.config.delivery_medium_weight
+            * history["DELIVERY_RATIO_20_60"]
+    
+        )
+    
+        return history
+    
+    def _calculate_volume_score(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+    
+        history["VOLUME_SCORE"] = (
+    
+            self.config.volume_recent_weight
+            * history["VOLUME_RATIO_5_20"]
+    
+            +
+    
+            self.config.volume_medium_weight
+            * history["VOLUME_RATIO_20_60"]
+    
+        )
+    
+        return history
+    
+    def _calculate_final_score(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+    
+        history["FINAL_SCORE"] = (
+    
+            self.config.delivery_weight
+            * history["DELIVERY_SCORE"]
+    
+            +
+    
+            self.config.volume_weight
+            * history["VOLUME_SCORE"]
+    
+        )
+    
+        return history
+    
+    def _rank_recommendations(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+    
+        history = history.sort_values(
+            by="FINAL_SCORE",
+            ascending=False
+        )
+    
+        return history.head(
+            self.config.top_n
+        ).reset_index(drop=True)
+    
