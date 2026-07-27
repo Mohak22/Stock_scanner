@@ -7,7 +7,7 @@ Created on ...
 
 from dataclasses import dataclass
 
-from backtesting.experiment import (
+from backtesting.backtest_experiment import (
     Experiment
 )
 

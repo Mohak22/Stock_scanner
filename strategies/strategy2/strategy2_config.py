@@ -19,11 +19,17 @@ class Strategy2Config:
     history_window: int = 60
 
     # Optional.
-    # Production -> None (strategy loads data)
+    # Production -> None
     # Backtesting -> supplied by Experiment
     start_date: date | None = None
 
     end_date: date | None = None
+
+    # ==========================
+    # RSI
+    # ==========================
+
+    rsi_period: int = 14
 
     # ==========================
     # Trend
@@ -65,12 +71,12 @@ class Strategy2Config:
     # Final Score
     # ==========================
 
-    delivery_weight: float = 0.50
+    delivery_weight: float = 1.00
 
-    volume_weight: float = 0.50
+    volume_weight: float = 0.00
 
     # ==========================
     # Output
     # ==========================
 
-    top_n: int = 25
+    top_n: int = 10

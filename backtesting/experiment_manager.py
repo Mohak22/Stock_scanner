@@ -10,7 +10,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from paths.config import (
+from config.paths import (
     BACKTEST_STRATEGIES_FOLDER
 )
 

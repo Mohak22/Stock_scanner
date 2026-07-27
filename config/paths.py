@@ -102,3 +102,12 @@ BACKTEST_STRATEGIES_FOLDER = (
     / "strategies"
 )
 
+BACKTEST_MARKET_DATA_FOLDER = (
+    BACKTESTING_FOLDER
+    / "market_data"
+)
+
+BACKTEST_NIFTY_FILE = (
+    BACKTEST_MARKET_DATA_FOLDER
+    / "nifty_50.parquet"
+)

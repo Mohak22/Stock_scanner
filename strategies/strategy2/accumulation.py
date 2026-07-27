@@ -42,59 +42,62 @@ class Strategy2:
     ) -> pd.DataFrame:
         """
         Generate recommendations for a given recommendation date.
-
+    
         Production:
             history=None
-
+    
         Backtesting:
             Supply preloaded history to avoid repeated disk I/O.
-
+    
         Returns
         -------
         pd.DataFrame
             Top-ranked recommendations.
         """
-
+    
         # Production: load history internally
         if history is None:
-
+    
             history = self._load_history(
                 recommendation_date
             )
-
+    
+        # Prevent modifying the caller's DataFrame
+        history = history.copy()
+    
         # Feature Engineering
         history = self._build_features(
             history
         )
-
+    
         # Keep only recommendation date
         history = self._keep_latest_trading_day(
             history
         )
-
+    
         # Score Calculation
         history = self._calculate_delivery_score(
             history
         )
-
+    
         history = self._calculate_volume_score(
             history
         )
-
+    
         history = self._calculate_final_score(
             history
         )
-
+    
         # Remove rows without enough history
         history = history.dropna(
             subset=["FINAL_SCORE"]
         )
-
+    
         # Ranking
         history = self._rank_recommendations(
             history
         )
-
+    
         return history
 
     def _build_features(
@@ -107,6 +110,10 @@ class Strategy2:
         )
 
         history = self._classify_direction(
+            history
+        )
+        
+        history = self._add_rsi(
             history
         )
 
@@ -211,6 +218,76 @@ class Strategy2:
     
         return history
     
+    def _add_rsi(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+    
+        period = self.config.rsi_period
+    
+        def calculate_rsi(
+            close_prices: pd.Series
+        ) -> pd.Series:
+    
+            delta = close_prices.diff()
+    
+            gain = delta.clip(
+                lower=0
+            )
+    
+            loss = (
+                -delta.clip(
+                    upper=0
+                )
+            )
+    
+            average_gain = gain.ewm(
+                alpha=1 / period,
+                adjust=False,
+                min_periods=period
+            ).mean()
+    
+            average_loss = loss.ewm(
+                alpha=1 / period,
+                adjust=False,
+                min_periods=period
+            ).mean()
+    
+            relative_strength = (
+                average_gain
+                / average_loss
+            )
+    
+            rsi = (
+                100
+                -
+                (
+                    100
+                    /
+                    (
+                        1
+                        + relative_strength
+                    )
+                )
+            )
+    
+            return rsi
+    
+        history["RSI_14"] = (
+    
+            history
+    
+            .groupby(
+                "SYMBOL"
+            )["CLOSE"]
+    
+            .transform(
+                calculate_rsi
+            )
+    
+        )
+    
+        return history
     def _add_moving_averages(
     
         self,

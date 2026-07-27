@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from paths.config import (
+from config.paths import (
     BACKTEST_STRATEGIES_FOLDER
 )
 
