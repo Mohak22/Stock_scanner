@@ -7,14 +7,92 @@ Created on Sun Jun 14 14:28:08 2026
 
 import pandas as pd
 
+
 def create_summary(
     analysis_df: pd.DataFrame,
     strategy_name: str
 ) -> pd.DataFrame:
 
+    # ==========================================
+    # EMPTY ANALYSIS
+    #
+    # A strategy may legitimately have no
+    # recommendations for the target date.
+    #
+    # Still include it in the summary with
+    # total_picks = 0 and empty metrics.
+    # ==========================================
+
+    if (
+        analysis_df is None
+        or analysis_df.empty
+    ):
+
+        return pd.DataFrame(
+            {
+                "strategy_name": [
+                    strategy_name
+                ],
+
+                "total_picks": [
+                    0
+                ],
+
+                "avg_btst_return_pct": [
+                    None
+                ],
+
+                "btst_win_rate_pct": [
+                    None
+                ],
+
+                "avg_btst_outperformance_pct": [
+                    None
+                ],
+
+                "avg_7d_return_pct": [
+                    None
+                ],
+
+                "return_7d_win_rate_pct": [
+                    None
+                ],
+
+                "avg_7d_outperformance_pct": [
+                    None
+                ],
+
+                "avg_14d_return_pct": [
+                    None
+                ],
+
+                "return_14d_win_rate_pct": [
+                    None
+                ],
+
+                "avg_14d_outperformance_pct": [
+                    None
+                ],
+
+                "avg_highest_return_pct": [
+                    None
+                ],
+
+                "avg_lowest_return_pct": [
+                    None
+                ]
+            }
+        )
+
+    # ==========================================
+    # NORMAL ANALYSIS
+    # ==========================================
+
     return pd.DataFrame(
         {
-            "strategy_name": [strategy_name],
+            "strategy_name": [
+                strategy_name
+            ],
 
             "total_picks": [
                 len(analysis_df)
@@ -89,7 +167,7 @@ def create_summary(
             ],
 
             # =====================================
-            # CURRENT
+            # 14 DAY
             # =====================================
 
             "avg_14d_return_pct": [
@@ -144,4 +222,4 @@ def create_summary(
                 )
             ]
         }
-    )   
+    )
