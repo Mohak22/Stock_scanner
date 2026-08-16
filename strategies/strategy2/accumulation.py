@@ -664,13 +664,67 @@ class Strategy2:
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
-        history = history.sort_values(
+
+        # Sort all candidates by final score
+        ranked = history.sort_values(
             by="FINAL_SCORE",
             ascending=False
+        ).copy()
+
+        selected = []
+
+        # ---------------------------------------------------------
+        # 1. Top 3 STRONG_UPTREND stocks
+        # ---------------------------------------------------------
+        strong_uptrend = ranked[
+            ranked["DIRECTION"] == "STRONG_UPTREND"
+        ].head(3)
+
+        selected.append(strong_uptrend)
+
+        # Keep track of already selected stocks
+        selected_symbols = set(
+            strong_uptrend["SYMBOL"]
         )
-    
-        return history.head(
-            self.config.top_n
-        ).reset_index(drop=True)
+
+        # ---------------------------------------------------------
+        # 2. Top 3 PULLBACK stocks
+        # ---------------------------------------------------------
+        pullback = ranked[
+            (ranked["DIRECTION"] == "PULLBACK")
+            &
+            (~ranked["SYMBOL"].isin(selected_symbols))
+        ].head(3)
+
+        selected.append(pullback)
+
+        selected_symbols.update(
+            pullback["SYMBOL"]
+        )
+
+        # ---------------------------------------------------------
+        # 3. Fill remaining slots using highest FINAL_SCORE
+        #    without repeating already selected stocks
+        # ---------------------------------------------------------
+        remaining_slots = self.config.top_n - (
+            len(strong_uptrend) + len(pullback)
+        )
+
+        if remaining_slots > 0:
+
+            remaining = ranked[
+                ~ranked["SYMBOL"].isin(selected_symbols)
+            ].head(remaining_slots)
+
+            selected.append(remaining)
+
+        # ---------------------------------------------------------
+        # Combine selections
+        # ---------------------------------------------------------
+        recommendations = pd.concat(
+            selected,
+            ignore_index=True
+        )
+
+        return recommendations.reset_index(drop=True)
     

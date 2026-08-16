@@ -16,7 +16,7 @@ from reports.excel_report_generator import (
 def build_master_universe(
     processed_directory: Path,
     liquidity_window: int = 20,
-    minimum_traded_value: float = 5_00_00_000,
+    minimum_traded_value: float = 1_00_00_000,
     minimum_price: float = 30.0,
     save_output_flag: bool = True
 ) -> pd.DataFrame:

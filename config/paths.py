@@ -111,3 +111,30 @@ BACKTEST_NIFTY_FILE = (
     BACKTEST_MARKET_DATA_FOLDER
     / "nifty_50.parquet"
 )
+
+# Research market context.  This is deliberately separate from the
+# backtesting market-data cache above.
+RESEARCH_FOLDER = (
+    DATA_REPOSITORY
+    / "research"
+)
+
+RESEARCH_MARKET_CONTEXT_FOLDER = (
+    RESEARCH_FOLDER
+    / "market_context"
+)
+
+RESEARCH_MARKET_CONTEXT_INDICES_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "indices"
+)
+
+RESEARCH_MARKET_CONTEXT_SECTOR_INDICES_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "sector_indices"
+)
+
+RESEARCH_MARKET_CONTEXT_LOGS_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "logs"
+)
