@@ -15,7 +15,7 @@ on:
   # Friday     : Thursday's completed data
   # Saturday   : Friday's completed data
   #
-  # Sunday/Monday : NO RUN
+  # Sunday / Monday : NO RUN
   # ============================================================
 
   schedule:
@@ -29,7 +29,7 @@ on:
 
 
 # ==================================================================
-# JOBS
+# JOB
 # ==================================================================
 
 jobs:
@@ -64,15 +64,23 @@ jobs:
       #
       # IMPORTANT:
       #
-      # ../STOCK_SCANNER_DATA makes the two repositories siblings:
+      # The data repository is intentionally checked out INSIDE
+      # STOCK_SCANNER because GitHub Actions does not allow checkout
+      # outside the workspace.
       #
-      # /home/runner/work/Stock_scanner/
+      # Result:
       #
-      # ├── Stock_scanner/
-      # │
+      # Stock_scanner/
+      #
+      # ├── processing/
+      # ├── fetch/
+      # ├── research/
+      # ├── config/
       # └── STOCK_SCANNER_DATA/
       #
-      # This matches the existing config.paths architecture.
+      # config/paths.py must therefore use:
+      #
+      # PROJECT_ROOT / "STOCK_SCANNER_DATA"
       # ============================================================
 
       - name: Checkout STOCK_SCANNER_DATA
@@ -85,7 +93,7 @@ jobs:
 
           token: ${{ secrets.DATA_REPO_TOKEN }}
 
-          path: ../STOCK_SCANNER_DATA
+          path: STOCK_SCANNER_DATA
 
 
       # ============================================================
@@ -127,8 +135,8 @@ jobs:
       # STEP 5
       # VERIFY REPOSITORY STRUCTURE
       #
-      # Temporary but useful while validating the workflow.
-      # We can remove this later.
+      # Keep this for the first successful test.
+      # It can be removed later.
       # ============================================================
 
       - name: Verify repository structure
@@ -155,7 +163,7 @@ jobs:
           echo "STOCK_SCANNER_DATA"
           echo "========================================"
 
-          ls -la ../STOCK_SCANNER_DATA
+          ls -la STOCK_SCANNER_DATA
 
           echo ""
 
@@ -163,7 +171,7 @@ jobs:
           echo "MASTER UNIVERSE"
           echo "========================================"
 
-          if [ -f ../STOCK_SCANNER_DATA/master_universe.csv ]; then
+          if [ -f STOCK_SCANNER_DATA/master_universe.csv ]; then
               echo "master_universe.csv EXISTS"
           else
               echo "master_universe.csv DOES NOT EXIST"
@@ -174,13 +182,12 @@ jobs:
       # STEP 6
       # RUN DAILY DATA PREPARATION
       #
-      # PYTHONPATH makes the STOCK_SCANNER repository root
-      # available for imports such as:
+      # The Python code itself decides:
       #
-      # from fetch...
-      # from processing...
-      # from research...
-      # from config...
+      # data_as_of = yesterday
+      #
+      # Therefore today's incomplete data cannot intentionally
+      # enter the research dataset.
       # ============================================================
 
       - name: Run Daily Data Preparation
@@ -196,16 +203,14 @@ jobs:
 
       # ============================================================
       # STEP 7
-      # SHOW DATA REPOSITORY CHANGES
-      #
-      # Useful during initial testing.
+      # CHECK DATA REPOSITORY CHANGES
       # ============================================================
 
       - name: Check data repository changes
 
         run: |
 
-          cd ../STOCK_SCANNER_DATA
+          cd STOCK_SCANNER_DATA
 
           echo "========================================"
           echo "GIT STATUS"
@@ -231,7 +236,7 @@ jobs:
 
         run: |
 
-          cd ../STOCK_SCANNER_DATA
+          cd STOCK_SCANNER_DATA
 
           git config user.name "github-actions"
 

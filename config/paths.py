@@ -1,140 +1,278 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Jul  5 11:27:45 2026
+Central path configuration for STOCK_SCANNER.
 
-@author: mohak
+The project expects STOCK_SCANNER_DATA to be available
+inside the STOCK_SCANNER project directory.
+
+Local:
+
+    STOCK_SCANNER/
+        STOCK_SCANNER_DATA/
+
+GitHub Actions:
+
+    Stock_scanner/
+        Stock_scanner/
+            STOCK_SCANNER_DATA/
+
+This file should be the single source of truth for
+all data-repository paths.
 """
-
-# -*- coding: utf-8 -*-
 
 from pathlib import Path
 
-# STOCK_SCANNER repository
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Possible locations of STOCK_SCANNER_DATA
-GITHUB_DATA_REPOSITORY = (
+# ======================================================================
+# PROJECT ROOT
+# ======================================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+# ======================================================================
+# DATA REPOSITORY
+# ======================================================================
+
+DATA_REPOSITORY = (
     PROJECT_ROOT
     / "STOCK_SCANNER_DATA"
 )
 
-LOCAL_DATA_REPOSITORY = (
-    PROJECT_ROOT.parent
-    / "STOCK_SCANNER_DATA"
-)
 
-if GITHUB_DATA_REPOSITORY.exists():
+# ======================================================================
+# RAW DATA
+# ======================================================================
 
-    DATA_REPOSITORY = GITHUB_DATA_REPOSITORY
-
-elif LOCAL_DATA_REPOSITORY.exists():
-
-    DATA_REPOSITORY = LOCAL_DATA_REPOSITORY
-
-else:
-
-    raise FileNotFoundError(
-        "STOCK_SCANNER_DATA repository not found."
-    )
-
-# Raw Data
 RAW_DATA_DIRECTORY = (
     DATA_REPOSITORY
     / "raw"
 )
 
-RAW_NSE_DIRECTORY = (
-    RAW_DATA_DIRECTORY
-    / "nse"
-)
 
 RAW_BHAVCOPY_DIRECTORY = (
-    RAW_NSE_DIRECTORY
+    RAW_DATA_DIRECTORY
+    / "nse"
     / "bhavcopy"
 )
 
-# Processed Data
-PROCESSED_DIRECTORY = (
+
+RAW_MTO_DIRECTORY = (
+    RAW_DATA_DIRECTORY
+    / "nse"
+    / "mto"
+)
+
+
+# ======================================================================
+# PROCESSED DATA
+# ======================================================================
+
+PROCESSED_DATA_DIRECTORY = (
     DATA_REPOSITORY
     / "processed"
 )
 
+
 PROCESSED_BHAVCOPY_DIRECTORY = (
-    PROCESSED_DIRECTORY
+    PROCESSED_DATA_DIRECTORY
     / "bhavcopy"
 )
 
-# Analysis
-ANALYSIS_DIRECTORY = (
-    DATA_REPOSITORY
-    / "analysis"
-)
+
+# ======================================================================
+# MASTER UNIVERSE
+# ======================================================================
 
 MASTER_UNIVERSE_FILE = (
     DATA_REPOSITORY
     / "master_universe.csv"
 )
 
-FINAL_RECOMMENDATIONS_FOLDER = (
-    DATA_REPOSITORY / "final_recommendations"
-)
 
-STRATEGIES_FOLDER = (
-    DATA_REPOSITORY / "strategies"
-)
+# ======================================================================
+# RESEARCH UNIVERSE
+# ======================================================================
 
-REPORT_FOLDER = (
-    DATA_REPOSITORY / "analysis" / "reports"
-)
-
-BACKTESTING_FOLDER = (
+RESEARCH_UNIVERSE_FILE = (
     DATA_REPOSITORY
-    / "backtesting"
+    / "research_universe.csv"
 )
 
-BACKTEST_RESULTS_FOLDER = (
-    BACKTESTING_FOLDER
-    / "results"
-)
 
-BACKTEST_STRATEGIES_FOLDER = (
-    BACKTESTING_FOLDER
-    / "strategies"
-)
+# ======================================================================
+# RESEARCH DATA
+# ======================================================================
 
-BACKTEST_MARKET_DATA_FOLDER = (
-    BACKTESTING_FOLDER
-    / "market_data"
-)
-
-BACKTEST_NIFTY_FILE = (
-    BACKTEST_MARKET_DATA_FOLDER
-    / "nifty_50.parquet"
-)
-
-# Research market context.  This is deliberately separate from the
-# backtesting market-data cache above.
-RESEARCH_FOLDER = (
+RESEARCH_DIRECTORY = (
     DATA_REPOSITORY
     / "research"
 )
 
-RESEARCH_MARKET_CONTEXT_FOLDER = (
-    RESEARCH_FOLDER
+
+# ======================================================================
+# HISTORICAL STOCK MARKET DATA
+# ======================================================================
+
+HISTORICAL_MARKET_DATA_DIRECTORY = (
+    RESEARCH_DIRECTORY
+    / "historical_market_data"
+)
+
+
+HISTORICAL_MARKET_DATA_RAW_DIRECTORY = (
+    HISTORICAL_MARKET_DATA_DIRECTORY
+    / "raw"
+)
+
+
+HISTORICAL_MARKET_DATA_LOG_DIRECTORY = (
+    HISTORICAL_MARKET_DATA_DIRECTORY
+    / "logs"
+)
+
+
+# ======================================================================
+# MARKET CONTEXT
+# ======================================================================
+
+MARKET_CONTEXT_DIRECTORY = (
+    RESEARCH_DIRECTORY
     / "market_context"
 )
 
-RESEARCH_MARKET_CONTEXT_INDICES_FOLDER = (
-    RESEARCH_MARKET_CONTEXT_FOLDER
-    / "indices"
+
+# ======================================================================
+# SECTOR DATA
+# ======================================================================
+
+SECTOR_DATA_DIRECTORY = (
+    RESEARCH_DIRECTORY
+    / "sector_data"
 )
 
-RESEARCH_MARKET_CONTEXT_SECTOR_INDICES_FOLDER = (
-    RESEARCH_MARKET_CONTEXT_FOLDER
-    / "sector_indices"
+
+# ======================================================================
+# NSE REFERENCE DATA
+# ======================================================================
+
+REFERENCE_DATA_DIRECTORY = (
+    RESEARCH_DIRECTORY
+    / "reference_data"
 )
 
-RESEARCH_MARKET_CONTEXT_LOGS_FOLDER = (
-    RESEARCH_MARKET_CONTEXT_FOLDER
-    / "logs"
+
+# ======================================================================
+# OPTIONAL: CREATE REQUIRED DIRECTORIES
+# ======================================================================
+
+RAW_BHAVCOPY_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
 )
+
+RAW_MTO_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+PROCESSED_BHAVCOPY_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+RESEARCH_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+HISTORICAL_MARKET_DATA_RAW_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+HISTORICAL_MARKET_DATA_LOG_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+MARKET_CONTEXT_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+SECTOR_DATA_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+
+)
+
+REFERENCE_DATA_DIRECTORY.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+# ======================================================================
+# DEBUG
+# ======================================================================
+
+if __name__ == "__main__":
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "STOCK SCANNER PATH CONFIGURATION"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    print(
+        f"\nPROJECT_ROOT:\n"
+        f"{PROJECT_ROOT}"
+    )
+
+    print(
+        f"\nDATA_REPOSITORY:\n"
+        f"{DATA_REPOSITORY}"
+    )
+
+    print(
+        f"\nMASTER_UNIVERSE_FILE:\n"
+        f"{MASTER_UNIVERSE_FILE}"
+    )
+
+    print(
+        f"\nRESEARCH_UNIVERSE_FILE:\n"
+        f"{RESEARCH_UNIVERSE_FILE}"
+    )
+
+    print(
+        f"\nRAW_BHAVCOPY_DIRECTORY:\n"
+        f"{RAW_BHAVCOPY_DIRECTORY}"
+    )
+
+    print(
+        f"\nRAW_MTO_DIRECTORY:\n"
+        f"{RAW_MTO_DIRECTORY}"
+    )
+
+    print(
+        f"\nPROCESSED_BHAVCOPY_DIRECTORY:\n"
+        f"{PROCESSED_BHAVCOPY_DIRECTORY}"
+    )
+
+    print(
+        f"\nHISTORICAL_MARKET_DATA_RAW_DIRECTORY:\n"
+        f"{HISTORICAL_MARKET_DATA_RAW_DIRECTORY}"
+    )
+
+    print(
+        "\n"
+        + "=" * 70
+    )
