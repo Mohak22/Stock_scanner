@@ -89,9 +89,12 @@ jobs:
 
       - name: Run Daily Data Preparation
 
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
         run: |
 
-          python processing/daily_data_processing.py
+          python -m processing.daily_data_processing
 
 
       # ==========================================================
