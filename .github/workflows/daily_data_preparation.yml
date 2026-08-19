@@ -87,42 +87,7 @@ jobs:
       # RUN DAILY DATA PREPARATION
       # ==========================================================
 
-      - name: Debug workspace
-
-        run: |
-
-          echo "========================================"
-          echo "GITHUB WORKSPACE"
-          echo "========================================"
-
-          echo "$GITHUB_WORKSPACE"
-
-          echo ""
-          echo "========================================"
-          echo "ROOT"
-          echo "========================================"
-
-          pwd
-
-          ls -la
-
-          echo ""
-          echo "========================================"
-          echo "STOCK_SCANNER_DATA"
-          echo "========================================"
-
-          ls -la STOCK_SCANNER_DATA
-
-          echo ""
-          echo "========================================"
-          echo "MASTER UNIVERSE"
-          echo "========================================"
-
-          if [ -f STOCK_SCANNER_DATA/master_universe.csv ]; then
-              echo "master_universe.csv EXISTS"
-          else
-              echo "master_universe.csv DOES NOT EXIST"
-          fi
+      
       - name: Run Daily Data Preparation
 
         env:
@@ -141,7 +106,7 @@ jobs:
 
         run: |
 
-          cd STOCK_SCANNER_DATA
+          cd ../STOCK_SCANNER_DATA
 
           git config user.name "github-actions"
 
