@@ -49,7 +49,7 @@ jobs:
 
           token: ${{ secrets.DATA_REPO_TOKEN }}
 
-          path: STOCK_SCANNER_DATA
+          path: ../STOCK_SCANNER_DATA
 
 
       # ==========================================================
