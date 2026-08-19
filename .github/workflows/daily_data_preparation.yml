@@ -1,0 +1,115 @@
+name: Daily Data Preparation
+
+on:
+
+  # ============================================================
+  # RUN DAILY AT 6:00 AM IST
+  #
+  # 6:00 AM IST = 00:30 UTC
+  # ============================================================
+
+  schedule:
+    - cron: "30 0 * * 2-6"
+
+  # ============================================================
+  # MANUAL TESTING
+  # ============================================================
+
+  workflow_dispatch:
+
+
+jobs:
+
+  prepare-daily-data:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ==========================================================
+      # CHECKOUT STOCK_SCANNER
+      # ==========================================================
+
+      - name: Checkout STOCK_SCANNER
+
+        uses: actions/checkout@v4
+
+
+      # ==========================================================
+      # CHECKOUT STOCK_SCANNER_DATA
+      # ==========================================================
+
+      - name: Checkout STOCK_SCANNER_DATA
+
+        uses: actions/checkout@v4
+
+        with:
+
+          repository: Mohak22/STOCK_SCANNER_DATA
+
+          token: ${{ secrets.DATA_REPO_TOKEN }}
+
+          path: STOCK_SCANNER_DATA
+
+
+      # ==========================================================
+      # SET UP PYTHON
+      # ==========================================================
+
+      - name: Set up Python
+
+        uses: actions/setup-python@v5
+
+        with:
+
+          python-version: "3.11"
+
+
+      # ==========================================================
+      # INSTALL DEPENDENCIES
+      # ==========================================================
+
+      - name: Install dependencies
+
+        run: |
+
+          pip install \
+            yfinance \
+            pandas \
+            numpy \
+            pydantic \
+            openpyxl \
+            pyarrow \
+            requests
+
+
+      # ==========================================================
+      # RUN DAILY DATA PREPARATION
+      # ==========================================================
+
+      - name: Run Daily Data Preparation
+
+        run: |
+
+          python processing/daily_data_processing.py
+
+
+      # ==========================================================
+      # PUSH UPDATED DATA
+      # ==========================================================
+
+      - name: Push updated data
+
+        run: |
+
+          cd STOCK_SCANNER_DATA
+
+          git config user.name "github-actions"
+
+          git config user.email "github-actions@github.com"
+
+          git add .
+
+          git commit -m "Update daily research data" || echo "No changes to commit"
+
+          git push

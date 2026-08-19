@@ -5,6 +5,30 @@ Created on Mon Jul  6 11:41:09 2026
 @author: mohak
 """
 
+"""
+Created on Mon Jul 6 11:41:09 2026
+
+Master Universe Builder
+
+Responsibilities:
+    - Identify the latest available trading sessions.
+    - Calculate average traded value over the latest
+      liquidity window.
+    - Apply minimum liquidity and price filters.
+    - Build the current research/production universe.
+    - Save master_universe.csv.
+
+IMPORTANT:
+
+This function does NOT build the complete historical research dataset.
+
+The complete historical dataset remains stored separately
+in processed Bhavcopy Parquet files.
+
+The master universe is only the CURRENT eligible universe.
+"""
+
+
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +36,7 @@ import pandas as pd
 from reports.excel_report_generator import (
     save_output
 )
+
 
 def build_master_universe(
     processed_directory: Path,
@@ -21,11 +46,26 @@ def build_master_universe(
     save_output_flag: bool = True
 ) -> pd.DataFrame:
 
-    # ==========================================
-    # FIND AND SORT FILES BY ACTUAL DATE
-    # ==========================================
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "BUILDING MASTER UNIVERSE"
+    )
+
+    print(
+        "=" * 70
+    )
+
+
+    # ==================================================================
+    # FIND PROCESSED BHAVCOPY FILES
+    # ==================================================================
 
     file_information = []
+
 
     for parquet_file in processed_directory.glob(
         "sec_bhavdata_full_*.parquet"
@@ -48,6 +88,7 @@ def build_master_universe(
 
             continue
 
+
         file_information.append(
             (
                 file_date,
@@ -55,23 +96,37 @@ def build_master_universe(
             )
         )
 
+
+    # ==================================================================
+    # SORT BY ACTUAL TRADING DATE
+    # ==================================================================
+
     file_information.sort(
         key=lambda item: item[0],
         reverse=True
     )
 
+
+    # ==================================================================
+    # VALIDATE HISTORY
+    # ==================================================================
+
     if len(file_information) < liquidity_window:
 
         raise ValueError(
 
-            f"Only {len(file_information)} processed files found. "
-            f"At least {liquidity_window} required."
+            f"Only {len(file_information)} processed "
+            f"Bhavcopy files found. "
+
+            f"At least {liquidity_window} "
+            f"trading sessions are required."
 
         )
 
-    # ==========================================
-    # KEEP LATEST N TRADING SESSIONS
-    # ==========================================
+
+    # ==================================================================
+    # SELECT LATEST N TRADING SESSIONS
+    # ==================================================================
 
     selected_files = [
 
@@ -85,9 +140,26 @@ def build_master_universe(
 
     ]
 
-    # ==========================================
-    # LOAD HISTORY
-    # ==========================================
+
+    print(
+        f"\nLiquidity window : "
+        f"{liquidity_window} trading sessions"
+    )
+
+    print(
+        f"Latest session   : "
+        f"{file_information[0][0].date()}"
+    )
+
+    print(
+        f"Oldest session   : "
+        f"{file_information[liquidity_window - 1][0].date()}"
+    )
+
+
+    # ==================================================================
+    # LOAD ONLY REQUIRED HISTORY
+    # ==================================================================
 
     history = pd.concat(
 
@@ -105,24 +177,35 @@ def build_master_universe(
 
     )
 
+
+    # ==================================================================
+    # NORMALIZE TIMESTAMP
+    # ==================================================================
+
     history["TIMESTAMP"] = pd.to_datetime(
-        history["TIMESTAMP"]
+        history["TIMESTAMP"],
+        errors="coerce"
     )
 
-    # ==========================================
+
+    # ==================================================================
     # CALCULATE TRADED VALUE
-    # ==========================================
+    # ==================================================================
 
     history["TRADED_VALUE"] = (
 
         history["CLOSE"]
-        * history["TOTTRDQTY"]
+
+        *
+
+        history["TOTTRDQTY"]
 
     )
 
-    # ==========================================
-    # CALCULATE AVERAGE TRADED VALUE
-    # ==========================================
+
+    # ==================================================================
+    # AVERAGE TRADED VALUE
+    # ==================================================================
 
     liquidity = (
 
@@ -131,7 +214,9 @@ def build_master_universe(
         .groupby(
             "SYMBOL",
             as_index=False
-        )["TRADED_VALUE"]
+        )
+
+        ["TRADED_VALUE"]
 
         .mean()
 
@@ -144,9 +229,10 @@ def build_master_universe(
 
     )
 
-    # ==========================================
-    # GET LATEST CLOSE FOR EACH STOCK
-    # ==========================================
+
+    # ==================================================================
+    # LATEST CLOSE
+    # ==================================================================
 
     latest_prices = (
 
@@ -164,10 +250,12 @@ def build_master_universe(
         .tail(1)
 
         [
+
             [
                 "SYMBOL",
                 "CLOSE"
             ]
+
         ]
 
         .rename(
@@ -179,9 +267,10 @@ def build_master_universe(
 
     )
 
-    # ==========================================
-    # COMBINE ELIGIBILITY INFORMATION
-    # ==========================================
+
+    # ==================================================================
+    # COMBINE LIQUIDITY + PRICE
+    # ==================================================================
 
     master_universe = liquidity.merge(
 
@@ -193,43 +282,61 @@ def build_master_universe(
 
     )
 
-    # ==========================================
+
+    # ==================================================================
     # LIQUIDITY FILTER
-    # ==========================================
+    # ==================================================================
 
     master_universe = master_universe[
 
         master_universe[
             "AVG_TRADED_VALUE"
         ]
-        >= minimum_traded_value
+
+        >=
+
+        minimum_traded_value
 
     ]
 
-    # ==========================================
+
+    # ==================================================================
     # PRICE FILTER
-    # ==========================================
+    # ==================================================================
 
     master_universe = master_universe[
 
         master_universe[
             "LATEST_CLOSE"
         ]
-        >= minimum_price
+
+        >=
+
+        minimum_price
 
     ]
 
-    # ==========================================
-    # FINAL UNIVERSE
-    # ==========================================
+
+    # ==================================================================
+    # KEEP SYMBOL ONLY
+    # ==================================================================
 
     master_universe = master_universe[
         ["SYMBOL"]
     ]
 
+
+    # ==================================================================
+    # SORT
+    # ==================================================================
+
     master_universe = (
 
         master_universe
+
+        .drop_duplicates(
+            subset=["SYMBOL"]
+        )
 
         .sort_values(
             "SYMBOL"
@@ -241,9 +348,10 @@ def build_master_universe(
 
     )
 
-    # ==========================================
+
+    # ==================================================================
     # SAVE
-    # ==========================================
+    # ==================================================================
 
     save_output(
 
@@ -257,11 +365,43 @@ def build_master_universe(
 
     )
 
+
+    # ==================================================================
+    # SUMMARY
+    # ==================================================================
+
     print(
-
-        f"\nMaster Universe Created : "
-        f"{len(master_universe)} Stocks"
-
+        "\n"
+        + "-" * 70
     )
+
+    print(
+        "MASTER UNIVERSE CREATED"
+    )
+
+    print(
+        "-" * 70
+    )
+
+    print(
+        f"Eligible stocks : "
+        f"{len(master_universe)}"
+    )
+
+    print(
+        f"Minimum traded value : "
+        f"₹{minimum_traded_value:,.0f}"
+    )
+
+    print(
+        f"Minimum price : "
+        f"₹{minimum_price:,.2f}"
+    )
+
+    print(
+        f"Liquidity window : "
+        f"{liquidity_window} trading sessions"
+    )
+
 
     return master_universe

@@ -5,54 +5,91 @@ Created on Sun May 31 13:53:54 2026
 @author: mohak
 """
 
+"""
+Production Strategy Orchestrator
+
+Responsibilities:
+    1. Run active strategies.
+    2. Select the best strategy.
+    3. Generate/send final report.
+
+IMPORTANT:
+    Daily data preparation runs separately.
+
+    This file assumes all required market, stock, Bhavcopy,
+    MTO and processed data has already been prepared by the
+    separate Daily Data Preparation workflow.
+"""
+
+
 from datetime import date
 
-from strategies.strategy1.strategy1 import run_strategy_1
+from strategies.strategy1.strategy1 import (
+    run_strategy_1
+)
 
-from strategies.strategy2.strategy2 import run_strategy_2
+from strategies.strategy2.strategy2 import (
+    run_strategy_2
+)
 
-from selector.select_best_strategy import select_best_strategy
+from selector.select_best_strategy import (
+    select_best_strategy
+)
 
-from reports.final_mail_sender import send_final_email
+from reports.final_mail_sender import (
+    send_final_email
+)
 
-from processing.daily_data_processing import Daily_Data_Preparation
-# =========================================================
+
+# ======================================================================
 # CONFIGURATION
-# =========================================================
+# ======================================================================
 
 SAVE_OUTPUT = True
 
 TODAY = date.today()
 
-HISTORY_WINDOW = 60
 
-Daily_Data_Preparation().run(
-    recommendation_date=TODAY,
-    history_window=HISTORY_WINDOW
-)
-# =========================================================
+# ======================================================================
 # RUN STRATEGIES
-# =========================================================
+# ======================================================================
 
 strategy_results = [
-    run_strategy_1(SAVE_OUTPUT),
-    
+
+    # --------------------------------------------------------------
+    # STRATEGY 1
+    # --------------------------------------------------------------
+
+    run_strategy_1(
+        SAVE_OUTPUT
+    ),
+
+
+    # --------------------------------------------------------------
+    # STRATEGY 2
+    # --------------------------------------------------------------
+
     run_strategy_2(
         recommendation_date=TODAY,
-        history_window=HISTORY_WINDOW,
         save_output_flag=SAVE_OUTPUT
     )
+
 ]
 
-# =========================================================
+
+# ======================================================================
 # SELECT FINAL RECOMMENDATIONS
-# =========================================================
+# ======================================================================
 
-final_result = select_best_strategy(strategy_results, SAVE_OUTPUT)
+final_result = select_best_strategy(
+    strategy_results,
+    SAVE_OUTPUT
+)
 
-# =========================================================
+
+# ======================================================================
 # SEND DAILY EMAIL
-# =========================================================
+# ======================================================================
 
 send_final_email(
     final_result
