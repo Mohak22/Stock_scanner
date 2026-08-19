@@ -1,43 +1,81 @@
 # -*- coding: utf-8 -*-
 """
-Central path configuration for STOCK_SCANNER.
+Created on Sun Jul  5 11:27:45 2026
 
-The project expects STOCK_SCANNER_DATA to be available
-inside the STOCK_SCANNER project directory.
-
-Local:
-
-    STOCK_SCANNER/
-        STOCK_SCANNER_DATA/
-
-GitHub Actions:
-
-    Stock_scanner/
-        Stock_scanner/
-            STOCK_SCANNER_DATA/
-
-This file should be the single source of truth for
-all data-repository paths.
+@author: mohak
 """
 
 from pathlib import Path
 
 
 # ======================================================================
-# PROJECT ROOT
+# STOCK_SCANNER REPOSITORY
 # ======================================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = (
+    Path(__file__).resolve().parents[1]
+)
 
 
 # ======================================================================
-# DATA REPOSITORY
+# STOCK_SCANNER_DATA REPOSITORY
+# ======================================================================
+#
+# GitHub Actions:
+#
+# STOCK_SCANNER/
+#     ├── config/
+#     ├── processing/
+#     └── STOCK_SCANNER_DATA/
+#
+#
+# Local development:
+#
+# STOCK_SCANNER/
+#     ├── config/
+#     ├── processing/
+#     └── ...
+#
+# STOCK_SCANNER_DATA/
+#
+# Therefore we support both locations.
 # ======================================================================
 
-DATA_REPOSITORY = (
+
+GITHUB_DATA_REPOSITORY = (
     PROJECT_ROOT
     / "STOCK_SCANNER_DATA"
 )
+
+
+LOCAL_DATA_REPOSITORY = (
+    PROJECT_ROOT.parent
+    / "STOCK_SCANNER_DATA"
+)
+
+
+if GITHUB_DATA_REPOSITORY.exists():
+
+    DATA_REPOSITORY = (
+        GITHUB_DATA_REPOSITORY
+    )
+
+
+elif LOCAL_DATA_REPOSITORY.exists():
+
+    DATA_REPOSITORY = (
+        LOCAL_DATA_REPOSITORY
+    )
+
+
+else:
+
+    raise FileNotFoundError(
+        "STOCK_SCANNER_DATA repository not found.\n"
+        f"Checked:\n"
+        f"  {GITHUB_DATA_REPOSITORY}\n"
+        f"  {LOCAL_DATA_REPOSITORY}"
+    )
 
 
 # ======================================================================
@@ -50,17 +88,15 @@ RAW_DATA_DIRECTORY = (
 )
 
 
-RAW_BHAVCOPY_DIRECTORY = (
+RAW_NSE_DIRECTORY = (
     RAW_DATA_DIRECTORY
     / "nse"
-    / "bhavcopy"
 )
 
 
-RAW_MTO_DIRECTORY = (
-    RAW_DATA_DIRECTORY
-    / "nse"
-    / "mto"
+RAW_BHAVCOPY_DIRECTORY = (
+    RAW_NSE_DIRECTORY
+    / "bhavcopy"
 )
 
 
@@ -68,21 +104,27 @@ RAW_MTO_DIRECTORY = (
 # PROCESSED DATA
 # ======================================================================
 
-PROCESSED_DATA_DIRECTORY = (
+PROCESSED_DIRECTORY = (
     DATA_REPOSITORY
     / "processed"
 )
 
 
 PROCESSED_BHAVCOPY_DIRECTORY = (
-    PROCESSED_DATA_DIRECTORY
+    PROCESSED_DIRECTORY
     / "bhavcopy"
 )
 
 
 # ======================================================================
-# MASTER UNIVERSE
+# ANALYSIS
 # ======================================================================
+
+ANALYSIS_DIRECTORY = (
+    DATA_REPOSITORY
+    / "analysis"
+)
+
 
 MASTER_UNIVERSE_FILE = (
     DATA_REPOSITORY
@@ -90,126 +132,97 @@ MASTER_UNIVERSE_FILE = (
 )
 
 
-# ======================================================================
-# RESEARCH UNIVERSE
-# ======================================================================
-
-RESEARCH_UNIVERSE_FILE = (
+FINAL_RECOMMENDATIONS_FOLDER = (
     DATA_REPOSITORY
-    / "research_universe.csv"
+    / "final_recommendations"
+)
+
+
+STRATEGIES_FOLDER = (
+    DATA_REPOSITORY
+    / "strategies"
+)
+
+
+REPORT_FOLDER = (
+    DATA_REPOSITORY
+    / "analysis"
+    / "reports"
 )
 
 
 # ======================================================================
-# RESEARCH DATA
+# BACKTESTING
 # ======================================================================
 
-RESEARCH_DIRECTORY = (
+BACKTESTING_FOLDER = (
+    DATA_REPOSITORY
+    / "backtesting"
+)
+
+
+BACKTEST_RESULTS_FOLDER = (
+    BACKTESTING_FOLDER
+    / "results"
+)
+
+
+BACKTEST_STRATEGIES_FOLDER = (
+    BACKTESTING_FOLDER
+    / "strategies"
+)
+
+
+BACKTEST_MARKET_DATA_FOLDER = (
+    BACKTESTING_FOLDER
+    / "market_data"
+)
+
+
+BACKTEST_NIFTY_FILE = (
+    BACKTEST_MARKET_DATA_FOLDER
+    / "nifty_50.parquet"
+)
+
+
+# ======================================================================
+# RESEARCH
+# ======================================================================
+
+RESEARCH_FOLDER = (
     DATA_REPOSITORY
     / "research"
 )
 
 
 # ======================================================================
-# HISTORICAL STOCK MARKET DATA
+# RESEARCH MARKET CONTEXT
+# ======================================================================
+#
+# Deliberately separate from the backtesting market-data cache.
 # ======================================================================
 
-HISTORICAL_MARKET_DATA_DIRECTORY = (
-    RESEARCH_DIRECTORY
-    / "historical_market_data"
-)
-
-
-HISTORICAL_MARKET_DATA_RAW_DIRECTORY = (
-    HISTORICAL_MARKET_DATA_DIRECTORY
-    / "raw"
-)
-
-
-HISTORICAL_MARKET_DATA_LOG_DIRECTORY = (
-    HISTORICAL_MARKET_DATA_DIRECTORY
-    / "logs"
-)
-
-
-# ======================================================================
-# MARKET CONTEXT
-# ======================================================================
-
-MARKET_CONTEXT_DIRECTORY = (
-    RESEARCH_DIRECTORY
+RESEARCH_MARKET_CONTEXT_FOLDER = (
+    RESEARCH_FOLDER
     / "market_context"
 )
 
 
-# ======================================================================
-# SECTOR DATA
-# ======================================================================
-
-SECTOR_DATA_DIRECTORY = (
-    RESEARCH_DIRECTORY
-    / "sector_data"
+RESEARCH_MARKET_CONTEXT_INDICES_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "indices"
 )
 
 
-# ======================================================================
-# NSE REFERENCE DATA
-# ======================================================================
-
-REFERENCE_DATA_DIRECTORY = (
-    RESEARCH_DIRECTORY
-    / "reference_data"
+RESEARCH_MARKET_CONTEXT_SECTOR_INDICES_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "sector_indices"
 )
 
 
-# ======================================================================
-# OPTIONAL: CREATE REQUIRED DIRECTORIES
-# ======================================================================
-
-RAW_BHAVCOPY_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-RAW_MTO_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-PROCESSED_BHAVCOPY_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-RESEARCH_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-HISTORICAL_MARKET_DATA_RAW_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-HISTORICAL_MARKET_DATA_LOG_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-MARKET_CONTEXT_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-SECTOR_DATA_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
-
-)
-
-REFERENCE_DATA_DIRECTORY.mkdir(
-    parents=True,
-    exist_ok=True
+RESEARCH_MARKET_CONTEXT_LOGS_FOLDER = (
+    RESEARCH_MARKET_CONTEXT_FOLDER
+    / "logs"
 )
 
 
@@ -233,43 +246,83 @@ if __name__ == "__main__":
     )
 
     print(
-        f"\nPROJECT_ROOT:\n"
-        f"{PROJECT_ROOT}"
+        "\nPROJECT ROOT:"
     )
 
     print(
-        f"\nDATA_REPOSITORY:\n"
-        f"{DATA_REPOSITORY}"
+        PROJECT_ROOT
     )
 
     print(
-        f"\nMASTER_UNIVERSE_FILE:\n"
-        f"{MASTER_UNIVERSE_FILE}"
+        "\nDATA REPOSITORY:"
     )
 
     print(
-        f"\nRESEARCH_UNIVERSE_FILE:\n"
-        f"{RESEARCH_UNIVERSE_FILE}"
+        DATA_REPOSITORY
     )
 
     print(
-        f"\nRAW_BHAVCOPY_DIRECTORY:\n"
-        f"{RAW_BHAVCOPY_DIRECTORY}"
+        "\nMASTER UNIVERSE:"
     )
 
     print(
-        f"\nRAW_MTO_DIRECTORY:\n"
-        f"{RAW_MTO_DIRECTORY}"
+        MASTER_UNIVERSE_FILE
     )
 
     print(
-        f"\nPROCESSED_BHAVCOPY_DIRECTORY:\n"
-        f"{PROCESSED_BHAVCOPY_DIRECTORY}"
+        "\nRAW BHAVCOPY:"
     )
 
     print(
-        f"\nHISTORICAL_MARKET_DATA_RAW_DIRECTORY:\n"
-        f"{HISTORICAL_MARKET_DATA_RAW_DIRECTORY}"
+        RAW_BHAVCOPY_DIRECTORY
+    )
+
+    print(
+        "\nPROCESSED BHAVCOPY:"
+    )
+
+    print(
+        PROCESSED_BHAVCOPY_DIRECTORY
+    )
+
+    print(
+        "\nRESEARCH:"
+    )
+
+    print(
+        RESEARCH_FOLDER
+    )
+
+    print(
+        "\nRESEARCH MARKET CONTEXT:"
+    )
+
+    print(
+        RESEARCH_MARKET_CONTEXT_FOLDER
+    )
+
+    print(
+        "\nRESEARCH MARKET CONTEXT INDICES:"
+    )
+
+    print(
+        RESEARCH_MARKET_CONTEXT_INDICES_FOLDER
+    )
+
+    print(
+        "\nRESEARCH MARKET CONTEXT SECTOR INDICES:"
+    )
+
+    print(
+        RESEARCH_MARKET_CONTEXT_SECTOR_INDICES_FOLDER
+    )
+
+    print(
+        "\nRESEARCH MARKET CONTEXT LOGS:"
+    )
+
+    print(
+        RESEARCH_MARKET_CONTEXT_LOGS_FOLDER
     )
 
     print(
