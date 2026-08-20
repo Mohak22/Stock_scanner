@@ -32,6 +32,14 @@ import time
 import pandas as pd
 import yfinance as yf
 
+from config.paths import (
+    DATA_REPOSITORY,
+    MASTER_UNIVERSE_FILE,
+    HISTORICAL_MARKET_DATA_RAW_FOLDER,
+    HISTORICAL_MARKET_DATA_LOGS_FOLDER,
+    HISTORICAL_MARKET_DATA_SUCCESS_LOG_FILE,
+    HISTORICAL_MARKET_DATA_FAILURE_LOG_FILE
+)
 
 # ============================================================
 # CONFIGURATION
@@ -48,45 +56,24 @@ EXCHANGE_SUFFIX = ".NS"
 # Repository / data paths
 # ------------------------------------------------------------
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_ROOT = DATA_REPOSITORY
 
-DATA_ROOT = (
-    PROJECT_ROOT.parent
-    / "STOCK_SCANNER_DATA"
-)
-
-
-MASTER_UNIVERSE_FILE = (
-    DATA_ROOT
-    / "master_universe.csv"
-)
-
+MASTER_UNIVERSE_FILE = MASTER_UNIVERSE_FILE
 
 OUTPUT_DIRECTORY = (
-    DATA_ROOT
-    / "research"
-    / "historical_market_data"
-    / "raw"
+    HISTORICAL_MARKET_DATA_RAW_FOLDER
 )
-
 
 LOG_DIRECTORY = (
-    DATA_ROOT
-    / "research"
-    / "historical_market_data"
-    / "logs"
+    HISTORICAL_MARKET_DATA_LOGS_FOLDER
 )
-
 
 SUCCESS_LOG_FILE = (
-    LOG_DIRECTORY
-    / "successful_downloads.csv"
+    HISTORICAL_MARKET_DATA_SUCCESS_LOG_FILE
 )
 
-
 FAILURE_LOG_FILE = (
-    LOG_DIRECTORY
-    / "failed_downloads.csv"
+    HISTORICAL_MARKET_DATA_FAILURE_LOG_FILE
 )
 
 

@@ -227,105 +227,30 @@ RESEARCH_MARKET_CONTEXT_LOGS_FOLDER = (
 
 
 # ======================================================================
-# DEBUG
+# HISTORICAL MARKET DATA
 # ======================================================================
 
-if __name__ == "__main__":
+HISTORICAL_MARKET_DATA_FOLDER = (
+    RESEARCH_FOLDER
+    / "historical_market_data"
+)
 
-    print(
-        "\n"
-        + "=" * 70
-    )
+HISTORICAL_MARKET_DATA_RAW_FOLDER = (
+    HISTORICAL_MARKET_DATA_FOLDER
+    / "raw"
+)
 
-    print(
-        "STOCK SCANNER PATH CONFIGURATION"
-    )
+HISTORICAL_MARKET_DATA_LOGS_FOLDER = (
+    HISTORICAL_MARKET_DATA_FOLDER
+    / "logs"
+)
 
-    print(
-        "=" * 70
-    )
+HISTORICAL_MARKET_DATA_SUCCESS_LOG_FILE = (
+    HISTORICAL_MARKET_DATA_LOGS_FOLDER
+    / "successful_downloads.csv"
+)
 
-    print(
-        "\nPROJECT ROOT:"
-    )
-
-    print(
-        PROJECT_ROOT
-    )
-
-    print(
-        "\nDATA REPOSITORY:"
-    )
-
-    print(
-        DATA_REPOSITORY
-    )
-
-    print(
-        "\nMASTER UNIVERSE:"
-    )
-
-    print(
-        MASTER_UNIVERSE_FILE
-    )
-
-    print(
-        "\nRAW BHAVCOPY:"
-    )
-
-    print(
-        RAW_BHAVCOPY_DIRECTORY
-    )
-
-    print(
-        "\nPROCESSED BHAVCOPY:"
-    )
-
-    print(
-        PROCESSED_BHAVCOPY_DIRECTORY
-    )
-
-    print(
-        "\nRESEARCH:"
-    )
-
-    print(
-        RESEARCH_FOLDER
-    )
-
-    print(
-        "\nRESEARCH MARKET CONTEXT:"
-    )
-
-    print(
-        RESEARCH_MARKET_CONTEXT_FOLDER
-    )
-
-    print(
-        "\nRESEARCH MARKET CONTEXT INDICES:"
-    )
-
-    print(
-        RESEARCH_MARKET_CONTEXT_INDICES_FOLDER
-    )
-
-    print(
-        "\nRESEARCH MARKET CONTEXT SECTOR INDICES:"
-    )
-
-    print(
-        RESEARCH_MARKET_CONTEXT_SECTOR_INDICES_FOLDER
-    )
-
-    print(
-        "\nRESEARCH MARKET CONTEXT LOGS:"
-    )
-
-    print(
-        RESEARCH_MARKET_CONTEXT_LOGS_FOLDER
-    )
-
-    print(
-        "\n"
-        + "=" * 70
-    )
+HISTORICAL_MARKET_DATA_FAILURE_LOG_FILE = (
+    HISTORICAL_MARKET_DATA_LOGS_FOLDER
+    / "failed_downloads.csv"
+)
