@@ -37,7 +37,12 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from config.paths import PROJECT_ROOT
+from config.paths import (
+    MASTER_UNIVERSE_FILE,
+    RESEARCH_REFERENCE_DATA_FOLDER,
+    NSE_EQUITY_SECURITY_MASTER_FILE,
+    RESEARCH_UNIVERSE_FILE
+)
 
 
 # ======================================================================
@@ -52,30 +57,13 @@ NSE_EQUITY_QUOTE_URL = (
     "https://www.nseindia.com/api/quote-equity"
 )
 
-RESEARCH_DATA_REPOSITORY = (
-    PROJECT_ROOT.parent / "STOCK_SCANNER_DATA"
-)
-
-MASTER_UNIVERSE_FILE = (
-    RESEARCH_DATA_REPOSITORY / "master_universe.csv"
-)
-
 OUTPUT_DIRECTORY = (
-    RESEARCH_DATA_REPOSITORY
-    / "research"
-    / "reference_data"
+    RESEARCH_REFERENCE_DATA_FOLDER
 )
 
 OUTPUT_FILE = (
-    OUTPUT_DIRECTORY
-    / "nse_equity_security_master.parquet"
+    NSE_EQUITY_SECURITY_MASTER_FILE
 )
-
-RESEARCH_UNIVERSE_FILE = (
-    RESEARCH_DATA_REPOSITORY
-    / "research_universe.csv"
-)
-
 
 # ======================================================================
 # CONFIGURATION

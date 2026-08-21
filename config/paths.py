@@ -254,3 +254,21 @@ HISTORICAL_MARKET_DATA_FAILURE_LOG_FILE = (
     HISTORICAL_MARKET_DATA_LOGS_FOLDER
     / "failed_downloads.csv"
 )
+
+
+# ----------------------------------------------------------------------
+# Research Universe / NSE Security Master
+# ----------------------------------------------------------------------
+
+RESEARCH_REFERENCE_DATA_FOLDER = (
+    RESEARCH_FOLDER / "reference_data"
+)
+
+NSE_EQUITY_SECURITY_MASTER_FILE = (
+    RESEARCH_REFERENCE_DATA_FOLDER
+    / "nse_equity_security_master.parquet"
+)
+
+RESEARCH_UNIVERSE_FILE = (
+    DATA_REPOSITORY / "research_universe.csv"
+)
