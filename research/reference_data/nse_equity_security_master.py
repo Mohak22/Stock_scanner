@@ -36,6 +36,7 @@ import requests
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+import yfinance as yf
 
 from config.paths import (
     MASTER_UNIVERSE_FILE,
@@ -70,11 +71,6 @@ OUTPUT_FILE = (
 # ======================================================================
 
 REQUEST_TIMEOUT_SECONDS = 30
-
-QUOTE_REQUEST_DELAY_SECONDS = 0.20
-
-MAX_QUOTE_RETRIES = 3
-
 
 # ======================================================================
 # NSE EQUITY_L COLUMNS
@@ -696,117 +692,83 @@ class NSEEquitySecurityMasterCollector:
 
 
     # ==================================================================
-    # NSE INDUSTRY CLASSIFICATION
+    # YAHOO FINANCE SECTOR / INDUSTRY
     # ==================================================================
 
+    @staticmethod
     def _get_industry_classification(
-        self,
         symbol: str
     ) -> dict:
 
-        params = {
-            "symbol": symbol
-        }
+        yahoo_symbol = f"{symbol}.NS"
 
-        for attempt in range(
-            1,
-            MAX_QUOTE_RETRIES + 1
-        ):
+        try:
 
-            try:
+            ticker = yf.Ticker(
+                yahoo_symbol
+            )
 
-                response = self.session.get(
+            info = ticker.info
 
-                    NSE_EQUITY_QUOTE_URL,
-
-                    params=params,
-
-                    timeout=self.timeout_seconds
-
-                )
-
-                response.raise_for_status()
-
-                payload = (
-                    response.json()
-                )
-
-                industry_info = (
-                    payload.get(
-                        "industryInfo",
-                        {}
+            sector = (
+                str(
+                    info.get(
+                        "sector",
+                        ""
                     )
                 )
+                .strip()
+            )
 
-                if not isinstance(
-                    industry_info,
-                    dict
-                ):
-
-                    raise ValueError(
-                        "industryInfo is not a dictionary."
+            industry = (
+                str(
+                    info.get(
+                        "industry",
+                        ""
                     )
-
-                return {
-
-                    "MACRO_ECONOMIC_SECTOR":
-                        industry_info.get(
-                            "macro",
-                            ""
-                        ),
-
-                    "SECTOR":
-                        industry_info.get(
-                            "sector",
-                            ""
-                        ),
-
-                    "INDUSTRY":
-                        industry_info.get(
-                            "industry",
-                            ""
-                        ),
-
-                    "BASIC_INDUSTRY":
-                        industry_info.get(
-                            "basicIndustry",
-                            ""
-                        ),
-
-                }
-
-            except Exception as error:
-
-                print(
-                    f"  {symbol}: "
-                    f"classification attempt "
-                    f"{attempt} failed - "
-                    f"{error}"
                 )
+                .strip()
+            )
 
-                if attempt < MAX_QUOTE_RETRIES:
+            return {
 
-                    time.sleep(
-                        attempt * 2
-                    )
+                "MACRO_ECONOMIC_SECTOR":
+                    "",
 
-                else:
+                "SECTOR":
+                    sector,
 
-                    return {
+                "INDUSTRY":
+                    industry,
 
-                        "MACRO_ECONOMIC_SECTOR":
-                            "",
+                "BASIC_INDUSTRY":
+                    "",
 
-                        "SECTOR":
-                            "",
+            }
 
-                        "INDUSTRY":
-                            "",
+        except Exception as error:
 
-                        "BASIC_INDUSTRY":
-                            "",
+            print(
+                f"  {symbol}: "
+                f"Yahoo classification failed - "
+                f"{error}"
+            )
 
-                    }
+            return {
+
+                "MACRO_ECONOMIC_SECTOR":
+                    "",
+
+                "SECTOR":
+                    "",
+
+                "INDUSTRY":
+                    "",
+
+                "BASIC_INDUSTRY":
+                    "",
+
+            }
 
 
     # ==================================================================
@@ -822,11 +784,110 @@ class NSEEquitySecurityMasterCollector:
             resolved_identities.copy()
         )
 
-        classification_rows = []
+        # --------------------------------------------------------------
+        # LOAD EXISTING CLASSIFICATIONS
+        # --------------------------------------------------------------
 
-        total = len(
-            research_universe
+        existing_classifications = {}
+
+        if self.research_universe_file.exists():
+
+            try:
+
+                existing = pd.read_csv(
+                    self.research_universe_file,
+                    dtype=str
+                )
+
+                if "SYMBOL" in existing.columns:
+
+                    existing["SYMBOL"] = (
+                        existing["SYMBOL"]
+                        .fillna("")
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
+                    )
+
+                    for column in (
+                        "MACRO_ECONOMIC_SECTOR",
+                        "SECTOR",
+                        "INDUSTRY",
+                        "BASIC_INDUSTRY"
+                    ):
+
+                        if column not in existing.columns:
+
+                            existing[column] = ""
+
+                        existing[column] = (
+                            existing[column]
+                            .fillna("")
+                            .astype(str)
+                            .str.strip()
+                        )
+
+                    for _, row in existing.iterrows():
+
+                        symbol = row["SYMBOL"]
+
+                        if not symbol:
+                            continue
+
+                        existing_classifications[
+                            symbol
+                        ] = {
+
+                            "MACRO_ECONOMIC_SECTOR":
+                                row[
+                                    "MACRO_ECONOMIC_SECTOR"
+                                ],
+
+                            "SECTOR":
+                                row["SECTOR"],
+
+                            "INDUSTRY":
+                                row["INDUSTRY"],
+
+                            "BASIC_INDUSTRY":
+                                row["BASIC_INDUSTRY"],
+
+                        }
+
+            except Exception as error:
+
+                print(
+                    "Warning: could not load "
+                    "existing classifications: "
+                    f"{error}"
+                )
+
+        # --------------------------------------------------------------
+        # DETERMINE WHICH SYMBOLS NEED YAHOO LOOKUP
+        # --------------------------------------------------------------
+
+        symbols = (
+            research_universe[
+                "SYMBOL"
+            ]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .tolist()
         )
+
+        symbols_requiring_lookup = [
+
+            symbol
+
+            for symbol in symbols
+
+            if (
+                symbol
+                not in existing_classifications
+            )
+
+        ]
 
         print(
             "\n"
@@ -834,7 +895,7 @@ class NSEEquitySecurityMasterCollector:
         )
 
         print(
-            "FETCHING NSE INDUSTRY CLASSIFICATION"
+            "RESEARCH UNIVERSE CLASSIFICATION"
         )
 
         print(
@@ -842,22 +903,32 @@ class NSEEquitySecurityMasterCollector:
         )
 
         print(
-            f"Stocks requiring classification : "
-            f"{total}"
+            f"Total resolved stocks : "
+            f"{len(symbols)}"
         )
 
+        print(
+            f"Already classified    : "
+            f"{len(symbols) - len(symbols_requiring_lookup)}"
+        )
+
+        print(
+            f"Yahoo lookups required : "
+            f"{len(symbols_requiring_lookup)}"
+        )
+
+        # --------------------------------------------------------------
+        # YAHOO LOOKUP ONLY FOR NEW SYMBOLS
+        # --------------------------------------------------------------
+
         for position, symbol in enumerate(
-
-            research_universe[
-                "SYMBOL"
-            ],
-
+            symbols_requiring_lookup,
             start=1
-
         ):
 
             print(
-                f"[{position}/{total}] "
+                f"[{position}/"
+                f"{len(symbols_requiring_lookup)}] "
                 f"{symbol}"
             )
 
@@ -867,16 +938,54 @@ class NSEEquitySecurityMasterCollector:
                 )
             )
 
-            classification["SYMBOL"] = (
+            existing_classifications[
                 symbol
+            ] = classification
+
+        # --------------------------------------------------------------
+        # APPLY CLASSIFICATIONS
+        # --------------------------------------------------------------
+
+        classification_rows = []
+
+        for symbol in symbols:
+
+            classification = (
+                existing_classifications.get(
+                    symbol,
+                    {
+                        "MACRO_ECONOMIC_SECTOR": "",
+                        "SECTOR": "",
+                        "INDUSTRY": "",
+                        "BASIC_INDUSTRY": "",
+                    }
+                )
             )
 
             classification_rows.append(
-                classification
-            )
+                {
+                    "SYMBOL": symbol,
 
-            time.sleep(
-                QUOTE_REQUEST_DELAY_SECONDS
+                    "MACRO_ECONOMIC_SECTOR":
+                        classification[
+                            "MACRO_ECONOMIC_SECTOR"
+                        ],
+
+                    "SECTOR":
+                        classification[
+                            "SECTOR"
+                        ],
+
+                    "INDUSTRY":
+                        classification[
+                            "INDUSTRY"
+                        ],
+
+                    "BASIC_INDUSTRY":
+                        classification[
+                            "BASIC_INDUSTRY"
+                        ],
+                }
             )
 
         classification_dataframe = (
@@ -886,21 +995,13 @@ class NSEEquitySecurityMasterCollector:
         )
 
         research_universe = (
-
             research_universe
-
             .merge(
-
                 classification_dataframe,
-
                 on="SYMBOL",
-
                 how="left",
-
                 validate="one_to_one"
-
             )
-
         )
 
         for column in (
@@ -911,34 +1012,24 @@ class NSEEquitySecurityMasterCollector:
         ):
 
             research_universe[column] = (
-
                 research_universe[column]
-
                 .fillna("")
-
                 .astype(str)
-
                 .str.strip()
-
             )
 
         research_universe = (
-
             research_universe
-
             .loc[
                 :,
                 RESEARCH_UNIVERSE_COLUMNS
             ]
-
             .sort_values(
                 "SYMBOL"
             )
-
             .reset_index(
                 drop=True
             )
-
         )
 
         return research_universe
