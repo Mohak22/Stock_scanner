@@ -247,6 +247,58 @@ jobs:
           print('PROCESSED EXISTS          =', PROCESSED_BHAVCOPY_DIRECTORY.parent.exists())
           "
 
+      - name: Verify raw NSE data
+
+        run: |
+
+          echo "========================================"
+          echo "RAW NSE DIRECTORY"
+          echo "========================================"
+
+          find STOCK_SCANNER_DATA/raw/nse \
+            -maxdepth 2 \
+            -type d \
+            -print
+
+          echo ""
+
+          echo "========================================"
+          echo "RAW BHAVCOPY FILE COUNT"
+          echo "========================================"
+
+          find STOCK_SCANNER_DATA/raw/nse/bhavcopy \
+            -type f \
+            -name "*.csv" \
+            | wc -l
+
+          echo ""
+
+          echo "========================================"
+          echo "RAW MTO FILE COUNT"
+          echo "========================================"
+
+          if [ -d STOCK_SCANNER_DATA/raw/nse/mto ]; then
+
+              find STOCK_SCANNER_DATA/raw/nse/mto \
+                -type f \
+                -name "*.DAT" \
+                | wc -l
+
+          else
+
+              echo "MTO DIRECTORY DOES NOT EXIST"
+
+          fi
+
+          echo ""
+
+          echo "========================================"
+          echo "MTO DIRECTORY CONTENT"
+          echo "========================================"
+
+          ls -lah STOCK_SCANNER_DATA/raw/nse/mto \
+            2>/dev/null || true
+            
       - name: Run Daily Data Preparation
 
         env:
