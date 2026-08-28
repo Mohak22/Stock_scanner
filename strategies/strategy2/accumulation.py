@@ -5,20 +5,51 @@ Created on Mon Jul  6 16:11:47 2026
 @author: mohak
 """
 
-# -*- coding: utf-8 -*-
+"""
+Strategy 2 - Accumulation Strategy
+
+Responsibilities:
+    - Load historical Bhavcopy data.
+    - Load corresponding MTO / delivery data.
+    - Merge delivery information into Bhavcopy history.
+    - Calculate moving averages.
+    - Calculate RSI.
+    - Calculate delivery features.
+    - Calculate volume features.
+    - Calculate strategy score.
+    - Rank recommendations.
+
+Production data source:
+
+    STOCK_SCANNER_DATA/
+        processed/
+            bhavcopy/
+            mto/
+
+This module does NOT:
+    - Download NSE data.
+    - Download MTO data.
+    - Modify raw files.
+    - Run data synchronization.
+"""
+
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
-
 import numpy as np
+
 
 from config.paths import (
     PROCESSED_BHAVCOPY_DIRECTORY,
     MASTER_UNIVERSE_FILE
 )
 
-from indicators.ema_engine import calculate_ema
+
+from indicators.ema_engine import (
+    calculate_ema
+)
 
 
 from strategies.strategy2.strategy2_config import (
@@ -35,70 +66,125 @@ class Strategy2:
 
         self.config = config
 
+        # --------------------------------------------------------------
+        # Derive processed MTO directory from Bhavcopy directory.
+        #
+        # Expected:
+        #
+        # STOCK_SCANNER_DATA/
+        #     processed/
+        #         bhavcopy/
+        #         mto/
+        # --------------------------------------------------------------
+
+        self.processed_mto_directory = (
+
+            PROCESSED_BHAVCOPY_DIRECTORY
+            .parent
+            / "mto"
+
+        )
+
+
+    # ==================================================================
+    # RUN
+    # ==================================================================
+
     def run(
         self,
         recommendation_date: date,
         history: pd.DataFrame | None = None
     ) -> pd.DataFrame:
+
         """
         Generate recommendations for a given recommendation date.
-    
+
         Production:
             history=None
-    
+
         Backtesting:
             Supply preloaded history to avoid repeated disk I/O.
-    
-        Returns
-        -------
-        pd.DataFrame
-            Top-ranked recommendations.
         """
-    
-        # Production: load history internally
+
+        # --------------------------------------------------------------
+        # PRODUCTION: LOAD HISTORY
+        # --------------------------------------------------------------
+
         if history is None:
-    
+
             history = self._load_history(
                 recommendation_date
             )
-    
-        # Prevent modifying the caller's DataFrame
+
+
+        # --------------------------------------------------------------
+        # COPY
+        # --------------------------------------------------------------
+
         history = history.copy()
-    
-        # Feature Engineering
+
+
+        # --------------------------------------------------------------
+        # FEATURE ENGINEERING
+        # --------------------------------------------------------------
+
         history = self._build_features(
             history
         )
-    
-        # Keep only recommendation date
+
+
+        # --------------------------------------------------------------
+        # KEEP LATEST TRADING DAY
+        # --------------------------------------------------------------
+
         history = self._keep_latest_trading_day(
             history
         )
-    
-        # Score Calculation
+
+
+        # --------------------------------------------------------------
+        # SCORE
+        # --------------------------------------------------------------
+
         history = self._calculate_delivery_score(
             history
         )
-    
+
+
         history = self._calculate_volume_score(
             history
         )
-    
+
+
         history = self._calculate_final_score(
             history
         )
-    
-        # Remove rows without enough history
+
+
+        # --------------------------------------------------------------
+        # REMOVE INVALID SCORES
+        # --------------------------------------------------------------
+
         history = history.dropna(
             subset=["FINAL_SCORE"]
         )
-    
-        # Ranking
+
+
+        # --------------------------------------------------------------
+        # RANK
+        # --------------------------------------------------------------
+
         history = self._rank_recommendations(
             history
         )
-    
+
+
         return history
+
+
+    # ==================================================================
+    # BUILD FEATURES
+    # ==================================================================
 
     def _build_features(
         self,
@@ -109,21 +195,26 @@ class Strategy2:
             history
         )
 
+
         history = self._classify_direction(
             history
         )
-        
+
+
         history = self._add_rsi(
             history
         )
+
 
         history = self._add_delivery_features(
             history
         )
 
+
         history = self._add_volume_features(
             history
         )
+
 
         history = history.replace(
 
@@ -133,132 +224,586 @@ class Strategy2:
 
         )
 
+
         return history
-    
+
+
+    # ==================================================================
+    # LOAD BHAVCOPY HISTORY
+    # ==================================================================
+
     def _load_history(
         self,
         recommendation_date: date
     ) -> pd.DataFrame:
-    
+
+        """
+        Load Bhavcopy history and merge MTO delivery history.
+
+        Only files <= recommendation_date are considered.
+
+        The latest `history_window` Bhavcopy sessions are loaded.
+
+        MTO files for the same dates are then merged using:
+
+            SYMBOL + TIMESTAMP
+        """
+
+
+        # ==============================================================
+        # FIND BHAVCOPY FILES
+        # ==============================================================
+
         parquet_files = []
-    
+
+
         for file in PROCESSED_BHAVCOPY_DIRECTORY.glob(
             "*.parquet"
         ):
-    
-            file_date = date.fromisoformat(
-                f"{file.stem[-4:]}-{file.stem[-6:-4]}-{file.stem[-8:-6]}"
-            )
-    
+
+            try:
+
+                file_date = date.fromisoformat(
+
+                    f"{file.stem[-4:]}"
+                    f"-{file.stem[-6:-4]}"
+                    f"-{file.stem[-8:-6]}"
+
+                )
+
+            except ValueError:
+
+                continue
+
+
             if file_date <= recommendation_date:
-    
+
                 parquet_files.append(
+
                     (
                         file_date,
                         file
                     )
+
                 )
-    
+
+
+        # ==============================================================
+        # SELECT LATEST HISTORY WINDOW
+        # ==============================================================
+
         parquet_files = [
-    
+
             file
-    
+
             for _, file in sorted(
-    
+
                 parquet_files,
-    
+
                 key=lambda x: x[0],
-    
+
                 reverse=True
-    
-            )[:self.config.history_window]
-    
+
+            )[
+                :self.config.history_window
+            ]
+
         ]
-    
+
+
+        if not parquet_files:
+
+            raise ValueError(
+
+                "No processed Bhavcopy files found "
+                f"up to {recommendation_date}."
+
+            )
+
+
+        # ==============================================================
+        # LOAD BHAVCOPY
+        # ==============================================================
+
         history = pd.concat(
-    
+
             [
-    
-                pd.read_parquet(file)
-    
+
+                pd.read_parquet(
+                    file
+                )
+
                 for file in parquet_files
-    
+
             ],
-    
+
             ignore_index=True
-    
+
         )
-    
+
+
+        # ==============================================================
+        # NORMALIZE BHAVCOPY DATE
+        # ==============================================================
+
+        history["TIMESTAMP"] = pd.to_datetime(
+
+            history["TIMESTAMP"],
+
+            errors="coerce"
+
+        ).dt.date
+
+
+        # ==============================================================
+        # MASTER UNIVERSE FILTER
+        # ==============================================================
+
         master_universe = pd.read_csv(
             MASTER_UNIVERSE_FILE
         )
-    
+
+
         history = history[
-    
+
             history["SYMBOL"].isin(
-    
+
                 master_universe["SYMBOL"]
-    
+
             )
-    
+
         ]
-    
+
+
+        # ==============================================================
+        # LOAD MTO
+        # ==============================================================
+
+        history = self._merge_mto_history(
+            history
+        )
+
+
+        # ==============================================================
+        # SORT
+        # ==============================================================
+
         history = history.sort_values(
-    
+
             by=[
                 "SYMBOL",
                 "TIMESTAMP"
             ]
-    
+
         ).reset_index(
-    
             drop=True
-    
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # MERGE MTO HISTORY
+    # ==================================================================
+
+    def _merge_mto_history(
+        self,
+        history: pd.DataFrame
+    ) -> pd.DataFrame:
+
+        """
+        Merge processed MTO delivery data into Bhavcopy history.
+
+        Join keys:
+
+            SYMBOL
+            TIMESTAMP
+
+        Expected MTO columns:
+
+            SYMBOL
+            TIMESTAMP
+            MTO_QTY_TRADED
+            DELIV_QTY
+            DELIV_PER
+        """
+
+
+        # --------------------------------------------------------------
+        # VALIDATE MTO DIRECTORY
+        # --------------------------------------------------------------
+
+        if not self.processed_mto_directory.exists():
+
+            raise FileNotFoundError(
+
+                "Processed MTO directory does not exist: "
+
+                f"{self.processed_mto_directory}"
+
+            )
+
+
+        # --------------------------------------------------------------
+        # REQUIRED BHAVCOPY COLUMNS
+        # --------------------------------------------------------------
+
+        required_bhavcopy = [
+
+            "SYMBOL",
+            "TIMESTAMP"
+
+        ]
+
+
+        missing = [
+
+            column
+
+            for column in required_bhavcopy
+
+            if column not in history.columns
+
+        ]
+
+
+        if missing:
+
+            raise ValueError(
+
+                "Missing Bhavcopy columns: "
+                f"{missing}"
+
+            )
+
+
+        # --------------------------------------------------------------
+        # DATE RANGE
+        # --------------------------------------------------------------
+
+        min_date = history["TIMESTAMP"].min()
+
+        max_date = history["TIMESTAMP"].max()
+
+
+        # --------------------------------------------------------------
+        # FIND MTO FILES
+        # --------------------------------------------------------------
+
+        mto_files = []
+
+
+        for file in self.processed_mto_directory.glob(
+            "*.parquet"
+        ):
+
+            try:
+
+                file_date = date.fromisoformat(
+
+                    f"{file.stem[-4:]}"
+                    f"-{file.stem[-6:-4]}"
+                    f"-{file.stem[-8:-6]}"
+
+                )
+
+            except ValueError:
+
+                continue
+
+
+            if (
+
+                min_date
+                <= file_date
+                <= max_date
+
+            ):
+
+                mto_files.append(
+                    file
+                )
+
+
+        # --------------------------------------------------------------
+        # SAFETY CHECK
+        # --------------------------------------------------------------
+
+        if not mto_files:
+
+            raise ValueError(
+
+                "No processed MTO files found for "
+                f"Bhavcopy range {min_date} -> {max_date}."
+
+            )
+
+
+        # --------------------------------------------------------------
+        # LOAD MTO
+        # --------------------------------------------------------------
+
+        mto = pd.concat(
+
+            [
+
+                pd.read_parquet(
+                    file
+                )
+
+                for file in mto_files
+
+            ],
+
+            ignore_index=True
+
+        )
+
+
+        # --------------------------------------------------------------
+        # NORMALIZE MTO
+        # --------------------------------------------------------------
+
+        mto["SYMBOL"] = (
+
+            mto["SYMBOL"]
+
+            .astype(str)
+
+            .str.strip()
+
+            .str.upper()
+
+        )
+
+
+        mto["TIMESTAMP"] = pd.to_datetime(
+
+            mto["TIMESTAMP"],
+
+            errors="coerce"
+
+        ).dt.date
+
+
+        # --------------------------------------------------------------
+        # REQUIRED MTO COLUMNS
+        # --------------------------------------------------------------
+
+        required_mto = [
+
+            "SYMBOL",
+            "TIMESTAMP",
+            "DELIV_PER"
+
+        ]
+
+
+        missing = [
+
+            column
+
+            for column in required_mto
+
+            if column not in mto.columns
+
+        ]
+
+
+        if missing:
+
+            raise ValueError(
+
+                "Processed MTO is missing required columns: "
+                f"{missing}"
+
+            )
+
+
+        # --------------------------------------------------------------
+        # REMOVE DUPLICATES
+        # --------------------------------------------------------------
+
+        mto = (
+
+            mto
+
+            .drop_duplicates(
+
+                subset=[
+                    "SYMBOL",
+                    "TIMESTAMP"
+                ],
+
+                keep="last"
+
+            )
+
+        )
+
+
+        # --------------------------------------------------------------
+        # ONLY KEEP NECESSARY MTO COLUMNS
+        # --------------------------------------------------------------
+
+        mto = mto[
+
+            [
+
+                "SYMBOL",
+                "TIMESTAMP",
+                "MTO_QTY_TRADED",
+                "DELIV_QTY",
+                "DELIV_PER"
+
+            ]
+
+        ]
+
+
+        # --------------------------------------------------------------
+        # MERGE
+        # --------------------------------------------------------------
+
+        history = history.merge(
+
+            mto,
+
+            on=[
+                "SYMBOL",
+                "TIMESTAMP"
+            ],
+
+            how="left"
+
+        )
+
+
+        # --------------------------------------------------------------
+        # VALIDATION
+        # --------------------------------------------------------------
+
+        delivery_coverage = (
+
+            history["DELIV_PER"]
+
+            .notna()
+
+            .mean()
+
+        )
+
+
+        print(
+
+            "\nMTO merge summary:"
+        )
+
+
+        print(
+
+            f"  Bhavcopy rows : "
+            f"{len(history):,}"
+
+        )
+
+
+        print(
+
+            f"  MTO rows      : "
+            f"{len(mto):,}"
+
+        )
+
+
+        print(
+
+            f"  Delivery coverage : "
+            f"{delivery_coverage:.2%}"
+
+        )
+
+
+        if delivery_coverage == 0:
+
+            raise ValueError(
+
+                "MTO merge produced zero DELIV_PER values. "
+                "Check SYMBOL/TIMESTAMP alignment."
+
+            )
+
+
+        return history
+
+
+    # ==================================================================
+    # RSI
+    # ==================================================================
+
     def _add_rsi(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
+
         period = self.config.rsi_period
-    
+
+
         def calculate_rsi(
             close_prices: pd.Series
         ) -> pd.Series:
-    
+
             delta = close_prices.diff()
-    
+
+
             gain = delta.clip(
                 lower=0
             )
-    
+
+
             loss = (
+
                 -delta.clip(
                     upper=0
                 )
+
             )
-    
+
+
             average_gain = gain.ewm(
+
                 alpha=1 / period,
+
                 adjust=False,
+
                 min_periods=period
+
             ).mean()
-    
+
+
             average_loss = loss.ewm(
+
                 alpha=1 / period,
+
                 adjust=False,
+
                 min_periods=period
+
             ).mean()
-    
+
+
             relative_strength = (
+
                 average_gain
-                / average_loss
+                /
+                average_loss
+
             )
-    
+
+
             rsi = (
+
                 100
                 -
                 (
@@ -266,465 +811,645 @@ class Strategy2:
                     /
                     (
                         1
-                        + relative_strength
+                        +
+                        relative_strength
                     )
                 )
+
             )
-    
+
+
             return rsi
-    
+
+
         history["RSI_14"] = (
-    
+
             history
-    
+
             .groupby(
                 "SYMBOL"
             )["CLOSE"]
-    
+
             .transform(
                 calculate_rsi
             )
-    
+
         )
-    
+
+
         return history
+
+
+    # ==================================================================
+    # MOVING AVERAGES
+    # ==================================================================
+
     def _add_moving_averages(
-    
         self,
-    
         history: pd.DataFrame
-    
     ) -> pd.DataFrame:
-    
+
         history["EMA20"] = (
-        
+
             history
-        
-            .groupby("SYMBOL")["CLOSE"]
-        
+
+            .groupby(
+                "SYMBOL"
+            )["CLOSE"]
+
             .transform(
-        
+
                 lambda close_prices:
-        
+
                 calculate_ema(
-        
+
                     close_prices,
-        
+
                     self.config.ema_fast_period
-        
+
                 )
-        
+
             )
-        
+
         )
-        
+
+
         history["EMA50"] = (
-        
+
             history
-        
-            .groupby("SYMBOL")["CLOSE"]
-        
+
+            .groupby(
+                "SYMBOL"
+            )["CLOSE"]
+
             .transform(
-        
+
                 lambda close_prices:
-        
+
                 calculate_ema(
-        
+
                     close_prices,
-        
+
                     self.config.ema_slow_period
-        
+
                 )
-        
+
             )
-        
+
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # DIRECTION
+    # ==================================================================
+
     def _classify_direction(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
-        history["DIRECTION"] = "UNKNOWN"
-    
-        history.loc[
-            (
-                (history["CLOSE"] > history["EMA20"])
-                &
-                (history["EMA20"] > history["EMA50"])
-            ),
-            "DIRECTION"
-        ] = "STRONG_UPTREND"
-    
-        history.loc[
-            (
-                (history["EMA20"] > history["CLOSE"])
-                &
-                (history["CLOSE"] > history["EMA50"])
-            ),
-            "DIRECTION"
-        ] = "PULLBACK"
-    
-        history.loc[
-            (
-                (history["EMA20"] > history["EMA50"])
-                &
-                (history["EMA50"] > history["CLOSE"])
-            ),
-            "DIRECTION"
-        ] = "EARLY_WEAKNESS"
-    
-        history.loc[
-            (
-                (history["CLOSE"] < history["EMA20"])
-                &
-                (history["EMA20"] < history["EMA50"])
-            ),
-            "DIRECTION"
-        ] = "DOWNTREND"
-    
-        return history
-    
-    def _add_delivery_features(
 
+        history["DIRECTION"] = "UNKNOWN"
+
+
+        history.loc[
+
+            (
+
+                (history["CLOSE"] > history["EMA20"])
+
+                &
+
+                (history["EMA20"] > history["EMA50"])
+
+            ),
+
+            "DIRECTION"
+
+        ] = "STRONG_UPTREND"
+
+
+        history.loc[
+
+            (
+
+                (history["EMA20"] > history["CLOSE"])
+
+                &
+
+                (history["CLOSE"] > history["EMA50"])
+
+            ),
+
+            "DIRECTION"
+
+        ] = "PULLBACK"
+
+
+        history.loc[
+
+            (
+
+                (history["EMA20"] > history["EMA50"])
+
+                &
+
+                (history["EMA50"] > history["CLOSE"])
+
+            ),
+
+            "DIRECTION"
+
+        ] = "EARLY_WEAKNESS"
+
+
+        history.loc[
+
+            (
+
+                (history["CLOSE"] < history["EMA20"])
+
+                &
+
+                (history["EMA20"] < history["EMA50"])
+
+            ),
+
+            "DIRECTION"
+
+        ] = "DOWNTREND"
+
+
+        return history
+
+
+    # ==================================================================
+    # DELIVERY FEATURES
+    # ==================================================================
+
+    def _add_delivery_features(
         self,
-    
         history: pd.DataFrame
-    
     ) -> pd.DataFrame:
-            
+
         history["DELIVERY_AVG_5"] = (
-        
+
             history
-        
-            .groupby("SYMBOL")["DELIV_PER"]
-        
+
+            .groupby(
+                "SYMBOL"
+            )["DELIV_PER"]
+
             .transform(
-        
+
                 lambda delivery:
-        
+
                 delivery.rolling(
-        
+
                     window=self.config.delivery_short_window,
-        
+
                     min_periods=self.config.delivery_short_window
-        
+
                 ).mean()
-        
+
             )
-        
+
         )
-            
+
+
         history["DELIVERY_AVG_20"] = (
-        
+
             history
-        
-            .groupby("SYMBOL")["DELIV_PER"]
-        
+
+            .groupby(
+                "SYMBOL"
+            )["DELIV_PER"]
+
             .transform(
-        
+
                 lambda delivery:
-        
+
                 delivery.rolling(
-        
+
                     window=self.config.delivery_medium_window,
-        
+
                     min_periods=self.config.delivery_medium_window
-        
+
                 ).mean()
-        
+
             )
-        
+
         )
+
 
         history["DELIVERY_AVG_60"] = (
-        
+
             history
-        
-            .groupby("SYMBOL")["DELIV_PER"]
-        
+
+            .groupby(
+                "SYMBOL"
+            )["DELIV_PER"]
+
             .transform(
-        
+
                 lambda delivery:
-        
+
                 delivery.rolling(
-        
+
                     window=self.config.delivery_long_window,
-        
+
                     min_periods=self.config.delivery_long_window
-        
+
                 ).mean()
-        
+
             )
-        
+
         )
-            
+
+
         history["DELIVERY_RATIO_5_20"] = (
-        
+
             history["DELIVERY_AVG_5"]
-        
+
             /
-        
+
             history["DELIVERY_AVG_20"]
-        
+
         )
-        
+
+
         history["DELIVERY_RATIO_20_60"] = (
-        
+
             history["DELIVERY_AVG_20"]
-        
+
             /
-        
+
             history["DELIVERY_AVG_60"]
-        
+
         )
-        
+
+
         return history
-    
+
+
+    # ==================================================================
+    # VOLUME FEATURES
+    # ==================================================================
+
     def _add_volume_features(
-    
         self,
-    
         history: pd.DataFrame
-    
     ) -> pd.DataFrame:
-    
+
         history["VOLUME_AVG_5"] = (
-    
+
             history
-    
-            .groupby("SYMBOL")["TOTTRDQTY"]
-    
+
+            .groupby(
+                "SYMBOL"
+            )["TOTTRDQTY"]
+
             .transform(
-    
+
                 lambda volume:
-    
+
                 volume.rolling(
-    
+
                     window=self.config.volume_short_window,
-    
+
                     min_periods=self.config.volume_short_window
-    
+
                 ).mean()
-    
+
             )
-    
+
         )
-    
+
+
         history["VOLUME_AVG_20"] = (
-    
+
             history
-    
-            .groupby("SYMBOL")["TOTTRDQTY"]
-    
+
+            .groupby(
+                "SYMBOL"
+            )["TOTTRDQTY"]
+
             .transform(
-    
+
                 lambda volume:
-    
+
                 volume.rolling(
-    
+
                     window=self.config.volume_medium_window,
-    
+
                     min_periods=self.config.volume_medium_window
-    
+
                 ).mean()
-    
+
             )
-    
+
         )
-    
+
+
         history["VOLUME_AVG_60"] = (
-    
+
             history
-    
-            .groupby("SYMBOL")["TOTTRDQTY"]
-    
+
+            .groupby(
+                "SYMBOL"
+            )["TOTTRDQTY"]
+
             .transform(
-    
+
                 lambda volume:
-    
+
                 volume.rolling(
-    
+
                     window=self.config.volume_long_window,
-    
+
                     min_periods=self.config.volume_long_window
-    
+
                 ).mean()
-    
+
             )
-    
+
         )
-    
+
+
         history["VOLUME_RATIO_5_20"] = (
-    
+
             history["VOLUME_AVG_5"]
-    
+
             /
-    
+
             history["VOLUME_AVG_20"]
-    
+
         )
-    
+
+
         history["VOLUME_RATIO_20_60"] = (
-    
+
             history["VOLUME_AVG_20"]
-    
+
             /
-    
+
             history["VOLUME_AVG_60"]
-    
+
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # KEEP LATEST TRADING DAY
+    # ==================================================================
+
     def _keep_latest_trading_day(
-    
         self,
-    
         history: pd.DataFrame
-    
     ) -> pd.DataFrame:
-    
+
         latest_date = history["TIMESTAMP"].max()
-    
+
+
         history = history[
-    
+
             history["TIMESTAMP"] == latest_date
-    
+
         ].copy()
-    
+
+
         history = history.reset_index(
-    
             drop=True
-    
         )
-    
+
+
         return history
-        
+
+
+    # ==================================================================
+    # DELIVERY SCORE
+    # ==================================================================
+
     def _calculate_delivery_score(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
+
         history["DELIVERY_SCORE"] = (
-    
+
             self.config.delivery_recent_weight
-            * history["DELIVERY_RATIO_5_20"]
-    
+            *
+            history["DELIVERY_RATIO_5_20"]
+
             +
-    
+
             self.config.delivery_medium_weight
-            * history["DELIVERY_RATIO_20_60"]
-    
+            *
+            history["DELIVERY_RATIO_20_60"]
+
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # VOLUME SCORE
+    # ==================================================================
+
     def _calculate_volume_score(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
+
         history["VOLUME_SCORE"] = (
-    
+
             self.config.volume_recent_weight
-            * history["VOLUME_RATIO_5_20"]
-    
+            *
+            history["VOLUME_RATIO_5_20"]
+
             +
-    
+
             self.config.volume_medium_weight
-            * history["VOLUME_RATIO_20_60"]
-    
+            *
+            history["VOLUME_RATIO_20_60"]
+
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # FINAL SCORE
+    # ==================================================================
+
     def _calculate_final_score(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
-    
+
         history["FINAL_SCORE"] = (
-    
+
             self.config.delivery_weight
-            * history["DELIVERY_SCORE"]
-    
+            *
+            history["DELIVERY_SCORE"]
+
             +
-    
+
             self.config.volume_weight
-            * history["VOLUME_SCORE"]
-    
+            *
+            history["VOLUME_SCORE"]
+
         )
-    
+
+
         return history
-    
+
+
+    # ==================================================================
+    # RANK
+    # ==================================================================
+
     def _rank_recommendations(
         self,
         history: pd.DataFrame
     ) -> pd.DataFrame:
 
-        # Sort all candidates by final score
         ranked = history.sort_values(
+
             by="FINAL_SCORE",
+
             ascending=False
+
         ).copy()
+
 
         selected = []
 
-        # ---------------------------------------------------------
-        # 1. Top 3 STRONG_UPTREND stocks
-        # ---------------------------------------------------------
+
+        # --------------------------------------------------------------
+        # 1. STRONG UPTREND
+        # --------------------------------------------------------------
+
         strong_uptrend = ranked[
-            ranked["DIRECTION"] == "STRONG_UPTREND"
+
+            ranked["DIRECTION"]
+            ==
+            "STRONG_UPTREND"
+
         ].head(3)
 
-        selected.append(strong_uptrend)
 
-        # Keep track of already selected stocks
-        selected_symbols = set(
-            strong_uptrend["SYMBOL"]
+        selected.append(
+            strong_uptrend
         )
 
-        # ---------------------------------------------------------
-        # 2. Top 3 PULLBACK stocks
-        # ---------------------------------------------------------
+
+        selected_symbols = set(
+
+            strong_uptrend["SYMBOL"]
+
+        )
+
+
+        # --------------------------------------------------------------
+        # 2. PULLBACK
+        # --------------------------------------------------------------
+
         pullback = ranked[
-            (ranked["DIRECTION"] == "PULLBACK")
+
+            (
+
+                ranked["DIRECTION"]
+                ==
+                "PULLBACK"
+
+            )
+
             &
-            (~ranked["SYMBOL"].isin(selected_symbols))
+
+            (
+
+                ~ranked["SYMBOL"].isin(
+                    selected_symbols
+                )
+
+            )
+
         ].head(3)
 
-        selected.append(pullback)
+
+        selected.append(
+            pullback
+        )
+
 
         selected_symbols.update(
+
             pullback["SYMBOL"]
+
         )
 
-        # ---------------------------------------------------------
-        # 3. Fill remaining slots using highest FINAL_SCORE
-        #    without repeating already selected stocks
-        # ---------------------------------------------------------
-        remaining_slots = self.config.top_n - (
-            len(strong_uptrend) + len(pullback)
+
+        # --------------------------------------------------------------
+        # 3. FILL REMAINING SLOTS
+        # --------------------------------------------------------------
+
+        remaining_slots = (
+
+            self.config.top_n
+
+            -
+
+            (
+
+                len(strong_uptrend)
+
+                +
+
+                len(pullback)
+
+            )
+
         )
+
 
         if remaining_slots > 0:
 
             remaining = ranked[
-                ~ranked["SYMBOL"].isin(selected_symbols)
-            ].head(remaining_slots)
 
-            selected.append(remaining)
+                ~ranked["SYMBOL"].isin(
+                    selected_symbols
+                )
 
-        # ---------------------------------------------------------
-        # Combine selections
-        # ---------------------------------------------------------
+            ].head(
+                remaining_slots
+            )
+
+
+            selected.append(
+                remaining
+            )
+
+
+        # --------------------------------------------------------------
+        # COMBINE
+        # --------------------------------------------------------------
+
         recommendations = pd.concat(
+
             selected,
+
             ignore_index=True
+
         )
 
-        return recommendations.reset_index(drop=True)
-    
+
+        return recommendations.reset_index(
+            drop=True
+        )

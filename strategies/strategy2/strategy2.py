@@ -38,11 +38,13 @@ def run_strategy_2(
 
     )
 
+
     strategy = Strategy2(
 
         config=config
 
     )
+
 
     recommendations = strategy.run(
 
@@ -50,11 +52,13 @@ def run_strategy_2(
 
     )
 
+
     current_date = datetime.now().strftime(
 
         "%Y-%m-%d"
 
     )
+
 
     save_output(
 
@@ -68,4 +72,11 @@ def run_strategy_2(
 
     )
 
-    return recommendations
+
+    return {
+
+        "strategy_name": STRATEGY_NAME,
+
+        "recommendations": recommendations
+
+    }

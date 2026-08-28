@@ -4,21 +4,18 @@ Created on Thu May 14 21:47:48 2026
 
 @author: mohak
 """
+
 from __future__ import annotations
 
 import os
 import smtplib
 from email.mime.text import MIMEText
-from email.mime.multipart import (
-    MIMEMultipart
-)
-
-from email.mime.application import (
-    MIMEApplication
-)
-
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from pathlib import Path
+
 import pandas as pd
+
 
 # =========================================================
 # EMAIL CONFIGURATION
@@ -27,18 +24,16 @@ import pandas as pd
 SENDER_EMAIL = os.getenv(
     "SENDER_EMAIL"
 )
-# SENDER_EMAIL = "mohak.wagle@gmail.com"
-
 
 EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
-# EMAIL_PASSWORD = "qeuk bfni brne glib"
 
 RECEIVER_EMAILS = [
     "mohak.wagle@gmail.com",
     "prasadwagle08@gmail.com"
 ]
+
 
 # =========================================================
 # GENERIC EMAIL SENDER
@@ -74,6 +69,7 @@ def send_email(
             )
         )
 
+
         # =====================================================
         # ATTACH BODY
         # =====================================================
@@ -81,6 +77,7 @@ def send_email(
         message.attach(
             MIMEText(body)
         )
+
 
         # =====================================================
         # ATTACH FILE
@@ -105,11 +102,13 @@ def send_email(
                 "attachment",
 
                 filename=attachment_path.name
+
             )
 
             message.attach(
                 attachment
             )
+
 
         # =====================================================
         # SEND EMAIL
@@ -134,11 +133,14 @@ def send_email(
                 RECEIVER_EMAILS,
 
                 message.as_string()
+
             )
+
 
         print(
             "\nEmail sent successfully."
         )
+
 
     finally:
 
@@ -146,21 +148,122 @@ def send_email(
         # DELETE TEMPORARY ATTACHMENT
         # =====================================================
 
-        if (attachment_path is not None and attachment_path.exists()):
-            
+        if (
+
+            attachment_path is not None
+
+            and
+
+            attachment_path.exists()
+
+        ):
+
             attachment_path.unlink()
 
             print(
                 "Temporary workbook deleted."
             )
-    
+
+
+# =========================================================
+# RESOLVE STOCK SYMBOL COLUMN
+# =========================================================
+
+def _get_stock_symbol(
+    row: pd.Series
+) -> str:
+
+    """
+    Resolve the stock symbol from strategy output.
+
+    Different strategy/report layers may use different
+    naming conventions. Keep the email layer tolerant
+    of those differences.
+    """
+
+    possible_columns = [
+
+        "stock_symbol",
+
+        "STOCK_SYMBOL",
+
+        "symbol",
+
+        "SYMBOL",
+
+        "stock",
+
+        "STOCK"
+
+    ]
+
+
+    for column in possible_columns:
+
+        if column in row.index:
+
+            value = row[column]
+
+            if pd.notna(value):
+
+                return str(value)
+
+
+    return "UNKNOWN"
+
+
+# =========================================================
+# RESOLVE SECTOR
+# =========================================================
+
+def _get_sector(
+    row: pd.Series
+) -> str:
+
+    """
+    Resolve sector if available.
+
+    Sector is optional because not every strategy output
+    necessarily contains sector information.
+    """
+
+    possible_columns = [
+
+        "sector",
+
+        "SECTOR",
+
+        "sector_name",
+
+        "SECTOR_NAME"
+
+    ]
+
+
+    for column in possible_columns:
+
+        if column in row.index:
+
+            value = row[column]
+
+            if pd.notna(value):
+
+                return str(value)
+
+
+    return "N/A"
+
+
 # =========================================================
 # SEND FINAL STOCK REPORT
 # =========================================================
 
 def send_stock_report_email(
+
     recommendations: pd.DataFrame,
+
     workbook_path: Path
+
 ) -> None:
 
     # =====================================================
@@ -181,7 +284,9 @@ def send_stock_report_email(
 
         "The strategy sheets are attached "
         "for research and hypothesis testing."
+
     )
+
 
     # =====================================================
     # APPEND RECOMMENDATIONS
@@ -189,20 +294,34 @@ def send_stock_report_email(
 
     if not recommendations.empty:
 
-        body += "\n\nToday's Final Recommendations:\n\n"
+        body += (
+            "\n\nToday's Final Recommendations:\n\n"
+        )
+
 
         for _, row in recommendations.iterrows():
 
+            stock_symbol = _get_stock_symbol(
+                row
+            )
+
+            sector = _get_sector(
+                row
+            )
+
+
             body += (
 
-                f"{row['stock_symbol']}"
+                f"{stock_symbol}"
 
                 f" | "
 
-                f"{row['sector']}"
+                f"{sector}"
 
                 f"\n"
+
             )
+
 
     # =====================================================
     # SEND EMAIL
@@ -211,25 +330,33 @@ def send_stock_report_email(
     send_email(
 
         subject=(
+
             "Daily Stock Scanner | "
+
             "Final Recommendations Available"
+
         ),
 
         body=body,
 
         attachment_path=workbook_path
+
     )
+
 
     print(
         "\nFinal recommendation email sent."
     )
-    
+
+
 # =========================================================
 # SEND STRATEGY OUTPUT EMAIL
 # =========================================================
 
 def send_strategy_output_email(
+
     workbook_path: Path
+
 ) -> None:
 
     # =====================================================
@@ -258,7 +385,9 @@ def send_strategy_output_email(
 
         "They should not be interpreted "
         "as final investment recommendations."
+
     )
+
 
     # =====================================================
     # SEND EMAIL
@@ -273,17 +402,21 @@ def send_strategy_output_email(
             "No Final Recommendation | "
 
             "Strategy Outputs Attached"
+
         ),
 
         body=body,
 
         attachment_path=workbook_path
+
     )
+
 
     print(
         "\nStrategy output email sent."
     )
-    
+
+
 # =========================================================
 # SEND NO RECOMMENDATION EMAIL
 # =========================================================
@@ -309,7 +442,9 @@ def send_no_stock_email() -> None:
         "• No FINAL RECOMMENDATIONS were generated.\n"
 
         "• No strategy output workbook has been attached."
+
     )
+
 
     # =====================================================
     # SEND EMAIL
@@ -318,12 +453,17 @@ def send_no_stock_email() -> None:
     send_email(
 
         subject=(
+
             "Daily Stock Scanner | "
+
             "No Recommendations Today"
+
         ),
 
         body=body
+
     )
+
 
     print(
         "\nNo recommendation email sent."

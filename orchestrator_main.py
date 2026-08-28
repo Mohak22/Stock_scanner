@@ -71,6 +71,7 @@ strategy_results = [
 
     run_strategy_2(
         recommendation_date=TODAY,
+        history_window=60,
         save_output_flag=SAVE_OUTPUT
     )
 

@@ -19,14 +19,6 @@ data up to a fixed cutoff date.
 
 The cutoff is always supplied explicitly through `data_as_of`.
 
-Example:
-
-    data_as_of = 2026-08-16
-
-means:
-
-    No dataset is intentionally fetched beyond 2026-08-16.
-
 This module is responsible ONLY for data acquisition and preparation.
 
 It does NOT:
@@ -40,7 +32,7 @@ It does NOT:
 """
 
 
-from datetime import date
+from datetime import date, timedelta
 
 
 # ======================================================================
@@ -67,6 +59,20 @@ from processing.bhavcopy_cleaner import (
 from processing.history_processor import (
     HistoryProcessor
 )
+
+
+# ======================================================================
+# MTO PROCESSING
+# ======================================================================
+
+from processing.mto_processor import (
+    MTOProcessor
+)
+
+
+# ======================================================================
+# MASTER UNIVERSE
+# ======================================================================
 
 from processing.master_universe_builder import (
     build_master_universe
@@ -111,6 +117,38 @@ from backtesting.market_data.historical_market_data import (
 
 
 # ======================================================================
+# DATA ROOT
+# ======================================================================
+
+# RAW_BHAVCOPY_DIRECTORY is already located inside
+# STOCK_SCANNER_DATA/raw/nse/bhavcopy.
+#
+# Therefore we derive the common STOCK_SCANNER_DATA root
+# from the existing configured path.
+
+STOCK_SCANNER_DATA_DIRECTORY = (
+    RAW_BHAVCOPY_DIRECTORY
+    .parent
+    .parent
+)
+
+
+RAW_MTO_DIRECTORY = (
+    STOCK_SCANNER_DATA_DIRECTORY
+    / "raw"
+    / "nse"
+    / "mto"
+)
+
+
+PROCESSED_MTO_DIRECTORY = (
+    STOCK_SCANNER_DATA_DIRECTORY
+    / "processed"
+    / "mto"
+)
+
+
+# ======================================================================
 # DAILY DATA PREPARATION
 # ======================================================================
 
@@ -121,13 +159,6 @@ class Daily_Data_Preparation:
 
     Every external data collector receives the same `data_as_of`
     cutoff wherever that collector requires it.
-
-    Example:
-
-        data_as_of = 2026-08-16
-
-    The pipeline is therefore designed to maintain data only
-    through 2026-08-16.
     """
 
 
@@ -139,16 +170,6 @@ class Daily_Data_Preparation:
         self,
         data_as_of: date
     ):
-
-        """
-        Execute the complete data-preparation pipeline.
-
-        Parameters
-        ----------
-        data_as_of : date
-            Latest date for which data may be downloaded or saved.
-        """
-
 
         # ==============================================================
         # VALIDATION
@@ -209,6 +230,7 @@ class Daily_Data_Preparation:
         # PROCESS NSE HISTORY
         #
         # Raw Bhavcopy -> Processed Parquet
+        # Raw MTO      -> Processed Parquet
         # ==============================================================
 
         self._process_history(
@@ -227,8 +249,6 @@ class Daily_Data_Preparation:
         # ==============================================================
         # STEP 4
         # HISTORICAL STOCK MARKET DATA
-        #
-        # Per-stock historical OHLCV
         # ==============================================================
 
         self._update_historical_stock_data(
@@ -239,10 +259,6 @@ class Daily_Data_Preparation:
         # ==============================================================
         # STEP 5
         # MARKET + SECTOR INDEX DATA
-        #
-        # NIFTY 50
-        # NIFTY 500
-        # Sector indices
         # ==============================================================
 
         self._update_market_context(
@@ -253,9 +269,6 @@ class Daily_Data_Preparation:
         # ==============================================================
         # STEP 6
         # RESEARCH UNIVERSE
-        #
-        # Must be LAST because it depends on the latest
-        # master_universe.csv.
         # ==============================================================
 
         self._update_research_universe()
@@ -346,8 +359,11 @@ class Daily_Data_Preparation:
         # --------------------------------------------------------------
 
         synchronizer = HistorySynchronizer(
+
             downloader=downloader,
+
             data_as_of=data_as_of
+
         )
 
 
@@ -356,7 +372,7 @@ class Daily_Data_Preparation:
 
     # ==================================================================
     # STEP 2
-    # PROCESS BHAVCOPY HISTORY
+    # PROCESS NSE HISTORY
     # ==================================================================
 
     def _process_history(
@@ -365,12 +381,25 @@ class Daily_Data_Preparation:
     ):
 
         """
-        Process all raw NSE Bhavcopy files available through
-        the supplied cutoff date.
+        Process raw NSE historical data.
+
+        Bhavcopy:
+            raw/nse/bhavcopy
+                ->
+            processed/bhavcopy
+
+        MTO:
+            raw/nse/mto
+                ->
+            processed/mto
 
         Already processed files are skipped.
         """
 
+
+        # ==============================================================
+        # STEP HEADER
+        # ==============================================================
 
         print(
             "\n"
@@ -378,7 +407,7 @@ class Daily_Data_Preparation:
         )
 
         print(
-            "STEP 2 : PROCESS BHAVCOPY HISTORY"
+            "STEP 2 : PROCESS NSE HISTORY"
         )
 
         print(
@@ -391,14 +420,34 @@ class Daily_Data_Preparation:
         )
 
 
+        # ==============================================================
+        # BHAVCOPY
+        # ==============================================================
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "PROCESSING BHAVCOPY HISTORY"
+        )
+
+        print(
+            "=" * 70
+        )
+
+
         # --------------------------------------------------------------
         # CLEANER
         # --------------------------------------------------------------
 
         cleaner = BhavcopyCleaner(
+
             processed_directory=(
                 PROCESSED_BHAVCOPY_DIRECTORY
             )
+
         )
 
 
@@ -406,7 +455,7 @@ class Daily_Data_Preparation:
         # PROCESSOR
         # --------------------------------------------------------------
 
-        processor = HistoryProcessor(
+        bhavcopy_processor = HistoryProcessor(
 
             cleaner=cleaner,
 
@@ -423,7 +472,43 @@ class Daily_Data_Preparation:
         )
 
 
-        processor.process_history()
+        bhavcopy_processor.process_history()
+
+
+        # ==============================================================
+        # MTO
+        # ==============================================================
+
+        print(
+            "\n"
+            + "=" * 70
+        )
+
+        print(
+            "PROCESSING MTO / DELIVERY HISTORY"
+        )
+
+        print(
+            "=" * 70
+        )
+
+
+        mto_processor = MTOProcessor(
+
+            raw_directory=(
+                RAW_MTO_DIRECTORY
+            ),
+
+            processed_directory=(
+                PROCESSED_MTO_DIRECTORY
+            ),
+
+            data_as_of=data_as_of
+
+        )
+
+
+        mto_processor.process_history()
 
 
     # ==================================================================
@@ -437,11 +522,6 @@ class Daily_Data_Preparation:
 
         """
         Build/update the current master universe.
-
-        master_universe.csv remains the broad liquidity/price
-        universe.
-
-        It is NOT the same as the Research Universe.
         """
 
 
@@ -482,11 +562,6 @@ class Daily_Data_Preparation:
 
         """
         Update per-stock historical market data.
-
-        The historical stock collector receives the exact same
-        cutoff used by the overall data-preparation pipeline.
-
-        It must never intentionally retain data after `data_as_of`.
         """
 
 
@@ -532,9 +607,6 @@ class Daily_Data_Preparation:
 
         """
         Update NIFTY and sector index history.
-
-        The market-context collector receives the same cutoff
-        as the rest of the data-preparation pipeline.
         """
 
 
@@ -592,31 +664,11 @@ class Daily_Data_Preparation:
         """
         Refresh the Research Cockpit universe.
 
-        This is intentionally the FINAL step.
+        The collector is responsible for:
 
-        Flow:
-
-            master_universe.csv
-                    |
-                    v
-            NSE EQUITY_L.csv
-                    |
-                    v
-            Resolve valid NSE equities
-                    |
-                    v
-            Fetch NSE industry classification
-                    |
-                    v
-            research_universe.csv
-
-        IMPORTANT:
-
-            - master_universe.csv is NOT modified.
-            - ETFs/unresolved symbols are excluded.
-            - research_universe.csv is overwritten daily.
-            - Sector / industry columns are generated by
-              NSEEquitySecurityMasterCollector.
+            - resolving valid NSE equities
+            - producing research universe
+            - classification where available
         """
 
 
@@ -638,30 +690,10 @@ class Daily_Data_Preparation:
         )
 
 
-        # --------------------------------------------------------------
-        # COLLECTOR
-        # --------------------------------------------------------------
-
         collector = (
             NSEEquitySecurityMasterCollector()
         )
 
-
-        # --------------------------------------------------------------
-        # BUILD + SAVE RESEARCH UNIVERSE
-        #
-        # IMPORTANT:
-        #
-        # Do NOT manually construct research_universe.csv here.
-        #
-        # The collector now:
-        #
-        #   1. downloads EQUITY_L.csv
-        #   2. resolves the master universe
-        #   3. fetches NSE classification
-        #   4. saves research_universe.csv
-        #
-        # --------------------------------------------------------------
 
         collector.collect_and_validate()
 
@@ -672,24 +704,12 @@ class Daily_Data_Preparation:
 
 if __name__ == "__main__":
 
-    from datetime import timedelta
-
-
     # --------------------------------------------------------------
     # IMPORTANT
     #
     # Always use YESTERDAY.
     #
     # Never use date.today() directly as the data cutoff.
-    #
-    # Example:
-    #
-    # Today       = 17-Aug-2026
-    # data_as_of  = 16-Aug-2026
-    #
-    # Since 16-Aug-2026 is Sunday, the latest actual trading
-    # observation will normally be 14-Aug-2026.
-    #
     # --------------------------------------------------------------
 
     data_as_of = (
