@@ -306,7 +306,7 @@ jobs:
 
         run: |
 
-          python -m processing.daily_data_processing
+          python -u processing/daily_data_processing.py
 
       # ============================================================
       # DEBUG MTO OUTPUT
@@ -359,7 +359,7 @@ jobs:
           
           cd STOCK_SCANNER_DATA
           git status --short
-          
+
       # ============================================================
       # STEP 7
       # CHECK DATA REPOSITORY CHANGES
