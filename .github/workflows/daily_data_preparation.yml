@@ -177,52 +177,84 @@ jobs:
               echo "master_universe.csv DOES NOT EXIST"
           fi
 
-
       # ============================================================
       # STEP 6
-      # RUN DAILY DATA PREPARATION
-      #
-      # The Python code itself decides:
-      #
-      # data_as_of = yesterday
-      #
-      # Therefore today's incomplete data cannot intentionally
-      # enter the research dataset.
+      # VERIFY DATA PATHS + RUN DAILY DATA PREPARATION
       # ============================================================
+
+      - name: Verify data paths
+
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+
+        run: |
+
+          echo "========================================"
+          echo "GITHUB WORKSPACE"
+          echo "========================================"
+
+          echo "$GITHUB_WORKSPACE"
+
+          echo ""
+
+          echo "========================================"
+          echo "DIRECTORIES"
+          echo "========================================"
+
+          pwd
+
+          find . -maxdepth 3 -type d | sort
+
+          echo ""
+
+          echo "========================================"
+          echo "STOCK_SCANNER_DATA"
+          echo "========================================"
+
+          ls -lah STOCK_SCANNER_DATA || true
+
+          echo ""
+
+          echo "========================================"
+          echo "PROCESSED"
+          echo "========================================"
+
+          ls -lah STOCK_SCANNER_DATA/processed || true
+
+          echo ""
+
+          echo "========================================"
+          echo "CONFIG PATH RESOLUTION"
+          echo "========================================"
+
+          python -c "
+          from config.paths import (
+              PROJECT_ROOT,
+              GITHUB_DATA_REPOSITORY,
+              LOCAL_DATA_REPOSITORY,
+              DATA_REPOSITORY,
+              RAW_BHAVCOPY_DIRECTORY,
+              PROCESSED_BHAVCOPY_DIRECTORY
+          )
+
+          print('PROJECT_ROOT              =', PROJECT_ROOT)
+          print('GITHUB_DATA_REPOSITORY    =', GITHUB_DATA_REPOSITORY)
+          print('LOCAL_DATA_REPOSITORY     =', LOCAL_DATA_REPOSITORY)
+          print('DATA_REPOSITORY           =', DATA_REPOSITORY)
+          print('RAW_BHAVCOPY_DIRECTORY    =', RAW_BHAVCOPY_DIRECTORY)
+          print('PROCESSED_BHAVCOPY        =', PROCESSED_BHAVCOPY_DIRECTORY)
+          print('DATA_REPOSITORY EXISTS    =', DATA_REPOSITORY.exists())
+          print('PROCESSED EXISTS          =', PROCESSED_BHAVCOPY_DIRECTORY.parent.exists())
+          "
 
       - name: Run Daily Data Preparation
 
         env:
-
           PYTHONPATH: ${{ github.workspace }}
 
         run: |
 
           python -m processing.daily_data_processing
-
-      # ============================================================
-      # STEP 6B
-      # VERIFY PROCESSED MTO OUTPUT
-      # ============================================================
-
-      - name: Verify processed MTO
-
-        run: |
-
-          echo "========================================"
-          echo "PROCESSED MTO DIRECTORY"
-          echo "========================================"
-
-          ls -lah STOCK_SCANNER_DATA/processed/mto/ || true
-
-          echo ""
-
-          echo "MTO PARQUET COUNT"
-
-          find STOCK_SCANNER_DATA/processed/mto \
-            -type f \
-            -name "*.parquet" \
-            | wc -l
       # ============================================================
       # STEP 7
       # CHECK DATA REPOSITORY CHANGES
