@@ -200,7 +200,29 @@ jobs:
 
           python -m processing.daily_data_processing
 
+      # ============================================================
+      # STEP 6B
+      # VERIFY PROCESSED MTO OUTPUT
+      # ============================================================
 
+      - name: Verify processed MTO
+
+        run: |
+
+          echo "========================================"
+          echo "PROCESSED MTO DIRECTORY"
+          echo "========================================"
+
+          ls -lah STOCK_SCANNER_DATA/processed/mto/ || true
+
+          echo ""
+
+          echo "MTO PARQUET COUNT"
+
+          find STOCK_SCANNER_DATA/processed/mto \
+            -type f \
+            -name "*.parquet" \
+            | wc -l
       # ============================================================
       # STEP 7
       # CHECK DATA REPOSITORY CHANGES
