@@ -298,7 +298,7 @@ jobs:
 
           ls -lah STOCK_SCANNER_DATA/raw/nse/mto \
             2>/dev/null || true
-            
+
       - name: Run Daily Data Preparation
 
         env:
@@ -307,6 +307,59 @@ jobs:
         run: |
 
           python -m processing.daily_data_processing
+
+      # ============================================================
+      # DEBUG MTO OUTPUT
+      # ============================================================
+
+      - name: Verify processed MTO output
+
+        run: |
+
+          echo "========================================"
+          echo "MTO OUTPUT DEBUG"
+          echo "========================================"
+
+          echo ""
+          echo "Current directory:"
+          pwd
+
+          echo ""
+          echo "MTO RAW DIRECTORY:"
+          ls -lah STOCK_SCANNER_DATA/raw/nse/mto/ | head -20
+
+          echo ""
+          echo "PROCESSED DIRECTORY:"
+          ls -lah STOCK_SCANNER_DATA/processed/
+
+          echo ""
+          echo "PROCESSED MTO DIRECTORY:"
+          
+          if [ -d STOCK_SCANNER_DATA/processed/mto ]; then
+              echo "processed/mto EXISTS"
+              ls -lah STOCK_SCANNER_DATA/processed/mto/ | head -20
+          else
+              echo "processed/mto DOES NOT EXIST"
+          fi
+
+          echo ""
+          echo "MTO PARQUET COUNT:"
+
+          if [ -d STOCK_SCANNER_DATA/processed/mto ]; then
+              find STOCK_SCANNER_DATA/processed/mto \
+                -type f \
+                -name "*.parquet" \
+                | wc -l
+          else
+              echo "0"
+          fi
+
+          echo ""
+          echo "GIT STATUS:"
+          
+          cd STOCK_SCANNER_DATA
+          git status --short
+          
       # ============================================================
       # STEP 7
       # CHECK DATA REPOSITORY CHANGES
