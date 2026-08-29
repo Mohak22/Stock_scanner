@@ -36,19 +36,24 @@ def health() -> HealthResponse:
     status = repository.health()
 
     return HealthResponse(
-        status="ok" if status["exists"] else "error",
-        data_repository=status["data_repository"],
-        data_repository_exists=status["exists"],
-        processed_bhavcopy_exists=status["processed_bhavcopy_exists"],
-        market_context_exists=status["market_context_exists"],
-        historical_market_data_exists=status["historical_market_data_exists"],
-        reference_data_exists=status["reference_data_exists"],
+        status="ok" if status["reachable"] else "error",
+        data_repository=status["repository"],
+        branch=status["branch"],
+        data_repository_reachable=status["reachable"],
+        error=status["error"],
     )
 
 
 @app.get("/data/dates", response_model=DateRangeResponse, tags=["data"])
 def available_dates() -> DateRangeResponse:
-    dates = [date.fromisoformat(value) for value in repository.list_bhavcopy_dates()]
+    try:
+        dates = [
+            date.fromisoformat(value)
+            for value in repository.list_bhavcopy_dates()
+        ]
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     return DateRangeResponse(available_dates=dates)
 
 
@@ -65,6 +70,8 @@ def bhavcopy(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if dataframe.empty:
         return {
