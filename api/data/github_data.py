@@ -1,12 +1,9 @@
-"""Read-only access to the GitHub STOCK_SCANNER_DATA repository.
-
-Research Cockpit V1 has no server or database. During local development the
-API downloads the required Parquet files directly from the public GitHub data
-repository. The local STOCK_SCANNER_DATA checkout is deliberately ignored.
-"""
+"""Read-only access to the private GitHub STOCK_SCANNER_DATA repository."""
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import date
 from io import BytesIO
 from urllib.error import HTTPError, URLError
@@ -18,49 +15,65 @@ import pandas as pd
 DATA_REPOSITORY_OWNER = "Mohak22"
 DATA_REPOSITORY_NAME = "STOCK_SCANNER_DATA"
 DATA_REPOSITORY_BRANCH = "main"
-
-RAW_GITHUB_BASE_URL = (
-    "https://raw.githubusercontent.com/"
-    f"{DATA_REPOSITORY_OWNER}/{DATA_REPOSITORY_NAME}/"
-    f"{DATA_REPOSITORY_BRANCH}/"
-)
+GITHUB_API_BASE_URL = "https://api.github.com"
 
 
 class ResearchDataRepository:
-    """Read-only access to research files stored in GitHub."""
+    """Read-only access to research files stored in private GitHub."""
 
     def __init__(self) -> None:
         self.repository = (
             f"{DATA_REPOSITORY_OWNER}/{DATA_REPOSITORY_NAME}"
         )
+        self.token = os.getenv("STOCK_SCANNER_DATA_TOKEN")
 
-    @staticmethod
-    def _download(url: str) -> bytes:
-        request = Request(
-            url,
-            headers={"User-Agent": "Stock-Scanner-Research-Cockpit"},
-        )
+    def _request(self, url: str) -> bytes:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Stock-Scanner-Research-Cockpit",
+        }
+
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+
+        request = Request(url, headers=headers)
 
         try:
             with urlopen(request, timeout=60) as response:
                 return response.read()
         except HTTPError as exc:
+            if exc.code == 401:
+                raise RuntimeError(
+                    "GitHub authentication failed. Check "
+                    "STOCK_SCANNER_DATA_TOKEN."
+                ) from exc
+            if exc.code == 403:
+                raise RuntimeError(
+                    "GitHub access denied. Check the token permissions."
+                ) from exc
+            if exc.code == 404:
+                raise RuntimeError(
+                    f"GitHub resource not found: {url}"
+                ) from exc
             raise RuntimeError(
                 f"GitHub data request failed ({exc.code}): {url}"
             ) from exc
         except URLError as exc:
             raise RuntimeError(
-                f"Could not reach GitHub data repository: {exc.reason}"
+                f"Could not reach GitHub: {exc.reason}"
             ) from exc
 
     def health(self) -> dict:
-        """Verify that the configured GitHub data repository is reachable."""
-        url = RAW_GITHUB_BASE_URL + "master_universe.csv"
+        """Verify authenticated access to the private data repository."""
+        url = (
+            f"{GITHUB_API_BASE_URL}/repos/"
+            f"{self.repository}"
+        )
 
         try:
-            self._download(url)
-            reachable = True
-            error = None
+            payload = json.loads(self._request(url).decode("utf-8"))
+            reachable = payload.get("full_name") == self.repository
+            error = None if reachable else "Unexpected GitHub repository response."
         except RuntimeError as exc:
             reachable = False
             error = str(exc)
@@ -72,32 +85,24 @@ class ResearchDataRepository:
             "error": error,
         }
 
-    def list_bhavcopy_dates(self) -> list[str]:
-        """Return available processed Bhavcopy dates from GitHub.
-
-        GitHub's raw-content endpoint cannot list a directory, so the date
-        catalogue is intentionally obtained from the Git tree API.
-        """
-        import json
-
+    def _tree(self) -> list[dict]:
         url = (
-            "https://api.github.com/repos/"
-            f"{DATA_REPOSITORY_OWNER}/{DATA_REPOSITORY_NAME}/git/trees/"
+            f"{GITHUB_API_BASE_URL}/repos/{self.repository}/git/trees/"
             f"{DATA_REPOSITORY_BRANCH}?recursive=1"
         )
+        payload = json.loads(self._request(url).decode("utf-8"))
+        return payload.get("tree", [])
 
-        payload = json.loads(self._download(url).decode("utf-8"))
+    def list_bhavcopy_dates(self) -> list[str]:
         dates: list[str] = []
+        prefix = "processed/bhavcopy/sec_bhavdata_full_"
 
-        for item in payload.get("tree", []):
+        for item in self._tree():
             path = item.get("path", "")
-            prefix = "processed/bhavcopy/sec_bhavdata_full_"
-
             if not path.startswith(prefix) or not path.endswith(".parquet"):
                 continue
 
             suffix = path[len(prefix):-len(".parquet")]
-
             if len(suffix) != 8 or not suffix.isdigit():
                 continue
 
@@ -115,7 +120,6 @@ class ResearchDataRepository:
         start_date: str | date,
         end_date: str | date,
     ) -> pd.DataFrame:
-        """Load processed Bhavcopy Parquets directly from GitHub."""
         start = pd.Timestamp(start_date).date()
         end = pd.Timestamp(end_date).date()
 
@@ -126,23 +130,24 @@ class ResearchDataRepository:
 
         for date_value in pd.date_range(start, end, freq="D"):
             current = date_value.date()
-            filename = (
-                f"sec_bhavdata_full_{current:%d%m%Y}.parquet"
+            filename = f"sec_bhavdata_full_{current:%d%m%Y}.parquet"
+            path = f"processed/bhavcopy/{filename}"
+
+            url = (
+                f"{GITHUB_API_BASE_URL}/repos/{self.repository}/contents/{path}"
+                f"?ref={DATA_REPOSITORY_BRANCH}"
             )
-            relative_path = f"processed/bhavcopy/{filename}"
-            url = RAW_GITHUB_BASE_URL + relative_path
 
             try:
-                content = self._download(url)
+                payload = json.loads(self._request(url).decode("utf-8"))
             except RuntimeError as exc:
-                # Weekends and market holidays normally have no Bhavcopy.
-                if "(404)" in str(exc):
+                if "not found" in str(exc).lower():
                     continue
                 raise
 
-            frames.append(
-                pd.read_parquet(BytesIO(content))
-            )
+            import base64
+            content = base64.b64decode(payload["content"])
+            frames.append(pd.read_parquet(BytesIO(content)))
 
         if not frames:
             return pd.DataFrame()
