@@ -8,11 +8,9 @@ from pydantic import BaseModel, Field
 class HealthResponse(BaseModel):
     status: str
     data_repository: str
-    data_repository_exists: bool
-    processed_bhavcopy_exists: bool
-    market_context_exists: bool
-    historical_market_data_exists: bool
-    reference_data_exists: bool
+    branch: str
+    data_repository_reachable: bool
+    error: str | None = None
 
 
 class DateRangeResponse(BaseModel):
