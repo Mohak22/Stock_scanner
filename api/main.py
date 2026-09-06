@@ -7,57 +7,39 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-from fastapi import (
-    FastAPI,
-    HTTPException,
-    Query,
-)
+from fastapi import FastAPI, HTTPException, Query
 
-from api.data.github_data import (
-    ResearchDataRepository,
-)
+from api.data.github_data import ResearchDataRepository
 
 from api.schemas import (
     DateRangeResponse,
     HealthResponse,
 )
 
-from api.research.features import (
-    get_feature_registry,
-)
+from api.research.features import get_feature_registry
+from api.research.universe import get_research_universe
+from api.research.dataset import get_dataset_info
+from api.research.models import ResearchRequest
 
-from api.research.universe import (
-    get_research_universe,
-)
+from research.engine.feature_engine import calculate_features
 
-from api.research.dataset import (
-    get_dataset_info,
-)
-
-from api.research.models import (
-    ResearchRequest,
-)
-
-from research.engine.feature_engine import (
-    calculate_features,
-)
-
-from research.engine.research_engine import (
-    run_research,
-    build_research_diagnostics,
-)
-
-from research.engine.market_data_loader import (
-    load_market_index,
-)
+from research.engine.market_data_loader import load_market_index
 
 from research.engine.market_return_engine import (
     calculate_market_forward_returns,
 )
 
-from config.paths import (
-    RESEARCH_MARKET_CONTEXT_INDICES_FOLDER,
+from research.engine.research_engine import (
+    run_research,
+    build_research_diagnostics,
+    analyze_by_market_regime,
 )
+
+from research.engine.regime_engine import (
+    calculate_market_regime,
+)
+
+from config.paths import RESEARCH_MARKET_CONTEXT_INDICES_FOLDER
 
 
 # ======================================================================
@@ -73,7 +55,6 @@ app = FastAPI(
     ),
 )
 
-
 repository = ResearchDataRepository()
 
 
@@ -86,11 +67,8 @@ repository = ResearchDataRepository()
     tags=["system"],
 )
 def root() -> dict[str, str]:
-
     return {
-        "name": (
-            "Stock Scanner Research Cockpit API"
-        ),
+        "name": "Stock Scanner Research Cockpit API",
         "version": "0.1.0",
         "mode": "research-only",
     }
@@ -113,9 +91,7 @@ def health() -> HealthResponse:
         ),
         data_repository=status["repository"],
         branch=status["branch"],
-        data_repository_reachable=(
-            status["reachable"]
-        ),
+        data_repository_reachable=status["reachable"],
         error=status["error"],
     )
 
@@ -135,9 +111,7 @@ def available_dates() -> DateRangeResponse:
 
         dates = [
             date.fromisoformat(value)
-            for value in (
-                repository.list_bhavcopy_dates()
-            )
+            for value in repository.list_bhavcopy_dates()
         ]
 
     except RuntimeError as exc:
@@ -148,7 +122,7 @@ def available_dates() -> DateRangeResponse:
         ) from exc
 
     return DateRangeResponse(
-        available_dates=dates
+        available_dates=dates,
     )
 
 
@@ -228,7 +202,7 @@ def bhavcopy(
 def research_features() -> dict:
 
     return {
-        "features": get_feature_registry()
+        "features": get_feature_registry(),
     }
 
 
@@ -289,10 +263,7 @@ def run_research_api(
     # 1. VALIDATE DATE RANGE
     # ----------------------------------------------------------
 
-    if (
-        request.training_start
-        > request.training_end
-    ):
+    if request.training_start > request.training_end:
 
         raise HTTPException(
             status_code=400,
@@ -305,8 +276,7 @@ def run_research_api(
     if (
         request.validation_start is not None
         and request.validation_end is not None
-        and request.validation_start
-        > request.validation_end
+        and request.validation_start > request.validation_end
     ):
 
         raise HTTPException(
@@ -320,8 +290,7 @@ def run_research_api(
     if (
         request.testing_start is not None
         and request.testing_end is not None
-        and request.testing_start
-        > request.testing_end
+        and request.testing_start > request.testing_end
     ):
 
         raise HTTPException(
@@ -345,33 +314,25 @@ def run_research_api(
     )
 
     validation_start = (
-        pd.Timestamp(
-            request.validation_start
-        )
+        pd.Timestamp(request.validation_start)
         if request.validation_start is not None
         else None
     )
 
     validation_end = (
-        pd.Timestamp(
-            request.validation_end
-        )
+        pd.Timestamp(request.validation_end)
         if request.validation_end is not None
         else None
     )
 
     testing_start = (
-        pd.Timestamp(
-            request.testing_start
-        )
+        pd.Timestamp(request.testing_start)
         if request.testing_start is not None
         else None
     )
 
     testing_end = (
-        pd.Timestamp(
-            request.testing_end
-        )
+        pd.Timestamp(request.testing_end)
         if request.testing_end is not None
         else None
     )
@@ -392,9 +353,7 @@ def run_research_api(
 
     horizons = [
         int(horizon)
-        for horizon in (
-            request.evaluation_horizons
-        )
+        for horizon in request.evaluation_horizons
     ]
 
     if not horizons:
@@ -407,10 +366,7 @@ def run_research_api(
             ),
         )
 
-    if any(
-        horizon <= 0
-        for horizon in horizons
-    ):
+    if any(horizon <= 0 for horizon in horizons):
 
         raise HTTPException(
             status_code=400,
@@ -419,6 +375,9 @@ def run_research_api(
                 "positive integers."
             ),
         )
+
+    # Remove duplicate horizons while preserving order.
+    horizons = list(dict.fromkeys(horizons))
 
     # ----------------------------------------------------------
     # 4. DETERMINE REQUESTED RANGE
@@ -430,36 +389,19 @@ def run_research_api(
     ]
 
     if validation_start is not None:
-
-        requested_dates.append(
-            validation_start
-        )
+        requested_dates.append(validation_start)
 
     if validation_end is not None:
-
-        requested_dates.append(
-            validation_end
-        )
+        requested_dates.append(validation_end)
 
     if testing_start is not None:
-
-        requested_dates.append(
-            testing_start
-        )
+        requested_dates.append(testing_start)
 
     if testing_end is not None:
+        requested_dates.append(testing_end)
 
-        requested_dates.append(
-            testing_end
-        )
-
-    requested_start = min(
-        requested_dates
-    )
-
-    requested_end = max(
-        requested_dates
-    )
+    requested_start = min(requested_dates)
+    requested_end = max(requested_dates)
 
     # ----------------------------------------------------------
     # 5. FEATURE LOOKBACK
@@ -469,14 +411,11 @@ def run_research_api(
 
     for feature in features:
 
-        period = feature.get(
-            "period"
-        )
+        period = feature.get("period")
 
         if period is not None:
 
             try:
-
                 period = int(period)
 
             except (
@@ -502,9 +441,7 @@ def run_research_api(
                     ),
                 )
 
-            feature_periods.append(
-                period
-            )
+            feature_periods.append(period)
 
     max_feature_period = max(
         feature_periods,
@@ -518,18 +455,14 @@ def run_research_api(
 
     data_start = (
         requested_start
-        - pd.Timedelta(
-            days=lookback_days
-        )
+        - pd.Timedelta(days=lookback_days)
     )
 
     # ----------------------------------------------------------
     # 6. FORWARD-RETURN BUFFER
     # ----------------------------------------------------------
 
-    max_horizon = max(
-        horizons
-    )
+    max_horizon = max(horizons)
 
     forward_buffer_days = max(
         15,
@@ -538,9 +471,7 @@ def run_research_api(
 
     data_end = (
         requested_end
-        + pd.Timedelta(
-            days=forward_buffer_days
-        )
+        + pd.Timedelta(days=forward_buffer_days)
     )
 
     # ----------------------------------------------------------
@@ -597,9 +528,11 @@ def run_research_api(
         errors="coerce",
     )
 
-    data = data.dropna(
-        subset=["TIMESTAMP"]
-    ).copy()
+    data = (
+        data
+        .dropna(subset=["TIMESTAMP"])
+        .copy()
+    )
 
     if "SYMBOL" not in data.columns:
 
@@ -626,9 +559,7 @@ def run_research_api(
 
         symbols = {
             symbol.upper().strip()
-            for symbol in (
-                request.universe.symbols
-            )
+            for symbol in request.universe.symbols
         }
 
         if not symbols:
@@ -642,15 +573,10 @@ def run_research_api(
             )
 
         data = data[
-            data["SYMBOL"].isin(
-                symbols
-            )
+            data["SYMBOL"].isin(symbols)
         ].copy()
 
-    elif (
-        request.universe.type
-        != "all_stocks"
-    ):
+    elif request.universe.type != "all_stocks":
 
         raise HTTPException(
             status_code=400,
@@ -711,8 +637,8 @@ def run_research_api(
     #
     # NIFTY 50 is the default market benchmark.
     #
-    # We use the SAME extended date range as stock research,
-    # including the forward buffer.
+    # The market dataset uses the SAME extended
+    # date range as the stock research.
     # ----------------------------------------------------------
 
     market_file = (
@@ -745,6 +671,61 @@ def run_research_api(
             ),
         ) from exc
 
+    if market_data.empty:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Market benchmark contains "
+                "no data for the requested range."
+            ),
+        )
+
+    # ----------------------------------------------------------
+    # 12A. NORMALIZE MARKET DATA
+    #
+    # The market loader may return Date while the
+    # regime engine expects TIMESTAMP.
+    # ----------------------------------------------------------
+
+    market_data = market_data.copy()
+
+    if "TIMESTAMP" not in market_data.columns:
+
+        if "Date" in market_data.columns:
+
+            market_data = market_data.rename(
+                columns={
+                    "Date": "TIMESTAMP",
+                }
+            )
+
+        else:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Market benchmark data must "
+                    "contain TIMESTAMP or Date."
+                ),
+            )
+
+    market_data["TIMESTAMP"] = pd.to_datetime(
+        market_data["TIMESTAMP"],
+        errors="coerce",
+    )
+
+    market_data = (
+        market_data
+        .dropna(subset=["TIMESTAMP"])
+        .sort_values("TIMESTAMP")
+        .drop_duplicates(
+            subset=["TIMESTAMP"],
+            keep="last",
+        )
+        .reset_index(drop=True)
+    )
+
     # ----------------------------------------------------------
     # 13. CALCULATE MARKET FORWARD RETURNS
     # ----------------------------------------------------------
@@ -768,11 +749,75 @@ def run_research_api(
             ),
         ) from exc
 
+    # Normalize market return timestamp.
+    if "TIMESTAMP" not in market_returns.columns:
+
+        if "Date" in market_returns.columns:
+
+            market_returns = market_returns.rename(
+                columns={
+                    "Date": "TIMESTAMP",
+                }
+            )
+
+        else:
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Market forward-return data "
+                    "does not contain TIMESTAMP."
+                ),
+            )
+
+    market_returns["TIMESTAMP"] = pd.to_datetime(
+        market_returns["TIMESTAMP"],
+        errors="coerce",
+    )
+
+    market_returns = (
+        market_returns
+        .dropna(subset=["TIMESTAMP"])
+        .sort_values("TIMESTAMP")
+        .drop_duplicates(
+            subset=["TIMESTAMP"],
+            keep="last",
+        )
+        .reset_index(drop=True)
+    )
+
     # ----------------------------------------------------------
-    # 14. RUN STOCK RESEARCH ON FULL DATASET
+    # 14. CALCULATE CAUSAL MARKET REGIME
     #
-    # Forward stock returns MUST be calculated across the
-    # complete extended dataset before splitting.
+    # IMPORTANT:
+    #
+    # The regime uses only market prices available
+    # on or before each signal date.
+    #
+    # It does NOT use forward returns.
+    # ----------------------------------------------------------
+
+    try:
+
+        market_regime_data = calculate_market_regime(
+            market_dataframe=market_data,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Market regime calculation "
+                f"failed: {exc}"
+            ),
+        ) from exc
+
+    # ----------------------------------------------------------
+    # 15. RUN STOCK RESEARCH ON FULL DATASET
+    #
+    # Forward stock returns MUST be calculated across
+    # the complete extended dataset before splitting.
     # ----------------------------------------------------------
 
     try:
@@ -800,23 +845,25 @@ def run_research_api(
     )
 
     # ----------------------------------------------------------
-    # 15. ENRICH SIGNALS WITH MARKET RETURNS
+    # 16. ENRICH SIGNALS
+    #
+    # Add:
+    #   - market forward returns
+    #   - excess returns
+    #   - causal market trailing return
+    #   - causal market regime
     # ----------------------------------------------------------
 
     if not full_signals.empty:
 
-        full_signals["TIMESTAMP"] = (
-            pd.to_datetime(
-                full_signals["TIMESTAMP"],
-                errors="coerce",
-            )
+        full_signals["TIMESTAMP"] = pd.to_datetime(
+            full_signals["TIMESTAMP"],
+            errors="coerce",
         )
 
         full_signals = (
             full_signals
-            .dropna(
-                subset=["TIMESTAMP"]
-            )
+            .dropna(subset=["TIMESTAMP"])
             .sort_values(
                 [
                     "SYMBOL",
@@ -826,14 +873,9 @@ def run_research_api(
             .reset_index(drop=True)
         )
 
-        market_returns = (
-            market_returns
-            .rename(
-                columns={
-                    "Date": "TIMESTAMP"
-                }
-            )
-        )
+        # ------------------------------------------------------
+        # MARKET FORWARD RETURNS
+        # ------------------------------------------------------
 
         full_signals = (
             full_signals.merge(
@@ -844,14 +886,12 @@ def run_research_api(
         )
 
         # ------------------------------------------------------
-        # Calculate excess return
+        # EXCESS RETURNS
         # ------------------------------------------------------
 
         for horizon in horizons:
 
-            horizon = int(
-                horizon
-            )
+            horizon = int(horizon)
 
             stock_column = (
                 f"RETURN_T{horizon}"
@@ -865,19 +905,41 @@ def run_research_api(
                 f"EXCESS_RETURN_T{horizon}"
             )
 
-            full_signals[
-                excess_column
-            ] = (
-                full_signals[
-                    stock_column
+            if (
+                stock_column in full_signals.columns
+                and market_column in full_signals.columns
+            ):
+
+                full_signals[excess_column] = (
+                    full_signals[stock_column]
+                    - full_signals[market_column]
+                )
+
+        # ------------------------------------------------------
+        # CAUSAL MARKET REGIME
+        # ------------------------------------------------------
+
+        regime_merge_data = (
+            market_regime_data[
+                [
+                    "TIMESTAMP",
+                    "MARKET_TRAILING_RETURN",
+                    "MARKET_REGIME",
                 ]
-                - full_signals[
-                    market_column
-                ]
+            ]
+            .copy()
+        )
+
+        full_signals = (
+            full_signals.merge(
+                regime_merge_data,
+                on="TIMESTAMP",
+                how="left",
             )
+        )
 
     # ----------------------------------------------------------
-    # 16. BUILD SPLIT RESULTS
+    # 17. BUILD SPLIT RESULTS
     # ----------------------------------------------------------
 
     def build_split_result(
@@ -891,9 +953,7 @@ def run_research_api(
 
         split_end_exclusive = (
             split_end
-            + pd.Timedelta(
-                days=1
-            )
+            + pd.Timedelta(days=1)
         )
 
         split_mask = (
@@ -925,24 +985,23 @@ def run_research_api(
             signal_data = (
                 full_signals[
                     (
-                        full_signals[
-                            "TIMESTAMP"
-                        ]
+                        full_signals["TIMESTAMP"]
                         >= split_start
                     )
                     & (
-                        full_signals[
-                            "TIMESTAMP"
-                        ]
+                        full_signals["TIMESTAMP"]
                         < split_end_exclusive
                     )
                 ].copy()
             )
 
         # ------------------------------------------------------
-        # Build diagnostics
+        # Build diagnostics + A3 analysis
         #
-        # Diagnostics are calculated separately for each split.
+        # IMPORTANT:
+        #
+        # We pass features here so A3 feature analysis
+        # is calculated for the actual split.
         # ------------------------------------------------------
 
         split_result = (
@@ -950,31 +1009,61 @@ def run_research_api(
                 dataframe=split_data,
                 signal_data=signal_data,
                 horizons=horizons,
+                features=features,
             )
         )
 
+        # ------------------------------------------------------
+        # A3.3 MARKET REGIME ANALYSIS
+        #
+        # Regime is attached before splitting and therefore
+        # remains causal.
+        # ------------------------------------------------------
+
+        analysis = (
+            split_result.get(
+                "analysis",
+                {},
+            )
+            or {}
+        )
+
+        if signal_data.empty:
+
+            analysis["by_market_regime"] = {}
+
+        else:
+
+            try:
+
+                analysis["by_market_regime"] = (
+                    analyze_by_market_regime(
+                        signal_data=signal_data,
+                        horizons=horizons,
+                    )
+                )
+
+            except ValueError as exc:
+
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Market regime analysis "
+                        f"failed: {exc}"
+                    ),
+                ) from exc
+
         return {
-            "summary": (
-                split_result["summary"]
-            ),
-
-            "performance": (
-                split_result["performance"]
-            ),
-
-            "diagnostics": (
-                split_result["diagnostics"]
-            ),
-
-            "warnings": (
-                split_result["warnings"]
-            ),
-
+            "summary": split_result["summary"],
+            "performance": split_result["performance"],
+            "diagnostics": split_result["diagnostics"],
+            "analysis": analysis,
+            "warnings": split_result["warnings"],
             "signals": signal_data,
         }
 
     # ----------------------------------------------------------
-    # 17. TRAINING
+    # 18. TRAINING
     # ----------------------------------------------------------
 
     training_result = (
@@ -985,7 +1074,7 @@ def run_research_api(
     )
 
     # ----------------------------------------------------------
-    # 18. VALIDATION
+    # 19. VALIDATION
     # ----------------------------------------------------------
 
     validation_result = None
@@ -1003,7 +1092,7 @@ def run_research_api(
         )
 
     # ----------------------------------------------------------
-    # 19. TESTING
+    # 20. TESTING
     # ----------------------------------------------------------
 
     testing_result = None
@@ -1021,7 +1110,7 @@ def run_research_api(
         )
 
     # ----------------------------------------------------------
-    # 20. CLEAN JSON RESULT
+    # 21. CLEAN JSON RESULT
     # ----------------------------------------------------------
 
     def clean_result(
@@ -1041,14 +1130,10 @@ def run_research_api(
 
             signals["TIMESTAMP"] = (
                 pd.to_datetime(
-                    signals[
-                        "TIMESTAMP"
-                    ],
+                    signals["TIMESTAMP"],
                     errors="coerce",
                 )
-                .dt.strftime(
-                    "%Y-%m-%d"
-                )
+                .dt.strftime("%Y-%m-%d")
             )
 
             signals = signals.where(
@@ -1057,70 +1142,47 @@ def run_research_api(
             )
 
         return {
-            "summary": (
-                result["summary"]
+            "summary": result["summary"],
+            "performance": result["performance"],
+            "diagnostics": result["diagnostics"],
+            "analysis": result.get(
+                "analysis",
+                {},
             ),
-
-            "performance": (
-                result["performance"]
-            ),
-
-            "diagnostics": (
-                result["diagnostics"]
-            ),
-
-            "warnings": (
-                result["warnings"]
-            ),
-
+            "warnings": result["warnings"],
             "signals": signals.to_dict(
                 orient="records"
             ),
         }
 
     # ----------------------------------------------------------
-    # 21. FINAL RESPONSE
+    # 22. FINAL RESPONSE
     # ----------------------------------------------------------
 
     return {
         "research_config": {
-            "training_start": (
-                request.training_start
-            ),
-
-            "training_end": (
-                request.training_end
-            ),
-
-            "validation_start": (
-                request.validation_start
-            ),
-
-            "validation_end": (
-                request.validation_end
-            ),
-
-            "testing_start": (
-                request.testing_start
-            ),
-
-            "testing_end": (
-                request.testing_end
-            ),
-
-            "universe": (
-                request.universe.model_dump()
-            ),
-
+            "training_start": request.training_start,
+            "training_end": request.training_end,
+            "validation_start": request.validation_start,
+            "validation_end": request.validation_end,
+            "testing_start": request.testing_start,
+            "testing_end": request.testing_end,
+            "universe": request.universe.model_dump(),
             "features": features,
-
             "entry_conditions": conditions,
-
             "evaluation_horizons": horizons,
-
             "market_benchmark": {
                 "name": "NIFTY 50",
                 "file": "nifty_50.parquet",
+            },
+            "market_regime": {
+                "lookback": 20,
+                "bear_threshold": -5.0,
+                "bull_threshold": 5.0,
+                "definition": (
+                    "20-trading-day trailing NIFTY 50 return "
+                    "at the signal date"
+                ),
             },
         },
 
