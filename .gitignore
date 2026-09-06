@@ -10,3 +10,4 @@ __pycache__/
 .env
 .ipynb_checkpoints/
 STOCK_SCANNER_DATA/temp/
+.research_cache/
