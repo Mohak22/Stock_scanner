@@ -16,6 +16,9 @@ from api.schemas import (
     HealthResponse,
 )
 
+from api.research.experiment_api import router as experiment_router
+from api.research.workflow_api import router as workflow_router
+
 from api.research.features import get_feature_registry
 from api.research.universe import get_research_universe
 from api.research.dataset import get_dataset_info
@@ -54,6 +57,10 @@ app = FastAPI(
         "STOCK_SCANNER_DATA GitHub repository."
     ),
 )
+
+app.include_router(experiment_router)
+
+app.include_router(workflow_router)
 
 repository = ResearchDataRepository()
 
