@@ -33,7 +33,7 @@ import pandas as pd
 
 from research.engine.condition_engine import apply_conditions
 from research.engine.return_engine import calculate_forward_returns
-
+from research.engine.feature_engine import calculate_features
 
 # ======================================================================
 # HELPERS
@@ -962,6 +962,15 @@ def run_research(
             ]
         )
         .reset_index(drop=True)
+    )
+
+    # ----------------------------------------------------------
+    # Calculate requested research features
+    # ----------------------------------------------------------
+
+    data = calculate_features(
+        dataframe=data,
+        features=features,
     )
 
     # ----------------------------------------------------------
