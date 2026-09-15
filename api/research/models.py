@@ -36,6 +36,7 @@ class FeatureConfig(BaseModel):
 
 class ConditionConfig(BaseModel):
     feature: str
+    period: int | None = None
     operator: str
     value: int | float | str
 
