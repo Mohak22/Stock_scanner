@@ -1,4 +1,12 @@
 function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
+  const openDatePicker = (event) => {
+    const input = event.currentTarget
+
+    if (input.showPicker) {
+      input.showPicker()
+    }
+  }
+
   return (
     <div className="config-card">
       <label>Research Period</label>
@@ -8,6 +16,7 @@ function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
           type="date"
           value={startDate}
           onChange={(event) => onStartChange(event.target.value)}
+          onClick={openDatePicker}
         />
 
         <span>→</span>
@@ -16,6 +25,7 @@ function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
           type="date"
           value={endDate}
           onChange={(event) => onEndChange(event.target.value)}
+          onClick={openDatePicker}
         />
       </div>
 

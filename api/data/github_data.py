@@ -1,4 +1,6 @@
-"""Read-only access to the private GitHub STOCK_SCANNER_DATA repository."""
+"""
+Read-only access to the private GitHub STOCK_SCANNER_DATA repository.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +10,6 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from io import BytesIO
-from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -21,16 +22,6 @@ DATA_REPOSITORY_BRANCH = "main"
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 
-# Local cache for downloaded research files.
-# This prevents repeatedly downloading the same Parquet files
-# from GitHub during Strategy Inventor experimentation.
-CACHE_DIRECTORY = (
-    Path(__file__).resolve().parents[2]
-    / ".research_cache"
-    / "bhavcopy"
-)
-
-# Number of concurrent GitHub downloads.
 MAX_DOWNLOAD_WORKERS = 8
 
 
@@ -46,11 +37,6 @@ class ResearchDataRepository:
             "STOCK_SCANNER_DATA_TOKEN"
         )
 
-        CACHE_DIRECTORY.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
     # ==========================================================
     # GITHUB REQUEST
     # ==========================================================
@@ -58,15 +44,17 @@ class ResearchDataRepository:
     def _request(
         self,
         url: str,
+        accept: str = "application/vnd.github+json",
     ) -> bytes:
 
         headers = {
-            "Accept": "application/vnd.github+json",
+            "Accept": accept,
             "User-Agent": "Stock-Scanner-Research-Cockpit",
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
         if self.token:
+
             headers["Authorization"] = (
                 f"Bearer {self.token}"
             )
@@ -216,6 +204,34 @@ class ResearchDataRepository:
         )
 
     # ==========================================================
+    # PARQUET
+    #
+    # Always fetched directly from GitHub.
+    # No local cache.
+    # ==========================================================
+
+    def load_parquet(
+        self,
+        path: str,
+    ) -> pd.DataFrame:
+
+        url = (
+            f"{GITHUB_API_BASE_URL}"
+            f"/repos/{self.repository}"
+            f"/contents/{path}"
+            f"?ref={DATA_REPOSITORY_BRANCH}"
+        )
+
+        content = self._request(
+            url,
+            accept="application/vnd.github.raw+json",
+        )
+
+        return pd.read_parquet(
+            BytesIO(content)
+        )
+
+    # ==========================================================
     # GITHUB TREE
     # ==========================================================
 
@@ -265,11 +281,11 @@ class ResearchDataRepository:
 
             if not path.endswith(".parquet"):
                 continue
-            
+
             suffix = path[
                 len(prefix):-len(".parquet")
             ]
-            
+
             if (
                 len(suffix) != 8
                 or not suffix.isdigit()
@@ -299,23 +315,11 @@ class ResearchDataRepository:
         )
 
     # ==========================================================
-    # CACHE PATH
-    # ==========================================================
-
-    def _cache_path(
-        self,
-        file_date: date,
-    ) -> Path:
-
-        filename = (
-            f"sec_bhavdata_full_"
-            f"{file_date:%d%m%Y}.parquet"
-        )
-
-        return CACHE_DIRECTORY / filename
-
-    # ==========================================================
     # DOWNLOAD ONE BHAVCOPY FILE
+    #
+    # IMPORTANT:
+    # No local cache.
+    # Every call downloads the current GitHub version.
     # ==========================================================
 
     def _download_bhavcopy_file(
@@ -324,35 +328,6 @@ class ResearchDataRepository:
         path: str,
     ) -> pd.DataFrame:
 
-        cache_path = self._cache_path(
-            file_date
-        )
-
-        # ------------------------------------------------------
-        # CACHE HIT
-        # ------------------------------------------------------
-
-        if cache_path.exists():
-
-            try:
-
-                return pd.read_parquet(
-                    cache_path
-                )
-
-            except Exception:
-
-                # Corrupt/incomplete cache file.
-                # Delete it and download again.
-                try:
-                    cache_path.unlink()
-                except FileNotFoundError:
-                    pass
-
-        # ------------------------------------------------------
-        # CACHE MISS
-        # ------------------------------------------------------
-
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
@@ -360,33 +335,9 @@ class ResearchDataRepository:
             f"?ref={DATA_REPOSITORY_BRANCH}"
         )
 
-        payload = json.loads(
-            self._request(url)
-            .decode("utf-8")
-        )
-
-        if "content" not in payload:
-
-            raise RuntimeError(
-                f"GitHub file content missing for: {path}"
-            )
-
-        content = base64.b64decode(
-            payload["content"]
-        )
-
-        # Write atomically so another request/thread
-        # never sees a partially written Parquet file.
-        temporary_path = cache_path.with_suffix(
-            ".tmp.parquet"
-        )
-
-        temporary_path.write_bytes(
-            content
-        )
-
-        temporary_path.replace(
-            cache_path
+        content = self._request(
+            url,
+            accept="application/vnd.github.raw+json",
         )
 
         return pd.read_parquet(
@@ -395,6 +346,9 @@ class ResearchDataRepository:
 
     # ==========================================================
     # LOAD BHAVCOPY
+    #
+    # GitHub is the source of truth.
+    # No local data dependency.
     # ==========================================================
 
     def load_bhavcopy(
@@ -418,7 +372,7 @@ class ResearchDataRepository:
             )
 
         # ------------------------------------------------------
-        # GET FILE TREE ONCE
+        # GET CURRENT GITHUB TREE
         # ------------------------------------------------------
 
         tree = self._tree()
@@ -443,10 +397,14 @@ class ResearchDataRepository:
             if not path.endswith(".parquet"):
                 continue
 
-            filename = path.rsplit("/", 1)[-1]
-            
+            filename = path.rsplit(
+                "/",
+                1
+            )[-1]
+
             date_text = filename[
-                len("sec_bhavdata_full_") : -len(".parquet")
+                len("sec_bhavdata_full_"):
+                -len(".parquet")
             ]
 
             if (
@@ -484,10 +442,8 @@ class ResearchDataRepository:
             return pd.DataFrame()
 
         # ------------------------------------------------------
-        # DOWNLOAD / READ FILES CONCURRENTLY
+        # DOWNLOAD CURRENT GITHUB FILES
         # ------------------------------------------------------
-
-        frames = []
 
         with ThreadPoolExecutor(
             max_workers=MAX_DOWNLOAD_WORKERS
@@ -531,8 +487,10 @@ class ResearchDataRepository:
                         f"for {file_date}: {exc}"
                     ) from exc
 
-        # Restore chronological order because
-        # concurrent execution completes arbitrarily.
+        # ------------------------------------------------------
+        # RESTORE CHRONOLOGICAL ORDER
+        # ------------------------------------------------------
+
         results.sort(
             key=lambda item: item[0]
         )
@@ -543,13 +501,13 @@ class ResearchDataRepository:
             in results
         ]
 
-        # ------------------------------------------------------
-        # COMBINE
-        # ------------------------------------------------------
-
         if not frames:
 
             return pd.DataFrame()
+
+        # ------------------------------------------------------
+        # COMBINE
+        # ------------------------------------------------------
 
         result = pd.concat(
             frames,
@@ -580,18 +538,20 @@ class ResearchDataRepository:
 
         # ------------------------------------------------------
         # FINAL DATE FILTER
-        #
-        # This protects against files containing unexpected
-        # timestamps and keeps the contract exact.
         # ------------------------------------------------------
 
         if "TIMESTAMP" in result.columns:
 
             result = result[
-                (result["TIMESTAMP"] >= pd.Timestamp(start))
-                & (
+                (
                     result["TIMESTAMP"]
-                    < pd.Timestamp(end)
+                    >= pd.Timestamp(start)
+                )
+                &
+                (
+                    result["TIMESTAMP"]
+                    <
+                    pd.Timestamp(end)
                     + pd.Timedelta(days=1)
                 )
             ].copy()

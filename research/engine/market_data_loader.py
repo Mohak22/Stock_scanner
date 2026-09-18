@@ -13,47 +13,82 @@ import pandas as pd
 
 
 def load_market_index(
-    file_path: str | Path,
+    source: str | Path | pd.DataFrame,
     start_date: pd.Timestamp | str,
     end_date: pd.Timestamp | str,
 ) -> pd.DataFrame:
     """
-    Load a market index parquet file and return normalized market data.
+    Load and normalize market index data.
 
-    Expected source columns:
-        Date
-        Close
+    source can be either:
 
-    Returned columns:
-        TIMESTAMP
-        MARKET_CLOSE
+        - a local parquet path
+        - a pandas DataFrame
+
+    The Research API should normally provide a DataFrame
+    downloaded from GitHub.
     """
 
-    file_path = Path(file_path)
+    # --------------------------------------------------------------
+    # LOAD SOURCE
+    # --------------------------------------------------------------
 
-    if not file_path.exists():
-        raise FileNotFoundError(
-            f"Market index file not found: {file_path}"
+    if isinstance(
+        source,
+        pd.DataFrame,
+    ):
+
+        dataframe = source.copy()
+
+    else:
+
+        file_path = Path(source)
+
+        if not file_path.exists():
+
+            raise FileNotFoundError(
+                f"Market index file not found: {file_path}"
+            )
+
+        dataframe = pd.read_parquet(
+            file_path
         )
 
-    dataframe = pd.read_parquet(file_path)
+    # --------------------------------------------------------------
+    # VALIDATE
+    # --------------------------------------------------------------
 
     required_columns = {
         "Date",
         "Close",
     }
 
-    missing_columns = required_columns - set(dataframe.columns)
+    missing_columns = (
+        required_columns
+        - set(dataframe.columns)
+    )
 
     if missing_columns:
+
         raise ValueError(
-            f"Market index file '{file_path}' is missing required "
-            f"columns: {sorted(missing_columns)}"
+            "Market index data is missing "
+            f"required columns: {sorted(missing_columns)}"
         )
 
+    # --------------------------------------------------------------
+    # SELECT REQUIRED DATA
+    # --------------------------------------------------------------
+
     dataframe = dataframe[
-        ["Date", "Close"]
+        [
+            "Date",
+            "Close",
+        ]
     ].copy()
+
+    # --------------------------------------------------------------
+    # NORMALIZE
+    # --------------------------------------------------------------
 
     dataframe["TIMESTAMP"] = pd.to_datetime(
         dataframe["Date"],
@@ -72,13 +107,33 @@ def load_market_index(
         ]
     )
 
-    start_date = pd.Timestamp(start_date)
-    end_date = pd.Timestamp(end_date)
+    # --------------------------------------------------------------
+    # DATE RANGE
+    # --------------------------------------------------------------
+
+    start_date = pd.Timestamp(
+        start_date
+    )
+
+    end_date = pd.Timestamp(
+        end_date
+    )
 
     dataframe = dataframe[
-        (dataframe["TIMESTAMP"] >= start_date)
-        & (dataframe["TIMESTAMP"] <= end_date)
+        (
+            dataframe["TIMESTAMP"]
+            >= start_date
+        )
+        &
+        (
+            dataframe["TIMESTAMP"]
+            <= end_date
+        )
     ].copy()
+
+    # --------------------------------------------------------------
+    # FINAL FORMAT
+    # --------------------------------------------------------------
 
     dataframe = (
         dataframe[
@@ -87,12 +142,16 @@ def load_market_index(
                 "MARKET_CLOSE",
             ]
         ]
-        .sort_values("TIMESTAMP")
+        .sort_values(
+            "TIMESTAMP"
+        )
         .drop_duplicates(
             subset=["TIMESTAMP"],
             keep="last",
         )
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
     )
 
     return dataframe

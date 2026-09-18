@@ -44,7 +44,6 @@ from research.engine.regime_engine import (
     calculate_market_regime,
 )
 
-from config.paths import RESEARCH_MARKET_CONTEXT_INDICES_FOLDER
 
 
 # ======================================================================
@@ -546,7 +545,7 @@ def run_research_api(
     data["TIMESTAMP"] = pd.to_datetime(
         data["TIMESTAMP"],
         errors="coerce",
-    )
+    ).dt.normalize()
 
     data = (
         data
@@ -653,32 +652,39 @@ def run_research_api(
         ) from exc
 
     # ----------------------------------------------------------
-    # 12. LOAD MARKET BENCHMARK
+    # 12. LOAD MARKET BENCHMARK FROM GITHUB
     #
-    # NIFTY 50 is the default market benchmark.
-    #
-    # The market dataset uses the SAME extended
-    # date range as the stock research.
+    # GitHub STOCK_SCANNER_DATA/main is the
+    # single source of truth for research data.
     # ----------------------------------------------------------
 
-    market_file = (
-        RESEARCH_MARKET_CONTEXT_INDICES_FOLDER
-        / "nifty_50.parquet"
+    market_data_path = (
+        "research/market_context/indices/"
+        "nifty_50.parquet"
     )
 
     try:
 
+        market_dataframe = (
+            repository.load_parquet(
+                market_data_path
+            )
+        )
+
         market_data = load_market_index(
-            file_path=market_file,
+            source=market_dataframe,
             start_date=data_start,
             end_date=data_end,
         )
 
-    except FileNotFoundError as exc:
+    except RuntimeError as exc:
 
         raise HTTPException(
-            status_code=500,
-            detail=str(exc),
+            status_code=502,
+            detail=(
+                "Failed to load NIFTY 50 "
+                f"from GitHub: {exc}"
+            ),
         ) from exc
 
     except ValueError as exc:
@@ -696,8 +702,9 @@ def run_research_api(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Market benchmark contains "
-                "no data for the requested range."
+                "NIFTY 50 benchmark contains "
+                "no data for the requested range "
+                "in GitHub STOCK_SCANNER_DATA."
             ),
         )
 
@@ -733,7 +740,7 @@ def run_research_api(
     market_data["TIMESTAMP"] = pd.to_datetime(
         market_data["TIMESTAMP"],
         errors="coerce",
-    )
+    ).dt.normalize()
 
     market_data = (
         market_data
@@ -793,7 +800,7 @@ def run_research_api(
     market_returns["TIMESTAMP"] = pd.to_datetime(
         market_returns["TIMESTAMP"],
         errors="coerce",
-    )
+    ).dt.normalize()
 
     market_returns = (
         market_returns
@@ -879,7 +886,7 @@ def run_research_api(
         full_signals["TIMESTAMP"] = pd.to_datetime(
             full_signals["TIMESTAMP"],
             errors="coerce",
-        )
+        ).dt.normalize()
 
         full_signals = (
             full_signals
@@ -1142,7 +1149,6 @@ def run_research_api(
 
         signals = (
             result["signals"]
-            .head(100)
             .copy()
         )
 
@@ -1156,9 +1162,13 @@ def run_research_api(
                 .dt.strftime("%Y-%m-%d")
             )
 
-            signals = signals.where(
-                signals.notna(),
-                None,
+            signals = (
+                signals
+                .astype(object)
+                .where(
+                    signals.notna(),
+                    None,
+                )
             )
 
         return {

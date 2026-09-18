@@ -143,8 +143,8 @@ function ResearchConfig() {
         configuredFeatures.push({
           type: condition.feature,
           ...(condition.period !== undefined &&
-          condition.period !== null &&
-          condition.period !== ''
+            condition.period !== null &&
+            condition.period !== ''
             ? { period: Number(condition.period) }
             : {}),
         })
@@ -165,8 +165,8 @@ function ResearchConfig() {
         return {
           feature: condition.feature,
           ...(condition.period !== undefined &&
-          condition.period !== null &&
-          condition.period !== ''
+            condition.period !== null &&
+            condition.period !== ''
             ? { period: Number(condition.period) }
             : {}),
           operator: condition.operator,
@@ -338,8 +338,8 @@ function ResearchConfig() {
         <DateRangeConfig
           startDate={trainingStart}
           endDate={trainingEnd}
-          onStartDateChange={setTrainingStart}
-          onEndDateChange={setTrainingEnd}
+          onStartChange={setTrainingStart}
+          onEndChange={setTrainingEnd}
           isRunning={isRunning}
         />
       </div>
