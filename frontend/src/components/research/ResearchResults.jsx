@@ -8,11 +8,15 @@ function ResearchResults({ researchResult }) {
     direction: 'desc',
   })
 
-  if (!researchResult) {
-    return null
-  }
+  const [showRawResponse, setShowRawResponse] = useState(false)
 
-  const training = researchResult.training || {}
+  /*
+   * ----------------------------------------------------------
+   * SAFE DEFAULTS
+   * ----------------------------------------------------------
+   */
+
+  const training = researchResult?.training || {}
   const summary = training.summary || {}
   const diagnostics = training.diagnostics || {}
   const performance = training.performance || {}
@@ -22,34 +26,52 @@ function ResearchResults({ researchResult }) {
   const byMarketRegime = analysis.by_market_regime || {}
 
   /*
-   * IMPORTANT:
-   *
-   * Stock Attribution is now based directly on the individual
-   * signal observations returned by the backend.
+   * ----------------------------------------------------------
+   * SIGNAL-LEVEL DATA
    *
    * One row = one stock + one signal date.
    *
-   * We do NOT use analysis.by_stock here.
+   * No aggregation by stock.
+   * ----------------------------------------------------------
    */
-  const signalRows = training.signals || []
+
+  const signalRows = Array.isArray(training.signals)
+    ? training.signals
+    : []
+
+  /*
+   * ----------------------------------------------------------
+   * REQUESTED HORIZONS
+   * ----------------------------------------------------------
+   */
 
   const requestedHorizons = Object.keys(performance)
-    .map((key) => Number(String(key).replace('T+', '')))
+    .map((key) =>
+      Number(String(key).replace('T+', ''))
+    )
     .filter(Number.isFinite)
     .sort((a, b) => a - b)
 
   /*
    * ----------------------------------------------------------
-   * SORTING
+   * SORT SIGNAL ROWS
    * ----------------------------------------------------------
    */
 
   const sortedSignalRows = useMemo(() => {
+    if (signalRows.length === 0) {
+      return []
+    }
+
     const rows = [...signalRows]
 
     rows.sort((a, b) => {
       let valueA
       let valueB
+
+      /*
+       * STOCK
+       */
 
       if (sortConfig.key === 'SYMBOL') {
         valueA = String(a.SYMBOL ?? '')
@@ -58,7 +80,9 @@ function ResearchResults({ researchResult }) {
         const comparison = valueA.localeCompare(
           valueB,
           undefined,
-          { sensitivity: 'base' }
+          {
+            sensitivity: 'base',
+          }
         )
 
         return sortConfig.direction === 'asc'
@@ -66,13 +90,33 @@ function ResearchResults({ researchResult }) {
           : -comparison
       }
 
-      if (sortConfig.key === 'TIMESTAMP') {
-        valueA = new Date(a.TIMESTAMP).getTime()
-        valueB = new Date(b.TIMESTAMP).getTime()
+      /*
+       * SIGNAL DATE
+       */
 
-        if (!Number.isFinite(valueA)) valueA = -Infinity
-        if (!Number.isFinite(valueB)) valueB = -Infinity
-      } else {
+      if (sortConfig.key === 'TIMESTAMP') {
+        valueA = new Date(
+          a.TIMESTAMP
+        ).getTime()
+
+        valueB = new Date(
+          b.TIMESTAMP
+        ).getTime()
+
+        if (!Number.isFinite(valueA)) {
+          valueA = -Infinity
+        }
+
+        if (!Number.isFinite(valueB)) {
+          valueB = -Infinity
+        }
+      }
+
+      /*
+       * FORWARD RETURN
+       */
+
+      else {
         valueA = Number(
           a[`RETURN_T${sortConfig.key}`]
         )
@@ -98,6 +142,12 @@ function ResearchResults({ researchResult }) {
     return rows
   }, [signalRows, sortConfig])
 
+  /*
+   * ----------------------------------------------------------
+   * SORT HANDLER
+   * ----------------------------------------------------------
+   */
+
   const handleSort = (key) => {
     setSortConfig((current) => ({
       key,
@@ -109,6 +159,12 @@ function ResearchResults({ researchResult }) {
     }))
   }
 
+  /*
+   * ----------------------------------------------------------
+   * SORT INDICATOR
+   * ----------------------------------------------------------
+   */
+
   const sortIndicator = (key) => {
     if (sortConfig.key !== key) {
       return '↕'
@@ -119,6 +175,41 @@ function ResearchResults({ researchResult }) {
       : '↓'
   }
 
+  /*
+   * ----------------------------------------------------------
+   * RAW RESPONSE
+   *
+   * IMPORTANT:
+   *
+   * Do NOT stringify the potentially large research result
+   * unless the user explicitly opens the Raw Response section.
+   * ----------------------------------------------------------
+   */
+
+  const rawResponse = useMemo(() => {
+    if (!showRawResponse || !researchResult) {
+      return ''
+    }
+
+    return JSON.stringify(
+      researchResult,
+      null,
+      2
+    )
+  }, [showRawResponse, researchResult])
+
+  /*
+   * ----------------------------------------------------------
+   * NO RESULT YET
+   *
+   * This comes AFTER all hooks.
+   * ----------------------------------------------------------
+   */
+
+  if (!researchResult) {
+    return null
+  }
+
   return (
     <div className="research-results">
 
@@ -127,23 +218,32 @@ function ResearchResults({ researchResult }) {
           ===================================================== */}
 
       <div className="results-header">
+
         <div>
+
           <span className="section-kicker">
             RESEARCH OUTPUT
           </span>
 
-          <h2>Research Completed</h2>
+          <h2>
+            Research Completed
+          </h2>
 
           <p>
             The backend successfully executed the configured
             research experiment.
           </p>
+
         </div>
 
         <div className="research-status success">
+
           <span className="status-dot"></span>
+
           COMPLETE
+
         </div>
+
       </div>
 
 
@@ -154,31 +254,43 @@ function ResearchResults({ researchResult }) {
       <div className="results-grid">
 
         <div className="result-card">
-          <span>Signals</span>
+
+          <span>
+            Signals
+          </span>
 
           <strong>
             {summary.signal_count?.toLocaleString() ?? '—'}
           </strong>
+
         </div>
 
 
         <div className="result-card">
-          <span>Signal Rate</span>
+
+          <span>
+            Signal Rate
+          </span>
 
           <strong>
             {summary.signal_rate != null
               ? `${summary.signal_rate.toFixed(2)}%`
               : '—'}
           </strong>
+
         </div>
 
 
         <div className="result-card">
-          <span>Sample Quality</span>
+
+          <span>
+            Sample Quality
+          </span>
 
           <strong>
             {diagnostics.sample_quality?.classification ?? '—'}
           </strong>
+
         </div>
 
       </div>
@@ -193,6 +305,7 @@ function ResearchResults({ researchResult }) {
         <div className="section-heading">
 
           <div>
+
             <span className="section-kicker">
               PERFORMANCE ANALYSIS
             </span>
@@ -200,6 +313,7 @@ function ResearchResults({ researchResult }) {
             <h3>
               Forward Return Performance
             </h3>
+
           </div>
 
           <span className="section-meta">
@@ -209,7 +323,9 @@ function ResearchResults({ researchResult }) {
         </div>
 
 
-        {/* PERFORMANCE CARDS */}
+        {/* =================================================
+            PERFORMANCE CARDS
+            ================================================= */}
 
         <div className="performance-grid">
 
@@ -228,8 +344,13 @@ function ResearchResults({ researchResult }) {
                   </span>
 
                   <span className="observation-count">
+
                     {metrics.observations?.toLocaleString() ?? '—'}
-                    {' '}observations
+
+                    {' '}
+
+                    observations
+
                   </span>
 
                 </div>
@@ -248,9 +369,11 @@ function ResearchResults({ researchResult }) {
                         : 'negative-value'
                     }
                   >
+
                     {metrics.average_return != null
                       ? `${metrics.average_return.toFixed(2)}%`
                       : '—'}
+
                   </strong>
 
                 </div>
@@ -259,25 +382,36 @@ function ResearchResults({ researchResult }) {
                 <div className="performance-metrics">
 
                   <div>
-                    <span>Median</span>
+
+                    <span>
+                      Median
+                    </span>
 
                     <strong>
                       {metrics.median_return?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
 
                   <div>
-                    <span>Positive</span>
+
+                    <span>
+                      Positive
+                    </span>
 
                     <strong>
                       {metrics.positive_return_pct?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
 
                   <div>
-                    <span>Excess vs NIFTY</span>
+
+                    <span>
+                      Excess vs NIFTY
+                    </span>
 
                     <strong
                       className={
@@ -288,33 +422,46 @@ function ResearchResults({ researchResult }) {
                     >
                       {metrics.average_excess_return?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
 
                   <div>
-                    <span>Outperformed</span>
+
+                    <span>
+                      Outperformed
+                    </span>
 
                     <strong>
                       {metrics.outperformed_market_pct?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
 
                   <div>
-                    <span>Best</span>
+
+                    <span>
+                      Best
+                    </span>
 
                     <strong className="positive-value">
                       {metrics.best_return?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
 
                   <div>
-                    <span>Worst</span>
+
+                    <span>
+                      Worst
+                    </span>
 
                     <strong className="negative-value">
                       {metrics.worst_return?.toFixed(2) ?? '—'}%
                     </strong>
+
                   </div>
 
                 </div>
@@ -327,22 +474,48 @@ function ResearchResults({ researchResult }) {
         </div>
 
 
-        {/* PERFORMANCE TABLE */}
+        {/* =================================================
+            PERFORMANCE TABLE
+            ================================================= */}
 
         <div className="performance-table-wrapper">
 
           <table className="performance-table">
 
             <thead>
+
               <tr>
-                <th>Horizon</th>
-                <th>Avg Return</th>
-                <th>Median</th>
-                <th>Positive</th>
-                <th>Avg NIFTY</th>
-                <th>Excess Return</th>
-                <th>Outperformed</th>
+
+                <th>
+                  Horizon
+                </th>
+
+                <th>
+                  Avg Return
+                </th>
+
+                <th>
+                  Median
+                </th>
+
+                <th>
+                  Positive
+                </th>
+
+                <th>
+                  Avg NIFTY
+                </th>
+
+                <th>
+                  Excess Return
+                </th>
+
+                <th>
+                  Outperformed
+                </th>
+
               </tr>
+
             </thead>
 
 
@@ -460,11 +633,13 @@ function ResearchResults({ researchResult }) {
               setActiveAnalysisTab('stock')
             }
           >
+
             <span className="tab-number">
               01
             </span>
 
             <span>
+
               <strong>
                 By Stock
               </strong>
@@ -472,6 +647,7 @@ function ResearchResults({ researchResult }) {
               <small>
                 Signal-level behaviour
               </small>
+
             </span>
 
           </button>
@@ -487,11 +663,13 @@ function ResearchResults({ researchResult }) {
               setActiveAnalysisTab('feature')
             }
           >
+
             <span className="tab-number">
               02
             </span>
 
             <span>
+
               <strong>
                 By Feature
               </strong>
@@ -499,6 +677,7 @@ function ResearchResults({ researchResult }) {
               <small>
                 Feature effectiveness
               </small>
+
             </span>
 
           </button>
@@ -514,11 +693,13 @@ function ResearchResults({ researchResult }) {
               setActiveAnalysisTab('regime')
             }
           >
+
             <span className="tab-number">
               03
             </span>
 
             <span>
+
               <strong>
                 Market Regime
               </strong>
@@ -526,6 +707,7 @@ function ResearchResults({ researchResult }) {
               <small>
                 Contextual behaviour
               </small>
+
             </span>
 
           </button>
@@ -567,7 +749,9 @@ function ResearchResults({ researchResult }) {
                   {signalRows.length.toLocaleString()}
                 </span>
 
-                {' '}observations
+                {' '}
+
+                observations
 
               </div>
 
@@ -591,8 +775,11 @@ function ResearchResults({ researchResult }) {
                           handleSort('SYMBOL')
                         }
                       >
+
                         Stock{' '}
+
                         {sortIndicator('SYMBOL')}
+
                       </button>
 
                     </th>
@@ -607,8 +794,11 @@ function ResearchResults({ researchResult }) {
                           handleSort('TIMESTAMP')
                         }
                       >
+
                         Signal Date{' '}
+
                         {sortIndicator('TIMESTAMP')}
+
                       </button>
 
                     </th>
@@ -626,8 +816,11 @@ function ResearchResults({ researchResult }) {
                               handleSort(horizon)
                             }
                           >
+
                             T+{horizon}{' '}
+
                             {sortIndicator(horizon)}
+
                           </button>
 
                         </th>
@@ -642,7 +835,9 @@ function ResearchResults({ researchResult }) {
 
                 <tbody>
 
-                  {sortedSignalRows.map(
+                  {sortedSignalRows
+                    .slice(0, 5)
+                    .map(
                     (signal, index) => (
 
                       <tr
@@ -730,8 +925,10 @@ function ResearchResults({ researchResult }) {
                         }
                         className="empty-analysis"
                       >
+
                         No signal observations are
                         available for this research run.
+
                       </td>
 
                     </tr>
@@ -891,8 +1088,10 @@ function ResearchResults({ researchResult }) {
               {Object.keys(byFeature).length === 0 && (
 
                 <div className="empty-analysis">
+
                   Feature analysis is not available
                   for this research run.
+
                 </div>
 
               )}
@@ -976,9 +1175,11 @@ function ResearchResults({ researchResult }) {
                         </span>
 
                         <strong>
+
                           {metrics?.average_return != null
                             ? `${metrics.average_return.toFixed(2)}%`
                             : '—'}
+
                         </strong>
 
                       </div>
@@ -1007,9 +1208,11 @@ function ResearchResults({ researchResult }) {
                           </span>
 
                           <strong>
+
                             {metrics?.positive_return_pct != null
                               ? `${metrics.positive_return_pct.toFixed(1)}%`
                               : '—'}
+
                           </strong>
 
                         </div>
@@ -1028,8 +1231,10 @@ function ResearchResults({ researchResult }) {
               ).length === 0 && (
 
                 <div className="empty-analysis">
+
                   Market-regime analysis is not
                   available for this research run.
+
                 </div>
 
               )}
@@ -1062,7 +1267,14 @@ function ResearchResults({ researchResult }) {
                 className="warning-row"
                 key={index}
               >
-                ⚠ {warning}
+
+                ⚠ {
+                  typeof warning === 'string'
+                    ? warning
+                    : warning?.message ??
+                      JSON.stringify(warning)
+                }
+
               </div>
 
             )
@@ -1077,19 +1289,24 @@ function ResearchResults({ researchResult }) {
           RAW RESPONSE
           ===================================================== */}
 
-      <details className="raw-result">
+      <details
+        className="raw-result"
+        onToggle={(event) => {
+          setShowRawResponse(
+            event.currentTarget.open
+          )
+        }}
+      >
 
         <summary>
           View Raw Research Response
         </summary>
 
-        <pre>
-          {JSON.stringify(
-            researchResult,
-            null,
-            2
-          )}
-        </pre>
+        {showRawResponse && (
+          <pre>
+            {rawResponse}
+          </pre>
+        )}
 
       </details>
 
