@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 class UniverseConfig(BaseModel):
     type: str = "all_stocks"
+    value: str | None = None
     symbols: list[str] = []
 
 
@@ -39,7 +40,7 @@ class ConditionConfig(BaseModel):
     period: int | None = None
     operator: str
     value: int | float | str
-
+    
 
 class ResearchRequest(BaseModel):
 

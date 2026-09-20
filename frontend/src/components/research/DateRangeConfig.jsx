@@ -1,5 +1,13 @@
-function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
+function DateRangeConfig({
+  startDate,
+  endDate,
+  onStartChange,
+  onEndChange,
+  isRunning,
+}) {
   const openDatePicker = (event) => {
+    if (isRunning) return
+
     const input = event.currentTarget
 
     if (input.showPicker) {
@@ -17,6 +25,7 @@ function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
           value={startDate}
           onChange={(event) => onStartChange(event.target.value)}
           onClick={openDatePicker}
+          disabled={isRunning}
         />
 
         <span>→</span>
@@ -26,6 +35,7 @@ function DateRangeConfig({ startDate, endDate, onStartChange, onEndChange }) {
           value={endDate}
           onChange={(event) => onEndChange(event.target.value)}
           onClick={openDatePicker}
+          disabled={isRunning}
         />
       </div>
 

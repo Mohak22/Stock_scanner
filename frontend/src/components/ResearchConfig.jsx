@@ -19,7 +19,11 @@ function ResearchConfig() {
     'Find oversold stocks using RSI and evaluate their forward returns.'
   )
 
-  const [universe, setUniverse] = useState('all_stocks')
+  const [universe, setUniverse] = useState({
+    type: 'all_stocks',
+    value: '',
+    symbols: [],
+  })
   const [trainingStart, setTrainingStart] = useState('2023-01-01')
   const [trainingEnd, setTrainingEnd] = useState('2025-12-31')
 
@@ -91,13 +95,26 @@ function ResearchConfig() {
 
     let defaultValue = 0
 
-    if (featureId === 'rsi') {
-      defaultValue = 30
-    } else if (
-      featureId === 'volume' ||
-      featureId === 'delivery_quantity'
-    ) {
-      defaultValue = 100000
+    switch (featureId) {
+      case 'rsi':
+        defaultValue = 30
+        break
+
+      case 'volume':
+      case 'delivery_quantity':
+        defaultValue = 100000
+        break
+
+      case 'delivery_percentage':
+        defaultValue = 50
+        break
+
+      case 'return':
+        defaultValue = 0
+        break
+
+      default:
+        defaultValue = 0
     }
 
     setConditions((current) =>
@@ -154,10 +171,7 @@ function ResearchConfig() {
     return {
       training_start: trainingStart,
       training_end: trainingEnd,
-      universe: {
-        type: universe,
-        symbols: [],
-      },
+      universe,
       features: configuredFeatures,
       entry_conditions: conditions.map((condition) => {
         const numericValue = Number(condition.value)
@@ -201,6 +215,21 @@ function ResearchConfig() {
       return 'Select at least one evaluation horizon.'
     }
 
+    if (
+      universe.type !== 'all_stocks' &&
+      universe.type !== 'symbols' &&
+      !universe.value
+    ) {
+      throw new Error('Please select a universe filter value.')
+    }
+
+    if (
+      universe.type === 'symbols' &&
+      (!universe.symbols || universe.symbols.length === 0)
+    ) {
+      throw new Error('Please enter at least one symbol.')
+    }
+
     for (const condition of conditions) {
       if (!condition.feature) {
         return 'Every condition must have a feature.'
@@ -208,6 +237,10 @@ function ResearchConfig() {
 
       if (!condition.operator) {
         return 'Every condition must have an operator.'
+      }
+
+      if (!Number.isFinite(Number(condition.value))) {
+        return 'Every condition value must be a valid number.'
       }
 
       if (
@@ -358,7 +391,7 @@ function ResearchConfig() {
         horizons={[1, 3, 5, 10]}
         selectedHorizons={evaluationHorizons}
         onToggle={toggleHorizon}
-        isRunning={isRunning}
+        disabled={isRunning}
       />
 
       <ResearchExecution

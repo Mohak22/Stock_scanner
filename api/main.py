@@ -20,7 +20,6 @@ from api.schemas import (
 
 from api.research.experiment_api import router as experiment_router
 from api.research.workflow_api import router as workflow_router
-
 from api.research.features import get_feature_registry
 from api.research.universe import get_research_universe
 from api.research.dataset import get_dataset_info
@@ -32,6 +31,10 @@ from research.engine.market_data_loader import load_market_index
 
 from research.engine.market_return_engine import (
     calculate_market_forward_returns,
+)
+
+from api.research.universe import (
+    load_research_universe_dataframe,
 )
 
 from research.engine.research_engine import (
@@ -574,35 +577,96 @@ def run_research_api(
     # 9. APPLY UNIVERSE
     # ----------------------------------------------------------
 
-    if request.universe.type == "symbols":
-
+    if request.universe.type == "all_stocks":
+        try:
+            research_universe = load_research_universe_dataframe()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+    
+        research_universe_symbols = set(
+            research_universe["SYMBOL"]
+        )
+    
+        data = data[
+            data["SYMBOL"].isin(research_universe_symbols)
+        ].copy()
+    
+    elif request.universe.type in {
+        "macro_sector",
+        "sector",
+        "industry",
+        "basic_industry",
+    }:
+        try:
+            research_universe = load_research_universe_dataframe()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+    
+        column_map = {
+            "macro_sector": "MACRO_ECONOMIC_SECTOR",
+            "sector": "SECTOR",
+            "industry": "INDUSTRY",
+            "basic_industry": "BASIC_INDUSTRY",
+        }
+    
+        column = column_map[request.universe.type]
+        selected_value = (request.universe.value or "").strip()
+    
+        if not selected_value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A value is required for {request.universe.type}.",
+            )
+    
+        selected_symbols = set(
+            research_universe.loc[
+                research_universe[column].astype(str).str.strip()
+                == selected_value,
+                "SYMBOL",
+            ]
+        )
+    
+        data = data[
+            data["SYMBOL"].isin(selected_symbols)
+        ].copy()
+    
+    elif request.universe.type == "symbols":
         symbols = {
             symbol.upper().strip()
             for symbol in request.universe.symbols
+            if symbol.strip()
         }
-
+    
         if not symbols:
-
             raise HTTPException(
                 status_code=400,
-                detail=(
-                    "Universe type 'symbols' "
-                    "requires at least one symbol."
-                ),
+                detail="At least one symbol is required.",
             )
-
+    
         data = data[
             data["SYMBOL"].isin(symbols)
         ].copy()
-
-    elif request.universe.type != "all_stocks":
-
+    
+    else:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Unsupported universe type. "
-                "Use 'all_stocks' or 'symbols'."
-            ),
+            detail="Unsupported universe type.",
         )
 
     if data.empty:

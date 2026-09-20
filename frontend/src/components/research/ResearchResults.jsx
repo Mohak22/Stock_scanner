@@ -52,6 +52,11 @@ function ResearchResults({ researchResult }) {
     .filter(Number.isFinite)
     .sort((a, b) => a - b)
 
+  const primaryAnalysisHorizon =
+    requestedHorizons.includes(5)
+      ? 5
+      : requestedHorizons[requestedHorizons.length - 1]
+
   /*
    * ----------------------------------------------------------
    * SORT SIGNAL ROWS
@@ -153,7 +158,7 @@ function ResearchResults({ researchResult }) {
       key,
       direction:
         current.key === key &&
-        current.direction === 'asc'
+          current.direction === 'asc'
           ? 'desc'
           : 'asc',
     }))
@@ -280,6 +285,15 @@ function ResearchResults({ researchResult }) {
 
         </div>
 
+        <div className="result-card">
+          <span>
+            Stocks With Signals
+          </span>
+
+          <strong>
+            {diagnostics.stocks_with_signals?.toLocaleString() ?? '—'}
+          </strong>
+        </div>
 
         <div className="result-card">
 
@@ -291,6 +305,18 @@ function ResearchResults({ researchResult }) {
             {diagnostics.sample_quality?.classification ?? '—'}
           </strong>
 
+        </div>
+
+        <div className="result-card">
+          <span>
+            Signal Period
+          </span>
+
+          <strong>
+            {diagnostics.signal_date_range?.start ?? '—'}
+            {' → '}
+            {diagnostics.signal_date_range?.end ?? '—'}
+          </strong>
         </div>
 
       </div>
@@ -624,11 +650,10 @@ function ResearchResults({ researchResult }) {
         <div className="analysis-tabs">
 
           <button
-            className={`analysis-tab ${
-              activeAnalysisTab === 'stock'
-                ? 'active'
-                : ''
-            }`}
+            className={`analysis-tab ${activeAnalysisTab === 'stock'
+              ? 'active'
+              : ''
+              }`}
             onClick={() =>
               setActiveAnalysisTab('stock')
             }
@@ -654,11 +679,10 @@ function ResearchResults({ researchResult }) {
 
 
           <button
-            className={`analysis-tab ${
-              activeAnalysisTab === 'feature'
-                ? 'active'
-                : ''
-            }`}
+            className={`analysis-tab ${activeAnalysisTab === 'feature'
+              ? 'active'
+              : ''
+              }`}
             onClick={() =>
               setActiveAnalysisTab('feature')
             }
@@ -684,11 +708,10 @@ function ResearchResults({ researchResult }) {
 
 
           <button
-            className={`analysis-tab ${
-              activeAnalysisTab === 'regime'
-                ? 'active'
-                : ''
-            }`}
+            className={`analysis-tab ${activeAnalysisTab === 'regime'
+              ? 'active'
+              : ''
+              }`}
             onClick={() =>
               setActiveAnalysisTab('regime')
             }
@@ -838,80 +861,81 @@ function ResearchResults({ researchResult }) {
                   {sortedSignalRows
                     .slice(0, 5)
                     .map(
-                    (signal, index) => (
+                      (signal, index) => (
 
-                      <tr
-                        key={`${signal.SYMBOL}-${signal.TIMESTAMP}-${index}`}
-                      >
+                        <tr
+                          key={`${signal.SYMBOL}-${signal.TIMESTAMP}-${index}`}
+                        >
 
-                        {/* STOCK */}
+                          {/* STOCK */}
 
-                        <td>
+                          <td>
 
-                          <div className="stock-symbol">
+                            <div className="stock-symbol">
 
-                            <span className="stock-icon">
-                              ◈
-                            </span>
+                              <span className="stock-icon">
+                                ◈
+                              </span>
 
-                            <strong>
-                              {signal.SYMBOL ?? '—'}
-                            </strong>
+                              <strong>
+                                {signal.SYMBOL ?? '—'}
+                              </strong>
 
-                          </div>
+                            </div>
 
-                        </td>
-
-
-                        {/* SIGNAL DATE */}
-
-                        <td className="signal-date">
-
-                          {signal.TIMESTAMP ?? '—'}
-
-                        </td>
+                          </td>
 
 
-                        {/* FORWARD RETURNS */}
+                          {/* SIGNAL DATE */}
 
-                        {requestedHorizons.map(
-                          (horizon) => {
+                          <td className="signal-date">
 
-                            const value = Number(
-                              signal[
+                            {signal.TIMESTAMP ?? '—'}
+
+                          </td>
+
+
+                          {/* FORWARD RETURNS */}
+
+                          {requestedHorizons.map(
+                            (horizon) => {
+
+                              const value = Number(
+                                signal[
                                 `RETURN_T${horizon}`
-                              ]
-                            )
+                                ]
+                              )
 
-                            const validValue =
-                              Number.isFinite(value)
+                              const validValue =
+                                Number.isFinite(value)
 
-                            return (
+                              return (
 
-                              <td
-                                key={horizon}
-                                className={
-                                  validValue &&
-                                  value >= 0
-                                    ? 'positive-value'
-                                    : 'negative-value'
-                                }
-                              >
+                                <td
+                                  key={horizon}
+                                  className={
+                                    !validValue
+                                      ? ''
+                                      : value >= 0
+                                        ? 'positive-value'
+                                        : 'negative-value'
+                                  }
+                                >
 
-                                {validValue
-                                  ? `${value.toFixed(2)}%`
-                                  : '—'}
+                                  {validValue
+                                    ? `${value.toFixed(2)}%`
+                                    : '—'}
 
-                              </td>
+                                </td>
 
-                            )
-                          }
-                        )}
+                              )
+                            }
+                          )}
 
-                      </tr>
+                        </tr>
 
-                    )
-                  )}
+                      )
+                    )}
 
 
                   {sortedSignalRows.length === 0 && (
@@ -969,7 +993,7 @@ function ResearchResults({ researchResult }) {
               </div>
 
               <div className="feature-intelligence">
-                FEATURE → OUTCOME
+                FEATURE → T+{primaryAnalysisHorizon} OUTCOME
               </div>
 
             </div>
@@ -1021,7 +1045,7 @@ function ResearchResults({ researchResult }) {
                             const result =
                               bucketData
                                 ?.performance
-                                ?.['T+5']
+                              ?.[`T+${primaryAnalysisHorizon}`]
 
                             return (
 
@@ -1051,7 +1075,7 @@ function ResearchResults({ researchResult }) {
                                       width: `${Math.min(
                                         Math.max(
                                           result?.positive_return_pct ||
-                                            0,
+                                          0,
                                           0
                                         ),
                                         100
@@ -1140,7 +1164,7 @@ function ResearchResults({ researchResult }) {
                 ([regime, data]) => {
 
                   const metrics =
-                    data?.performance?.['T+5']
+                    data?.performance?.[`T+${primaryAnalysisHorizon}`]
 
                   return (
 
@@ -1230,14 +1254,14 @@ function ResearchResults({ researchResult }) {
                 byMarketRegime
               ).length === 0 && (
 
-                <div className="empty-analysis">
+                  <div className="empty-analysis">
 
-                  Market-regime analysis is not
-                  available for this research run.
+                    Market-regime analysis is not
+                    available for this research run.
 
-                </div>
+                  </div>
 
-              )}
+                )}
 
             </div>
 
@@ -1272,7 +1296,7 @@ function ResearchResults({ researchResult }) {
                   typeof warning === 'string'
                     ? warning
                     : warning?.message ??
-                      JSON.stringify(warning)
+                    JSON.stringify(warning)
                 }
 
               </div>

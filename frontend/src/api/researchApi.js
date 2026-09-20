@@ -9,3 +9,15 @@ export async function getFeatures() {
 
   return response.json()
 }
+
+export async function getResearchUniverse() {
+  const response = await fetch(
+    `${API_BASE_URL}/research/universe`
+  )
+
+  if (!response.ok) {
+    throw new Error('Failed to load research universe')
+  }
+
+  return response.json()
+}
