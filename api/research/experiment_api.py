@@ -197,31 +197,29 @@ class GitHubStore:
         self,
         path: str,
     ) -> tuple[dict, str]:
-
+    
         payload = self._request(
             "GET",
             self.url(path),
         )
-
+    
         if (
             "content" not in payload
             or "sha" not in payload
         ):
-
             raise RuntimeError(
-                f"GitHub file content "
-                f"missing: {path}"
+                f"GitHub file content missing: {path}"
             )
-
+    
         content = base64.b64decode(
             payload["content"]
         ).decode("utf-8")
-
+    
         return (
             json.loads(content),
             payload["sha"],
         )
-
+    
     def get_sha(
         self,
         path: str,
@@ -321,6 +319,23 @@ class GitHubStore:
             .get("sha", "")
         )
     
+    def get_blob(self, sha: str) -> dict:
+        payload = self._request(
+            "GET",
+            f"{API}/repos/{self.repository}/git/blobs/{sha}",
+        )
+    
+        if "content" not in payload:
+            raise RuntimeError(
+                f"GitHub blob content missing: {sha}"
+            )
+    
+        content = base64.b64decode(
+            payload["content"]
+        ).decode("utf-8")
+    
+        return json.loads(content)
+
     def tree(self) -> list[dict]:
 
         payload = self._request(
@@ -374,6 +389,15 @@ def experiment_path(
     return (
         f"{EXP_PREFIX}"
         f"{experiment_id}.json"
+    )
+
+
+def experiment_metadata_path(
+    experiment_id: str,
+) -> str:
+    return (
+        f"{EXP_PREFIX}"
+        f"{experiment_id}.meta.json"
     )
 
 
@@ -452,6 +476,43 @@ def experiment_summary(
     }
 
 
+def experiment_metadata(
+    record: dict,
+) -> dict:
+    return {
+        "schema_version": record.get(
+            "schema_version",
+            1,
+        ),
+        "experiment_id": record[
+            "experiment_id"
+        ],
+        "name": record.get("name"),
+        "status": record.get("status"),
+        "created_at": record.get(
+            "created_at"
+        ),
+        "locked_at": record.get(
+            "locked_at"
+        ),
+        "tags": record.get(
+            "tags",
+            [],
+        ),
+    }
+
+
+def experiment_metadata(record: dict) -> dict:
+    return {
+        "experiment_id": record["experiment_id"],
+        "name": record.get("name"),
+        "status": record.get("status"),
+        "created_at": record.get("created_at"),
+        "locked_at": record.get("locked_at"),
+        "tags": record.get("tags", []),
+    }
+
+
 # ======================================================================
 # B5 — SAVE EXPERIMENT
 # ======================================================================
@@ -513,6 +574,17 @@ def save_experiment(
             ),
         )
 
+        metadata_commit_sha = store.put(
+            experiment_metadata_path(
+                experiment_id_value
+            ),
+            experiment_metadata(record),
+            (
+                "Save experiment metadata "
+                f"{experiment_id_value}"
+            ),
+        )
+
     except RuntimeError as exc:
 
         raise HTTPException(
@@ -546,38 +618,23 @@ def list_experiments() -> dict:
             item["path"]
             for item in store.tree()
             if (
-                item.get("type")
-                == "blob"
-                and item.get(
-                    "path",
-                    "",
-                ).startswith(
+                item.get("type") == "blob"
+                and item.get("path", "").startswith(
                     EXP_PREFIX
                 )
-                and item.get(
-                    "path",
-                    "",
-                ).endswith(".json")
+                and item.get("path", "").endswith(
+                    ".meta.json"
+                )
             )
         ]
 
         records = []
-        
+
         for path in paths:
-            try:
-                record, _ = store.get(path)
-        
-                records.append(
-                    experiment_summary(record)
-                )
-        
-            except Exception as exc:
-                print(
-                    "\n========== INVALID EXPERIMENT =========="
-                )
-                print("Path:", path)
-                print("Error:", exc)
-                print("=========================================\n")
+
+            record, _ = store.get(path)
+
+            records.append(record)
 
     except RuntimeError as exc:
 
@@ -588,10 +645,7 @@ def list_experiments() -> dict:
 
     records.sort(
         key=lambda item: (
-            item.get(
-                "created_at"
-            )
-            or ""
+            item.get("created_at") or ""
         ),
         reverse=True,
     )
