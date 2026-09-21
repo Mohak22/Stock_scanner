@@ -307,18 +307,6 @@ function ResearchResults({ researchResult }) {
 
         </div>
 
-        <div className="result-card">
-          <span>
-            Signal Period
-          </span>
-
-          <strong>
-            {diagnostics.signal_date_range?.start ?? '—'}
-            {' → '}
-            {diagnostics.signal_date_range?.end ?? '—'}
-          </strong>
-        </div>
-
       </div>
 
 

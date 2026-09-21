@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getFeatures } from '../api/researchApi'
 import ResearchQuestion from './research/ResearchQuestion'
 import UniverseConfig from './research/UniverseConfig'
@@ -14,7 +14,10 @@ function ResearchConfig() {
   const [features, setFeatures] = useState([])
   const [loadingFeatures, setLoadingFeatures] = useState(true)
   const [featureError, setFeatureError] = useState('')
-
+  const [jobId, setJobId] = useState(null)
+  const [jobProgress, setJobProgress] = useState(0)
+  const [jobStage, setJobStage] = useState('')
+  const [jobStatus, setJobStatus] = useState(null)
   const [researchQuestion, setResearchQuestion] = useState(
     'Find oversold stocks using RSI and evaluate their forward returns.'
   )
@@ -42,6 +45,8 @@ function ResearchConfig() {
   const [runError, setRunError] = useState('')
   const [researchResult, setResearchResult] = useState(null)
 
+  const eventSourceRef = useRef(null)
+
   useEffect(() => {
     async function loadFeatures() {
       try {
@@ -55,6 +60,15 @@ function ResearchConfig() {
     }
 
     loadFeatures()
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+    }
   }, [])
 
   const getFeatureDefinition = (featureId) =>
@@ -281,10 +295,34 @@ function ResearchConfig() {
   }
 
   const runResearch = async () => {
+    if (isRunning) {
+      return
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+      eventSourceRef.current = null
+    }
+
     setRunError('')
     setResearchResult(null)
 
-    const validationError = validateResearch()
+    setJobId(null)
+    setJobProgress(0)
+    setJobStage('')
+    setJobStatus(null)
+
+    let validationError
+
+    try {
+      validationError = validateResearch()
+    } catch (error) {
+      setRunError(
+        error.message ||
+        'Invalid research configuration.'
+      )
+      return
+    }
 
     if (validationError) {
       setRunError(validationError)
@@ -294,30 +332,165 @@ function ResearchConfig() {
     setIsRunning(true)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/research/run`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(buildResearchRequest()),
-      })
+      const response = await fetch(
+        `${API_BASE_URL}/research/run`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(
+            buildResearchRequest()
+          ),
+        }
+      )
 
       const data = await response.json()
 
       if (!response.ok) {
-        const message = data?.detail || 'Research execution failed.'
-
         throw new Error(
-          Array.isArray(message)
-            ? message.map((item) => item.msg).join(', ')
-            : message
+          data.detail ||
+          'Failed to start research.'
         )
       }
 
-      setResearchResult(data)
+      const newJobId = data.job_id
+
+      if (!newJobId) {
+        throw new Error(
+          'Research job ID was not returned by the backend.'
+        )
+      }
+
+      setJobId(newJobId)
+      setJobStatus(data.status)
+      setJobProgress(data.progress ?? 0)
+      setJobStage(
+        data.stage || 'Queued'
+      )
+
+      const eventSource = new EventSource(
+        `${API_BASE_URL}/research/jobs/${newJobId}/stream`
+      )
+
+      eventSourceRef.current = eventSource
+
+      eventSource.addEventListener(
+        'progress',
+        async (event) => {
+          try {
+            const job = JSON.parse(event.data)
+
+            setJobStatus(job.status)
+            setJobProgress(job.progress ?? 0)
+            setJobStage(
+              job.stage || ''
+            )
+
+            if (job.status === 'COMPLETED') {
+
+              eventSource.close()
+
+              if (
+                eventSourceRef.current === eventSource
+              ) {
+                eventSourceRef.current = null
+              }
+
+              try {
+                const resultResponse =
+                  await fetch(
+                    `${API_BASE_URL}/research/jobs/${newJobId}`
+                  )
+
+                const resultData =
+                  await resultResponse.json()
+
+                if (!resultResponse.ok) {
+                  throw new Error(
+                    resultData.detail ||
+                    'Failed to retrieve research result.'
+                  )
+                }
+
+                setResearchResult(
+                  resultData.result
+                )
+
+              } catch (error) {
+
+                setRunError(
+                  error.message ||
+                  'Failed to retrieve research result.'
+                )
+
+              } finally {
+
+                setIsRunning(false)
+              }
+            }
+
+            if (job.status === 'FAILED') {
+
+              eventSource.close()
+
+              if (
+                eventSourceRef.current === eventSource
+              ) {
+                eventSourceRef.current = null
+              }
+
+              setRunError(
+                job.error ||
+                'Research execution failed.'
+              )
+
+              setIsRunning(false)
+            }
+
+          } catch (error) {
+
+            eventSource.close()
+
+            if (
+              eventSourceRef.current === eventSource
+            ) {
+              eventSourceRef.current = null
+            }
+
+            setRunError(
+              'Received an invalid progress update from the research server.'
+            )
+
+            setIsRunning(false)
+          }
+        }
+      )
+
+      eventSource.onerror = () => {
+
+        eventSource.close()
+
+        if (
+          eventSourceRef.current === eventSource
+        ) {
+          eventSourceRef.current = null
+        }
+
+        setRunError(
+          'Research progress connection was interrupted.'
+        )
+
+        setIsRunning(false)
+      }
+
     } catch (error) {
-      setRunError(error.message)
-    } finally {
+
+      setRunError(
+        error.message ||
+        'Failed to start research.'
+      )
+
       setIsRunning(false)
     }
   }
@@ -398,6 +571,9 @@ function ResearchConfig() {
         isRunning={isRunning}
         runError={runError}
         onRunResearch={runResearch}
+        jobProgress={jobProgress}
+        jobStage={jobStage}
+        jobStatus={jobStatus}
       />
 
       <ResearchResults researchResult={researchResult} />
