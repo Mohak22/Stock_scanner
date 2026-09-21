@@ -10,8 +10,10 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from io import BytesIO
+from http.client import RemoteDisconnected
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+import time
 
 import pandas as pd
 
@@ -22,7 +24,8 @@ DATA_REPOSITORY_BRANCH = "main"
 
 GITHUB_API_BASE_URL = "https://api.github.com"
 
-MAX_DOWNLOAD_WORKERS = 8
+MAX_DOWNLOAD_WORKERS = 4
+MAX_REQUEST_RETRIES = 3
 
 
 class ResearchDataRepository:
@@ -46,86 +49,105 @@ class ResearchDataRepository:
         url: str,
         accept: str = "application/vnd.github+json",
     ) -> bytes:
-
+    
         headers = {
             "Accept": accept,
             "User-Agent": "Stock-Scanner-Research-Cockpit",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-
+    
         if self.token:
-
             headers["Authorization"] = (
                 f"Bearer {self.token}"
             )
-
-        request = Request(
-            url,
-            headers=headers,
-        )
-
-        try:
-
-            with urlopen(
-                request,
-                timeout=60,
-            ) as response:
-
-                return response.read()
-
-        except HTTPError as exc:
-
-            error_body = (
-                exc.read()
-                .decode(
-                    "utf-8",
-                    errors="replace",
+    
+        for attempt in range(1, MAX_REQUEST_RETRIES + 1):
+    
+            request = Request(
+                url,
+                headers=headers,
+            )
+    
+            try:
+    
+                with urlopen(
+                    request,
+                    timeout=60,
+                ) as response:
+    
+                    return response.read()
+    
+            except HTTPError as exc:
+    
+                error_body = (
+                    exc.read()
+                    .decode(
+                        "utf-8",
+                        errors="replace",
+                    )
                 )
-            )
-
-            print(
-                "\n========== GITHUB ERROR =========="
-            )
-            print("Status:", exc.code)
-            print("URL:", url)
-            print("Response:", error_body)
-            print(
-                "==================================\n"
-            )
-
-            if exc.code == 401:
-
+    
+                print(
+                    "\n========== GITHUB ERROR =========="
+                )
+                print("Status:", exc.code)
+                print("URL:", url)
+                print("Response:", error_body)
+                print(
+                    "==================================\n"
+                )
+    
+                if exc.code == 401:
+                    raise RuntimeError(
+                        "GitHub authentication failed. "
+                        "Check STOCK_SCANNER_DATA_TOKEN."
+                    ) from exc
+    
+                if exc.code == 403:
+                    raise RuntimeError(
+                        "GitHub access denied or API "
+                        "rate limit exceeded. "
+                        "Check the token and permissions."
+                    ) from exc
+    
+                if exc.code == 404:
+                    raise RuntimeError(
+                        f"GitHub resource not found: {url}"
+                    ) from exc
+    
+                if (
+                    exc.code in {429, 500, 502, 503, 504}
+                    and attempt < MAX_REQUEST_RETRIES
+                ):
+                    time.sleep(2 ** (attempt - 1))
+                    continue
+    
                 raise RuntimeError(
-                    "GitHub authentication failed. "
-                    "Check STOCK_SCANNER_DATA_TOKEN."
+                    f"GitHub data request failed "
+                    f"({exc.code}): {url}"
                 ) from exc
-
-            if exc.code == 403:
-
+    
+            except (
+                URLError,
+                RemoteDisconnected,
+                ConnectionError,
+                TimeoutError,
+            ) as exc:
+    
+                print(
+                    f"GitHub connection attempt "
+                    f"{attempt}/{MAX_REQUEST_RETRIES} failed: "
+                    f"{exc}"
+                )
+    
+                if attempt < MAX_REQUEST_RETRIES:
+                    time.sleep(2 ** (attempt - 1))
+                    continue
+    
                 raise RuntimeError(
-                    "GitHub access denied or API "
-                    "rate limit exceeded. "
-                    "Check the token and permissions."
+                    f"Could not reach GitHub: {exc}"
                 ) from exc
-
-            if exc.code == 404:
-
-                raise RuntimeError(
-                    f"GitHub resource not found: {url}"
-                ) from exc
-
-            raise RuntimeError(
-                f"GitHub data request failed "
-                f"({exc.code}): {url}"
-            ) from exc
-
-        except URLError as exc:
-
-            raise RuntimeError(
-                f"Could not reach GitHub: "
-                f"{exc.reason}"
-            ) from exc
-
+                
     # ==========================================================
     # HEALTH
     # ==========================================================

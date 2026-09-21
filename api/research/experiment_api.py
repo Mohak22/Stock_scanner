@@ -222,6 +222,23 @@ class GitHubStore:
             payload["sha"],
         )
 
+    def get_sha(
+        self,
+        path: str,
+    ) -> str:
+    
+        payload = self._request(
+            "GET",
+            self.url(path),
+        )
+    
+        if "sha" not in payload:
+            raise RuntimeError(
+                f"GitHub file SHA missing: {path}"
+            )
+    
+        return payload["sha"]
+
     def put(
         self,
         path: str,
@@ -229,27 +246,71 @@ class GitHubStore:
         message: str,
         sha: str | None = None,
     ) -> str:
-
-        encoded = base64.b64encode(
-            json.dumps(
+    
+        if not isinstance(document, dict) or not document:
+            raise RuntimeError(
+                f"Cannot save empty document: {path}"
+            )
+    
+        try:
+            serialized = json.dumps(
                 document,
                 indent=2,
                 ensure_ascii=False,
-            ).encode("utf-8")
+            )
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Could not serialize document: {path}"
+            ) from exc
+    
+        if not serialized.strip():
+            raise RuntimeError(
+                f"Serialized document is empty: {path}"
+            )
+    
+        encoded = base64.b64encode(
+            serialized.encode("utf-8")
         ).decode("ascii")
-
+    
         body = {
             "message": message,
             "content": encoded,
             "branch": BRANCH,
         }
-
+    
         if sha:
-
             body["sha"] = sha
-
+    
         payload = self._request(
             "PUT",
+            self.url(path),
+            body,
+        )
+    
+        commit_sha = payload.get("commit", {}).get("sha", "")
+    
+        if not commit_sha:
+            raise RuntimeError(
+                f"GitHub did not return a commit SHA for: {path}"
+            )
+    
+        return commit_sha    
+    
+    def delete(
+        self,
+        path: str,
+        sha: str,
+        message: str,
+    ) -> str:
+
+        body = {
+            "message": message,
+            "sha": sha,
+            "branch": BRANCH,
+        }
+
+        payload = self._request(
+            "DELETE",
             self.url(path),
             body,
         )
@@ -259,7 +320,7 @@ class GitHubStore:
             .get("commit", {})
             .get("sha", "")
         )
-
+    
     def tree(self) -> list[dict]:
 
         payload = self._request(
@@ -403,6 +464,12 @@ def save_experiment(
     request: SaveExperimentRequest,
 ) -> dict:
 
+    if not request.research_result:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot save an experiment without research results.",
+        )
+    
     experiment_id_value = (
         experiment_id()
     )
@@ -494,12 +561,23 @@ def list_experiments() -> dict:
             )
         ]
 
-        records = [
-            experiment_summary(
-                store.get(path)[0]
-            )
-            for path in paths
-        ]
+        records = []
+        
+        for path in paths:
+            try:
+                record, _ = store.get(path)
+        
+                records.append(
+                    experiment_summary(record)
+                )
+        
+            except Exception as exc:
+                print(
+                    "\n========== INVALID EXPERIMENT =========="
+                )
+                print("Path:", path)
+                print("Error:", exc)
+                print("=========================================\n")
 
     except RuntimeError as exc:
 
@@ -547,6 +625,55 @@ def get_experiment(
             status_code=404,
             detail=str(exc),
         ) from exc
+
+
+@router.delete(
+    "/experiments/{experiment_id}",
+)
+def delete_experiment(
+    experiment_id: str,
+) -> dict:
+
+    path = experiment_path(
+        experiment_id
+    )
+
+    try:
+    
+        sha = store.get_sha(
+            path
+        )
+    
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    try:
+
+        commit_sha = store.delete(
+            path,
+            sha,
+            (
+                "Delete research experiment "
+                f"{experiment_id}"
+            ),
+        )
+
+    except RuntimeError as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "deleted": True,
+        "experiment_id": experiment_id,
+        "name": None,
+        "commit_sha": commit_sha,
+    }
 
 
 # ======================================================================

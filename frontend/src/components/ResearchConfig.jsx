@@ -495,6 +495,51 @@ function ResearchConfig() {
     }
   }
 
+  const saveExperiment = async (result) => {
+    const response = await fetch(
+      `${API_BASE_URL}/research/experiments`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          research_result: result,
+
+          name:
+            researchQuestion.trim() ||
+            'Untitled Research Experiment',
+
+          notes:
+            'Saved from Research Cockpit.',
+
+          tags: [
+            ...new Set(
+              conditions
+                .map((condition) =>
+                  String(
+                    condition.feature || ''
+                  ).toUpperCase()
+                )
+                .filter(Boolean)
+            ),
+          ],
+        }),
+      }
+    )
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail ||
+        'Failed to save experiment.'
+      )
+    }
+
+    return data
+  }
+
   return (
     <section className="research-config">
       <div className="section-header">
@@ -576,7 +621,10 @@ function ResearchConfig() {
         jobStatus={jobStatus}
       />
 
-      <ResearchResults researchResult={researchResult} />
+      <ResearchResults
+        researchResult={researchResult}
+        onSaveExperiment={saveExperiment}
+      />
     </section>
   )
 }

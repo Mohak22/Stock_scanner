@@ -1,4 +1,4 @@
-function Sidebar() {
+function Sidebar({ activePage, setActivePage }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -11,17 +11,59 @@ function Sidebar() {
       </div>
 
       <nav className="sidebar-menu">
-        <div className="menu-item">Dashboard</div>
-        <div className="menu-item">Scanner</div>
-        <div className="menu-item">Strategy Inventor</div>
-        <div className="menu-item active">Research Cockpit</div>
-        <div className="menu-item">Experiment History</div>
-        <div className="menu-item">Strategy Library</div>
-        <div className="menu-item">Live Trading</div>
-        <div className="menu-item">Portfolio</div>
-        <div className="menu-item">Watchlist</div>
-        <div className="menu-item">Market Overview</div>
-        <div className="menu-item">Settings</div>
+        <div className="menu-item">
+          Dashboard
+        </div>
+
+        <div className="menu-item">
+          Scanner
+        </div>
+
+        <div className="menu-item">
+          Strategy Inventor
+        </div>
+
+        <div
+          className={`menu-item ${
+            activePage === 'research' ? 'active' : ''
+          }`}
+          onClick={() => setActivePage('research')}
+        >
+          Research Cockpit
+        </div>
+
+        <div
+          className={`menu-item ${
+            activePage === 'experiments' ? 'active' : ''
+          }`}
+          onClick={() => setActivePage('experiments')}
+        >
+          Experiment History
+        </div>
+
+        <div className="menu-item">
+          Strategy Library
+        </div>
+
+        <div className="menu-item">
+          Live Trading
+        </div>
+
+        <div className="menu-item">
+          Portfolio
+        </div>
+
+        <div className="menu-item">
+          Watchlist
+        </div>
+
+        <div className="menu-item">
+          Market Overview
+        </div>
+
+        <div className="menu-item">
+          Settings
+        </div>
       </nav>
 
       <div className="market-snapshot">

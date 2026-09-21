@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-function ResearchResults({ researchResult }) {
+function ResearchResults({ researchResult, onSaveExperiment }) {
   const [activeAnalysisTab, setActiveAnalysisTab] = useState('stock')
 
   const [sortConfig, setSortConfig] = useState({
@@ -180,6 +180,12 @@ function ResearchResults({ researchResult }) {
       : '↓'
   }
 
+  const [isSavingExperiment, setIsSavingExperiment] =
+    useState(false)
+
+  const [saveMessage, setSaveMessage] =
+    useState('')
+
   /*
    * ----------------------------------------------------------
    * RAW RESPONSE
@@ -202,6 +208,32 @@ function ResearchResults({ researchResult }) {
       2
     )
   }, [showRawResponse, researchResult])
+
+  const handleSaveExperiment = async () => {
+    if (!researchResult || isSavingExperiment) {
+      return
+    }
+
+    try {
+      setIsSavingExperiment(true)
+      setSaveMessage('')
+
+      const result = await onSaveExperiment(
+        researchResult
+      )
+
+      setSaveMessage(
+        `Saved as ${result.experiment_id}`
+      )
+    } catch (error) {
+      setSaveMessage(
+        error.message ||
+        'Failed to save experiment.'
+      )
+    } finally {
+      setIsSavingExperiment(false)
+    }
+  }
 
   /*
    * ----------------------------------------------------------
@@ -241,17 +273,39 @@ function ResearchResults({ researchResult }) {
 
         </div>
 
-        <div className="research-status success">
+        <div className="results-header-actions">
 
-          <span className="status-dot"></span>
+          <button
+            className="save-experiment-button"
+            onClick={handleSaveExperiment}
+            disabled={isSavingExperiment}
+          >
+            {isSavingExperiment
+              ? 'SAVING...'
+              : 'SAVE AS EXPERIMENT'}
+          </button>
 
-          COMPLETE
+          <div className="research-status success">
+            <span className="status-dot"></span>
+            COMPLETE
+          </div>
 
         </div>
 
       </div>
 
-
+      {saveMessage && (
+        <div
+          className={
+            saveMessage.startsWith('Saved as')
+              ? 'experiment-save-message success'
+              : 'experiment-save-message error'
+          }
+        >
+          {saveMessage}
+        </div>
+      )}
+      
       {/* =====================================================
           SUMMARY
           ===================================================== */}

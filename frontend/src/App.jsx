@@ -1,26 +1,72 @@
+import { useState } from 'react'
 import './App.css'
 import Sidebar from './components/Sidebar'
 import TopBar from './components/TopBar'
 import ResearchConfig from './components/ResearchConfig'
+import ExperimentHistory from './components/experiments/ExperimentHistory'
+import ExperimentDetail from './components/experiments/ExperimentDetail'
 
 function App() {
-  return (
-    <div className="app">
+    const [activePage, setActivePage] = useState('research')
+    const [selectedExperimentId, setSelectedExperimentId] =
+        useState(null)
 
-      <Sidebar />
+    function openExperiment(experiment) {
+        setSelectedExperimentId(
+            experiment.experiment_id
+        )
+        setActivePage('experiment-detail')
+    }
 
-      <div className="workspace">
+    function backToExperimentHistory() {
+        setSelectedExperimentId(null)
+        setActivePage('experiments')
+    }
 
-        <TopBar />
+    return (
+        <div className="app">
 
-        <main className="main-content">
-          <ResearchConfig />
-        </main>
+            <Sidebar
+                activePage={activePage}
+                setActivePage={setActivePage}
+            />
 
-      </div>
+            <div className="workspace">
 
-    </div>
-  )
+                <TopBar />
+
+                <main className="main-content">
+
+                    {activePage === 'research' && (
+                        <ResearchConfig />
+                    )}
+
+                    {activePage === 'experiments' && (
+                        <ExperimentHistory
+                            onOpenExperiment={
+                                openExperiment
+                            }
+                        />
+                    )}
+
+                    {activePage === 'experiment-detail' &&
+                        selectedExperimentId && (
+                            <ExperimentDetail
+                                experimentId={
+                                    selectedExperimentId
+                                }
+                                onBack={
+                                    backToExperimentHistory
+                                }
+                            />
+                        )}
+
+                </main>
+
+            </div>
+
+        </div>
+    )
 }
 
 export default App
