@@ -237,6 +237,27 @@ class GitHubStore:
     
         return payload["sha"]
 
+    def get_large(
+        self,
+        path: str,
+    ) -> tuple[dict, str]:
+    
+        payload = self._request(
+            "GET",
+            self.url(path),
+        )
+    
+        if "sha" not in payload:
+            raise RuntimeError(
+                f"GitHub file SHA missing: {path}"
+            )
+    
+        blob_sha = payload["sha"]
+    
+        record = self.get_blob(blob_sha)
+    
+        return record, blob_sha
+
     def put(
         self,
         path: str,
@@ -512,6 +533,92 @@ def experiment_metadata(record: dict) -> dict:
         "tags": record.get("tags", []),
     }
 
+def experiment_compare_summary(
+    record: dict,
+) -> dict:
+
+    result = record.get(
+        "research_result",
+        {},
+    )
+
+    research_config = result.get(
+        "research_config",
+        {},
+    )
+
+    training = result.get(
+        "training",
+        {},
+    ) or {}
+
+    validation = result.get(
+        "validation",
+        {},
+    ) or {}
+
+    testing = result.get(
+        "testing",
+        {},
+    ) or {}
+
+    return {
+        "experiment_id": record.get(
+            "experiment_id"
+        ),
+        "name": record.get("name"),
+        "status": record.get("status"),
+        "created_at": record.get("created_at"),
+        "locked_at": record.get("locked_at"),
+        "tags": record.get("tags", []),
+
+        "research_config": {
+            "question": research_config.get(
+                "question"
+            ),
+            "universe": research_config.get(
+                "universe"
+            ),
+            "date_range": research_config.get(
+                "date_range"
+            ),
+            "conditions": research_config.get(
+                "conditions"
+            ),
+            "evaluation_horizons": (
+                research_config.get(
+                    "evaluation_horizons"
+                )
+            ),
+        },
+
+        "training": {
+            "summary": training.get(
+                "summary"
+            ),
+            "performance": training.get(
+                "performance"
+            ),
+        },
+
+        "validation": {
+            "summary": validation.get(
+                "summary"
+            ),
+            "performance": validation.get(
+                "performance"
+            ),
+        },
+
+        "testing": {
+            "summary": testing.get(
+                "summary"
+            ),
+            "performance": testing.get(
+                "performance"
+            ),
+        },
+    }
 
 # ======================================================================
 # B5 — SAVE EXPERIMENT
@@ -741,26 +848,32 @@ def compare_experiments(
     request: CompareExperimentsRequest,
 ) -> dict:
 
-    try:
+    records = []
 
-        records = [
-            experiment_summary(
-                store.get(
-                    experiment_path(
-                        experiment_id
-                    )
-                )[0]
+    for experiment_id in request.experiment_ids:
+
+        try:
+            record, _ = store.get_large(
+                experiment_path(
+                    experiment_id
+                )
             )
-            for experiment_id
-            in request.experiment_ids
-        ]
 
-    except RuntimeError as exc:
+        except Exception as exc:
 
-        raise HTTPException(
-            status_code=404,
-            detail=str(exc),
-        ) from exc
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Could not load experiment "
+                    f"{experiment_id}: {exc}"
+                ),
+            ) from exc
+
+        records.append(
+            experiment_compare_summary(
+                record
+            )
+        )
 
     return {
         "experiment_ids": (
@@ -768,8 +881,6 @@ def compare_experiments(
         ),
         "experiments": records,
     }
-
-
 # ======================================================================
 # B9 — EXPERIMENT LOCKING
 # ======================================================================
@@ -787,7 +898,7 @@ def lock_experiment(
 
     try:
 
-        record, sha = store.get(
+        record, sha = store.get_large(
             path
         )
 
