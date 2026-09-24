@@ -772,7 +772,7 @@ def get_experiment(
 
     try:
 
-        record, _ = store.get(
+        record, _ = store.get_large(
             experiment_path(
                 experiment_id
             )
@@ -821,6 +821,27 @@ def delete_experiment(
                 f"{experiment_id}"
             ),
         )
+
+        metadata_path = experiment_metadata_path(
+            experiment_id
+        )
+
+        try:
+            metadata_sha = store.get_sha(
+                metadata_path
+            )
+
+            store.delete(
+                metadata_path,
+                metadata_sha,
+                (
+                    "Delete experiment metadata "
+                    f"{experiment_id}"
+                ),
+            )
+
+        except RuntimeError:
+            pass
 
     except RuntimeError as exc:
 
@@ -943,6 +964,24 @@ def lock_experiment(
             sha,
         )
 
+        metadata_path = experiment_metadata_path(
+            experiment_id
+        )
+
+        metadata_sha = store.get_sha(
+            metadata_path
+        )
+
+        store.put(
+            metadata_path,
+            experiment_metadata(record),
+            (
+                "Lock experiment metadata "
+                f"{experiment_id}"
+            ),
+            metadata_sha,
+        )
+
     except RuntimeError as exc:
 
         raise HTTPException(
@@ -977,7 +1016,7 @@ def create_strategy_version(
 
     try:
 
-        experiment = store.get(
+        experiment = store.get_large(
             experiment_path(
                 request.experiment_id
             )
