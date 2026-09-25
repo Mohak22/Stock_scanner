@@ -1239,6 +1239,34 @@ def list_strategies() -> dict:
     }
 
 
+@router.get(
+    "/strategies/{strategy_slug}/v{version}",
+)
+def get_strategy(
+    strategy_slug: str,
+    version: int,
+) -> dict:
+
+    path = strategy_path(
+        strategy_slug,
+        version,
+    )
+
+    try:
+        record, _ = store.get(
+            path
+        )
+
+        return record
+
+    except RuntimeError as exc:
+
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+        
+        
 # ======================================================================
 # B9 — STRATEGY LOCKING
 # ======================================================================

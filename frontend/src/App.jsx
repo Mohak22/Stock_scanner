@@ -6,6 +6,7 @@ import ResearchConfig from './components/ResearchConfig'
 import ExperimentHistory from './components/experiments/ExperimentHistory'
 import ExperimentDetail from './components/experiments/ExperimentDetail'
 import StrategyLibrary from './components/strategies/StrategyLibrary'
+import StrategyDetail from './components/strategies/StrategyDetail'
 
 function App() {
     const [activePage, setActivePage] = useState('research')
@@ -87,9 +88,10 @@ function App() {
 
                     {activePage === 'strategy-detail' &&
                         selectedStrategy && (
-                            <div className="experiment-state">
-                                Strategy detail coming next.
-                            </div>
+                            <StrategyDetail
+                                strategy={selectedStrategy}
+                                onBack={backToStrategyLibrary}
+                            />
                         )}
 
                 </main>

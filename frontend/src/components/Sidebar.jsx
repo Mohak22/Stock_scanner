@@ -24,24 +24,26 @@ function Sidebar({ activePage, setActivePage }) {
         </div>
 
         <div
-          className={`menu-item ${
-            activePage === 'research' ? 'active' : ''
-          }`}
+          className={`menu-item ${activePage === 'research' ? 'active' : ''
+            }`}
           onClick={() => setActivePage('research')}
         >
           Research Cockpit
         </div>
 
         <div
-          className={`menu-item ${
-            activePage === 'experiments' ? 'active' : ''
-          }`}
+          className={`menu-item ${activePage === 'experiments' ? 'active' : ''
+            }`}
           onClick={() => setActivePage('experiments')}
         >
           Experiment History
         </div>
 
-        <div className="menu-item">
+        <div
+          className={`menu-item ${activePage === 'strategies' ? 'active' : ''
+            }`}
+          onClick={() => setActivePage('strategies')}
+        >
           Strategy Library
         </div>
 
