@@ -5,22 +5,38 @@ import TopBar from './components/TopBar'
 import ResearchConfig from './components/ResearchConfig'
 import ExperimentHistory from './components/experiments/ExperimentHistory'
 import ExperimentDetail from './components/experiments/ExperimentDetail'
+import StrategyLibrary from './components/strategies/StrategyLibrary'
 
 function App() {
     const [activePage, setActivePage] = useState('research')
+
     const [selectedExperimentId, setSelectedExperimentId] =
+        useState(null)
+
+    const [selectedStrategy, setSelectedStrategy] =
         useState(null)
 
     function openExperiment(experiment) {
         setSelectedExperimentId(
             experiment.experiment_id
         )
+
         setActivePage('experiment-detail')
     }
 
     function backToExperimentHistory() {
         setSelectedExperimentId(null)
         setActivePage('experiments')
+    }
+
+    function openStrategy(strategy) {
+        setSelectedStrategy(strategy)
+        setActivePage('strategy-detail')
+    }
+
+    function backToStrategyLibrary() {
+        setSelectedStrategy(null)
+        setActivePage('strategies')
     }
 
     return (
@@ -59,6 +75,21 @@ function App() {
                                     backToExperimentHistory
                                 }
                             />
+                        )}
+
+                    {activePage === 'strategies' && (
+                        <StrategyLibrary
+                            onOpenStrategy={
+                                openStrategy
+                            }
+                        />
+                    )}
+
+                    {activePage === 'strategy-detail' &&
+                        selectedStrategy && (
+                            <div className="experiment-state">
+                                Strategy detail coming next.
+                            </div>
                         )}
 
                 </main>

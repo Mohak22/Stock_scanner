@@ -2574,3 +2574,547 @@ body {
     flex-direction: column;
   }
 }
+
+/* ============================================================
+   EXPERIMENT COMPARISON
+   ============================================================ */
+
+.experiment-comparison {
+    margin-top: 28px;
+    border: 1px solid #17334b;
+    border-radius: 10px;
+    background: #07121f;
+    overflow: hidden;
+}
+
+.comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 20px;
+    border-bottom: 1px solid #17334b;
+}
+
+.comparison-header h2 {
+    margin: 5px 0 0;
+}
+
+.comparison-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.comparison-table {
+    width: 100%;
+    min-width: 850px;
+    border-collapse: collapse;
+}
+
+.comparison-table th,
+.comparison-table td {
+    padding: 12px 14px;
+    border-right: 1px solid #142b40;
+    border-bottom: 1px solid #142b40;
+    text-align: left;
+    vertical-align: top;
+}
+
+.comparison-table th {
+    background: #0a1928;
+    color: #d8e8f5;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.comparison-table th:first-child,
+.comparison-table td:first-child {
+    width: 160px;
+    min-width: 160px;
+    color: #8fa5b8;
+    font-weight: 600;
+}
+
+.comparison-table td {
+    color: #c4d4e0;
+    font-size: 13px;
+    line-height: 1.45;
+    max-width: 360px;
+}
+
+.comparison-table th small {
+    display: block;
+    margin-top: 4px;
+    color: #61798d;
+    font-size: 10px;
+    font-weight: 400;
+}
+
+.comparison-table tr:hover td {
+    background: rgba(20, 55, 80, 0.18);
+}
+
+.comparison-table .comparison-section-row td {
+    background: #0b1d2d;
+    color: #48c9ff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding-top: 9px;
+    padding-bottom: 9px;
+}
+
+/* ============================================================
+   RESEARCH COMPARISON WORKSPACE
+   ============================================================ */
+
+.research-comparison-workspace {
+    margin-top: 30px;
+    padding: 24px;
+    border: 1px solid #17334b;
+    border-radius: 14px;
+    background:
+        linear-gradient(
+            180deg,
+            rgba(9, 27, 43, 0.98),
+            rgba(5, 16, 28, 0.98)
+        );
+    box-shadow:
+        0 18px 45px rgba(0, 0, 0, 0.25);
+}
+
+.research-comparison-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid #17334b;
+}
+
+.research-comparison-header h2 {
+    margin: 6px 0 6px;
+    font-size: 22px;
+}
+
+.research-comparison-header p {
+    margin: 0;
+    color: #71879b;
+    font-size: 13px;
+}
+
+/* Experiment blocks */
+
+.research-comparison-experiments {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            auto-fit,
+            minmax(320px, 1fr)
+        );
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.research-comparison-experiment {
+    padding: 18px;
+    border: 1px solid #17334b;
+    border-radius: 10px;
+    background: #071724;
+}
+
+.comparison-experiment-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #142d42;
+}
+
+.comparison-experiment-title h3 {
+    margin: 5px 0 0;
+    font-size: 15px;
+}
+
+.comparison-experiment-id {
+    color: #4d738e;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.comparison-status {
+    padding: 4px 8px;
+    border: 1px solid #34536b;
+    border-radius: 5px;
+    color: #9bb0c0;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.comparison-status.locked {
+    border-color: #27694e;
+    color: #62dca4;
+    background: rgba(35, 110, 75, 0.12);
+}
+
+/* Configuration */
+
+.comparison-config-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            2,
+            minmax(0, 1fr)
+        );
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.comparison-config-item {
+    padding: 11px;
+    border: 1px solid #132b3e;
+    border-radius: 7px;
+    background: #081b2b;
+}
+
+.comparison-config-item span {
+    display: block;
+    margin-bottom: 5px;
+    color: #4e7189;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.comparison-config-item strong {
+    display: block;
+    color: #c9d8e4;
+    font-size: 12px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+/* Metrics */
+
+.comparison-metric-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            5,
+            minmax(80px, 1fr)
+        );
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.comparison-metric-card {
+    padding: 10px;
+    border: 1px solid #14344a;
+    border-radius: 7px;
+    background: #061522;
+}
+
+.comparison-metric-card span {
+    display: block;
+    margin-bottom: 5px;
+    color: #4f758f;
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+}
+
+.comparison-metric-card strong {
+    color: #d9e9f5;
+    font-size: 14px;
+}
+
+/* Performance panel */
+
+.research-comparison-panel {
+    margin-top: 20px;
+    border: 1px solid #17334b;
+    border-radius: 10px;
+    background: #061522;
+    overflow: hidden;
+}
+
+.research-comparison-panel-header {
+    padding: 17px 18px;
+    border-bottom: 1px solid #17334b;
+}
+
+.research-comparison-panel-header h3 {
+    margin: 5px 0 0;
+    font-size: 16px;
+}
+
+/* Horizon cards */
+
+.research-comparison-performance-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(
+            2,
+            minmax(0, 1fr)
+        );
+    gap: 12px;
+    padding: 14px;
+}
+
+.comparison-horizon-card {
+    border: 1px solid #142d42;
+    border-radius: 9px;
+    overflow: hidden;
+    background: #081a29;
+}
+
+.comparison-horizon-title {
+    padding: 9px 12px;
+    border-bottom: 1px solid #17334b;
+    color: #58c9ff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+/* Performance rows */
+
+.comparison-performance-row {
+    display: grid;
+    grid-template-columns:
+        minmax(120px, 1.6fr)
+        minmax(80px, 1fr)
+        repeat(3, minmax(70px, 0.8fr));
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-bottom: 1px solid #10283a;
+}
+
+.comparison-performance-row:last-child {
+    border-bottom: none;
+}
+
+.comparison-performance-name span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c5d5e1;
+    font-size: 11px;
+}
+
+.comparison-performance-main strong {
+    display: block;
+    color: #dcecf7;
+    font-size: 15px;
+}
+
+.comparison-performance-main span,
+.comparison-performance-secondary span {
+    display: block;
+    margin-top: 2px;
+    color: #4e7189;
+    font-size: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.comparison-performance-secondary strong {
+    display: block;
+    margin-top: 3px;
+    color: #a9bfce;
+    font-size: 11px;
+}
+
+/* Responsive */
+
+@media (max-width: 1100px) {
+
+    .comparison-metric-grid {
+        grid-template-columns:
+            repeat(3, 1fr);
+    }
+
+    .research-comparison-performance-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+
+    .research-comparison-workspace {
+        padding: 15px;
+    }
+
+    .comparison-config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .comparison-metric-grid {
+        grid-template-columns:
+            repeat(2, 1fr);
+    }
+
+    .comparison-performance-row {
+        grid-template-columns:
+            1fr
+            repeat(2, 1fr);
+    }
+}
+
+.strategy-library {
+    padding: 28px;
+}
+
+.strategy-library-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 28px;
+}
+
+.strategy-library-header h1 {
+    margin: 6px 0 8px;
+}
+
+.strategy-library-header p {
+    margin: 0;
+    opacity: 0.65;
+}
+
+.strategy-library-count {
+    min-width: 110px;
+    padding: 16px 18px;
+    border: 1px solid rgba(100, 180, 255, 0.18);
+    border-radius: 12px;
+    text-align: right;
+}
+
+.strategy-library-count span {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    opacity: 0.55;
+}
+
+.strategy-library-count strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 24px;
+}
+
+.strategy-library-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(320px, 1fr)
+    );
+    gap: 18px;
+}
+
+.strategy-card {
+    padding: 22px;
+    border: 1px solid rgba(100, 180, 255, 0.16);
+    border-radius: 14px;
+    background: rgba(10, 18, 32, 0.72);
+}
+
+.strategy-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.strategy-card-label,
+.strategy-card-meta span,
+.strategy-card-version span {
+    font-size: 10px;
+    letter-spacing: 1.4px;
+    opacity: 0.55;
+}
+
+.strategy-card h2 {
+    margin: 6px 0 3px;
+}
+
+.strategy-card-slug {
+    font-size: 12px;
+    opacity: 0.5;
+}
+
+.strategy-status-badge {
+    align-self: flex-start;
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    border: 1px solid rgba(100, 220, 180, 0.25);
+}
+
+.strategy-card-version {
+    margin-top: 22px;
+}
+
+.strategy-card-version strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 20px;
+}
+
+.strategy-card-meta {
+    display: grid;
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.strategy-card-meta strong {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+.strategy-card-description {
+    margin: 18px 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0.7;
+}
+
+.strategy-card-actions {
+    margin-top: 22px;
+}
+
+.strategy-open-button {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid rgba(100, 180, 255, 0.3);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    letter-spacing: 0.8px;
+    font-size: 11px;
+}
+
+.strategy-open-button:hover {
+    border-color: rgba(100, 220, 255, 0.65);
+}
+
+.strategy-empty-state {
+    padding: 50px;
+    border: 1px dashed rgba(100, 180, 255, 0.18);
+    border-radius: 14px;
+    text-align: center;
+}
+
+.strategy-empty-state h2 {
+    margin: 8px 0;
+}
+
+.strategy-empty-state p {
+    opacity: 0.6;
+}

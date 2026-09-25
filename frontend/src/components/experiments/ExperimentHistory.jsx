@@ -4,6 +4,36 @@ import ExperimentTable from './ExperimentTable'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
+function formatNumber(value, digits = 2) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return '—'
+    }
+
+    const number = Number(value)
+
+    if (Number.isNaN(number)) {
+        return String(value)
+    }
+
+    return number.toFixed(digits)
+}
+
+function formatPercent(value) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return '—'
+    }
+
+    return `${formatNumber(value)}%`
+}
+
 function formatValue(value) {
     if (
         value === null ||
@@ -13,6 +43,10 @@ function formatValue(value) {
         return '—'
     }
 
+    if (Array.isArray(value)) {
+        return value.join(', ')
+    }
+
     if (typeof value === 'object') {
         return JSON.stringify(value)
     }
@@ -20,31 +54,80 @@ function formatValue(value) {
     return String(value)
 }
 
-function extractPerformance(performance) {
-    if (!performance || typeof performance !== 'object') {
-        return []
+function getPerformance(
+    experiment,
+    horizon
+) {
+    return (
+        experiment?.training?.performance?.[
+            horizon
+        ] || null
+    )
+}
+
+function getConditionText(
+    experiment
+) {
+    const conditions =
+        experiment?.research_config?.conditions
+
+    if (!conditions) {
+        return '—'
     }
 
-    return Object.entries(performance).map(
-        ([horizon, value]) => ({
-            horizon,
-            value,
-        })
+    if (Array.isArray(conditions)) {
+        return conditions
+            .map((condition) => {
+
+                if (
+                    typeof condition !==
+                    'object'
+                ) {
+                    return String(
+                        condition
+                    )
+                }
+
+                const feature =
+                    condition.feature ||
+                    condition.feature_name ||
+                    ''
+
+                const operator =
+                    condition.operator ||
+                    ''
+
+                const value =
+                    condition.value ??
+                    ''
+
+                return `${feature} ${operator} ${value}`
+            })
+            .join(' AND ')
+    }
+
+    return formatValue(
+        conditions
     )
 }
 
 function ExperimentHistory({
     onOpenExperiment,
 }) {
-    const [experiments, setExperiments] = useState([])
 
-    const [search, setSearch] = useState('')
+    const [experiments, setExperiments] =
+        useState([])
+
+    const [search, setSearch] =
+        useState('')
 
     const [statusFilter, setStatusFilter] =
         useState('ALL')
 
-    const [selectedExperimentIds, setSelectedExperimentIds] =
-        useState([])
+    const [
+        selectedExperimentIds,
+        setSelectedExperimentIds,
+    ] = useState([])
 
     const [comparison, setComparison] =
         useState(null)
@@ -59,21 +142,25 @@ function ExperimentHistory({
         useState('')
 
     async function loadExperiments() {
-        try {
-            setIsLoading(true)
-            setError('')
 
-            const response = await fetch(
-                `${API_BASE}/research/experiments`
-            )
+        try {
+
+            setIsLoading(true)
+
+            const response =
+                await fetch(
+                    `${API_BASE}/research/experiments`
+                )
+
+            const data =
+                await response.json()
 
             if (!response.ok) {
                 throw new Error(
+                    data?.detail ||
                     `Failed to load experiments (${response.status})`
                 )
             }
-
-            const data = await response.json()
 
             setExperiments(
                 data.experiments || []
@@ -96,51 +183,57 @@ function ExperimentHistory({
         loadExperiments()
     }, [])
 
-    const filteredExperiments = useMemo(() => {
+    const filteredExperiments =
+        useMemo(() => {
 
-        const query =
-            search.trim().toLowerCase()
-
-        return experiments.filter(
-            (experiment) => {
-
-                const matchesStatus =
-                    statusFilter === 'ALL' ||
-                    experiment.status ===
-                        statusFilter
-
-                if (!matchesStatus) {
-                    return false
-                }
-
-                if (!query) {
-                    return true
-                }
-
-                const searchableText = [
-                    experiment.name,
-                    experiment.experiment_id,
-                    ...(experiment.tags || []),
-                ]
-                    .filter(Boolean)
-                    .join(' ')
+            const query =
+                search
+                    .trim()
                     .toLowerCase()
 
-                return searchableText.includes(
-                    query
-                )
-            }
-        )
+            return experiments.filter(
+                (experiment) => {
 
-    }, [
-        experiments,
-        search,
-        statusFilter,
-    ])
+                    const matchesStatus =
+                        statusFilter ===
+                            'ALL' ||
+                        experiment.status ===
+                            statusFilter
+
+                    if (!matchesStatus) {
+                        return false
+                    }
+
+                    if (!query) {
+                        return true
+                    }
+
+                    const searchableText = [
+                        experiment.name,
+                        experiment.experiment_id,
+                        ...(experiment.tags || []),
+                    ]
+                        .filter(Boolean)
+                        .join(' ')
+                        .toLowerCase()
+
+                    return searchableText.includes(
+                        query
+                    )
+                }
+            )
+
+        }, [
+            experiments,
+            search,
+            statusFilter,
+        ])
 
     function handleToggleSelect(
         experimentId
     ) {
+
+        setError('')
 
         setSelectedExperimentIds(
             (current) => {
@@ -152,13 +245,16 @@ function ExperimentHistory({
                 ) {
                     return current.filter(
                         (id) =>
-                            id !== experimentId
+                            id !==
+                            experimentId
                     )
                 }
 
-                if (current.length >= 5) {
+                if (
+                    current.length >= 5
+                ) {
                     setError(
-                        'You can compare up to 5 experiments.'
+                        'Maximum 5 experiments can be compared.'
                     )
 
                     return current
@@ -173,8 +269,10 @@ function ExperimentHistory({
     }
 
     function clearSelection() {
+
         setSelectedExperimentIds([])
         setComparison(null)
+        setError('')
     }
 
     async function handleCompare() {
@@ -183,6 +281,7 @@ function ExperimentHistory({
             selectedExperimentIds.length <
             2
         ) {
+
             setError(
                 'Select at least 2 experiments to compare.'
             )
@@ -195,22 +294,21 @@ function ExperimentHistory({
             setIsComparing(true)
             setError('')
 
-            const response = await fetch(
-                `${API_BASE}/research/experiments/compare`,
-                {
-                    method: 'POST',
-
-                    headers: {
-                        'Content-Type':
-                            'application/json',
-                    },
-
-                    body: JSON.stringify({
-                        experiment_ids:
-                            selectedExperimentIds,
-                    }),
-                }
-            )
+            const response =
+                await fetch(
+                    `${API_BASE}/research/experiments/compare`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type':
+                                'application/json',
+                        },
+                        body: JSON.stringify({
+                            experiment_ids:
+                                selectedExperimentIds,
+                        }),
+                    }
+                )
 
             const data =
                 await response.json()
@@ -243,7 +341,7 @@ function ExperimentHistory({
 
         const confirmed =
             window.confirm(
-                `Lock "${experiment.name || experiment.experiment_id}"?\n\nA locked experiment becomes immutable and can later be promoted to a strategy.`
+                `Lock "${experiment.name || experiment.experiment_id}"?\n\nThis will preserve the experiment as an immutable research result.`
             )
 
         if (!confirmed) {
@@ -268,12 +366,37 @@ function ExperimentHistory({
             if (!response.ok) {
                 throw new Error(
                     data?.detail ||
-                    `Failed to lock experiment (${response.status})`
+                    `Lock failed (${response.status})`
                 )
             }
 
-            await loadExperiments()
+            if (
+                data.status !==
+                'LOCKED'
+            ) {
+                throw new Error(
+                    'Backend did not confirm LOCKED status.'
+                )
+            }
 
+            // Immediately update the visible row.
+            setExperiments(
+                (current) =>
+                    current.map(
+                        (item) =>
+                            item.experiment_id ===
+                            experiment.experiment_id
+                                ? {
+                                    ...item,
+                                    status: 'LOCKED',
+                                    locked_at:
+                                        data.locked_at,
+                                }
+                                : item
+                    )
+            )
+
+            // Remove it from comparison selection.
             setSelectedExperimentIds(
                 (current) =>
                     current.filter(
@@ -282,6 +405,9 @@ function ExperimentHistory({
                             experiment.experiment_id
                     )
             )
+
+            // Clear any stale comparison.
+            setComparison(null)
 
         } catch (err) {
 
@@ -298,7 +424,7 @@ function ExperimentHistory({
 
         const confirmed =
             window.confirm(
-                `Delete "${experiment.name || experiment.experiment_id}"?\n\nThis permanently removes the saved experiment.`
+                `Delete "${experiment.name || experiment.experiment_id}"?`
             )
 
         if (!confirmed) {
@@ -324,7 +450,7 @@ function ExperimentHistory({
             if (!response.ok) {
                 throw new Error(
                     data?.detail ||
-                    `Failed to delete experiment (${response.status})`
+                    `Delete failed (${response.status})`
                 )
             }
 
@@ -346,6 +472,8 @@ function ExperimentHistory({
                     )
             )
 
+            setComparison(null)
+
         } catch (err) {
 
             setError(
@@ -355,15 +483,23 @@ function ExperimentHistory({
         }
     }
 
-    function handleOpen(experiment) {
+    function handleOpen(
+        experiment
+    ) {
 
         if (onOpenExperiment) {
-            onOpenExperiment(experiment)
+            onOpenExperiment(
+                experiment
+            )
         }
     }
 
     return (
         <section className="experiment-history">
+
+            {/* =====================================================
+                HEADER
+            ===================================================== */}
 
             <div className="experiment-page-header">
 
@@ -378,7 +514,7 @@ function ExperimentHistory({
                     </h1>
 
                     <p>
-                        Review, compare, preserve and manage your research experiments.
+                        Review, compare and preserve research experiments.
                     </p>
 
                 </div>
@@ -386,7 +522,9 @@ function ExperimentHistory({
                 <div className="experiment-count">
 
                     <span>
-                        {filteredExperiments.length}
+                        {
+                            filteredExperiments.length
+                        }
                     </span>
 
                     <small>
@@ -396,6 +534,10 @@ function ExperimentHistory({
                 </div>
 
             </div>
+
+            {/* =====================================================
+                TOOLBAR
+            ===================================================== */}
 
             <div className="experiment-toolbar">
 
@@ -413,8 +555,9 @@ function ExperimentHistory({
                 <div className="experiment-selection-toolbar">
 
                     <span>
-                        {selectedExperimentIds.length}{' '}
-                        selected
+                        {
+                            selectedExperimentIds.length
+                        } selected
                     </span>
 
                     <button
@@ -429,7 +572,7 @@ function ExperimentHistory({
                         }
                     >
                         {isComparing
-                            ? 'COMPARING...'
+                            ? 'ANALYSING...'
                             : 'COMPARE'}
                     </button>
 
@@ -449,70 +592,80 @@ function ExperimentHistory({
 
             </div>
 
+            {/* =====================================================
+                ERROR
+            ===================================================== */}
+
+            {error && (
+                <div className="experiment-state experiment-error">
+
+                    <strong>
+                        Research workspace error
+                    </strong>
+
+                    <span>
+                        {error}
+                    </span>
+
+                </div>
+            )}
+
+            {/* =====================================================
+                HISTORY TABLE
+            ===================================================== */}
+
             {isLoading && (
                 <div className="experiment-state">
                     Loading experiments...
                 </div>
             )}
 
-            {!isLoading && error && (
-                <div className="experiment-state experiment-error">
-                    <strong>
-                        Experiment workspace error
-                    </strong>
-
-                    <span>
-                        {error}
-                    </span>
-                </div>
+            {!isLoading && (
+                <ExperimentTable
+                    experiments={
+                        filteredExperiments
+                    }
+                    onOpen={
+                        handleOpen
+                    }
+                    onDelete={
+                        handleDelete
+                    }
+                    onLock={
+                        handleLock
+                    }
+                    selectedExperimentIds={
+                        selectedExperimentIds
+                    }
+                    onToggleSelect={
+                        handleToggleSelect
+                    }
+                />
             )}
 
-            {!isLoading &&
-                !error && (
-                    <ExperimentTable
-                        experiments={
-                            filteredExperiments
-                        }
-                        onOpen={
-                            handleOpen
-                        }
-                        onDelete={
-                            handleDelete
-                        }
-                        onLock={
-                            handleLock
-                        }
-                        selectedExperimentIds={
-                            selectedExperimentIds
-                        }
-                        onToggleSelect={
-                            handleToggleSelect
-                        }
-                    />
-                )}
+            {/* =====================================================
+                RESEARCH COMPARISON
+            ===================================================== */}
 
             {comparison && (
-                <div className="experiment-comparison">
+                <section className="research-comparison-workspace">
 
-                    <div className="comparison-header">
+                    <div className="research-comparison-header">
 
                         <div>
+
                             <div className="section-eyebrow">
-                                RESEARCH ANALYSIS
+                                RESEARCH COMPARISON
                             </div>
 
                             <h2>
-                                Experiment Comparison
+                                Comparative Research Analysis
                             </h2>
 
                             <p>
-                                Comparing{' '}
-                                {
-                                    comparison.experiments
-                                        ?.length || 0
-                                }{' '}
-                                selected experiments.
+                                Compare research configuration, signal quality and forward-return behaviour across experiments.
                             </p>
+
                         </div>
 
                         <button
@@ -528,47 +681,72 @@ function ExperimentHistory({
 
                     </div>
 
-                    <div className="comparison-grid">
+                    {/* =================================================
+                        EXPERIMENT CARDS
+                    ================================================= */}
 
-                        {(
-                            comparison.experiments ||
-                            []
-                        ).map(
+                    <div className="research-comparison-experiments">
+
+                        {comparison.experiments?.map(
                             (experiment) => {
 
-                                const trainingPerformance =
-                                    extractPerformance(
-                                        experiment
-                                            .training
-                                            ?.performance
+                                const t1 =
+                                    getPerformance(
+                                        experiment,
+                                        'T+1'
+                                    )
+
+                                const t3 =
+                                    getPerformance(
+                                        experiment,
+                                        'T+3'
+                                    )
+
+                                const t5 =
+                                    getPerformance(
+                                        experiment,
+                                        'T+5'
+                                    )
+
+                                const t10 =
+                                    getPerformance(
+                                        experiment,
+                                        'T+10'
                                     )
 
                                 return (
-                                    <div
-                                        className="comparison-card"
+                                    <article
+                                        className="research-comparison-experiment"
                                         key={
                                             experiment.experiment_id
                                         }
                                     >
 
-                                        <div className="comparison-card-header">
+                                        <div className="comparison-experiment-title">
 
                                             <div>
+
+                                                <span className="comparison-experiment-id">
+                                                    {
+                                                        experiment.experiment_id
+                                                    }
+                                                </span>
 
                                                 <h3>
                                                     {experiment.name ||
                                                         'Untitled Experiment'}
                                                 </h3>
 
-                                                <span>
-                                                    {
-                                                        experiment.experiment_id
-                                                    }
-                                                </span>
-
                                             </div>
 
-                                            <span className="comparison-status">
+                                            <span
+                                                className={
+                                                    experiment.status ===
+                                                    'LOCKED'
+                                                        ? 'comparison-status locked'
+                                                        : 'comparison-status'
+                                                }
+                                            >
                                                 {
                                                     experiment.status
                                                 }
@@ -576,15 +754,14 @@ function ExperimentHistory({
 
                                         </div>
 
-                                        <div className="comparison-section">
+                                        {/* Configuration */}
 
-                                            <h4>
-                                                Configuration
-                                            </h4>
+                                        <div className="comparison-config-grid">
 
-                                            <div className="comparison-row">
+                                            <div className="comparison-config-item">
+
                                                 <span>
-                                                    Question
+                                                    RESEARCH QUESTION
                                                 </span>
 
                                                 <strong>
@@ -594,11 +771,13 @@ function ExperimentHistory({
                                                             ?.question
                                                     )}
                                                 </strong>
+
                                             </div>
 
-                                            <div className="comparison-row">
+                                            <div className="comparison-config-item">
+
                                                 <span>
-                                                    Universe
+                                                    UNIVERSE
                                                 </span>
 
                                                 <strong>
@@ -608,39 +787,27 @@ function ExperimentHistory({
                                                             ?.universe
                                                     )}
                                                 </strong>
+
                                             </div>
 
-                                            <div className="comparison-row">
+                                            <div className="comparison-config-item">
+
                                                 <span>
-                                                    Date Range
+                                                    CONDITIONS
                                                 </span>
 
                                                 <strong>
-                                                    {formatValue(
+                                                    {getConditionText(
                                                         experiment
-                                                            .research_config
-                                                            ?.date_range
                                                     )}
                                                 </strong>
+
                                             </div>
 
-                                            <div className="comparison-row">
-                                                <span>
-                                                    Conditions
-                                                </span>
+                                            <div className="comparison-config-item">
 
-                                                <strong>
-                                                    {formatValue(
-                                                        experiment
-                                                            .research_config
-                                                            ?.conditions
-                                                    )}
-                                                </strong>
-                                            </div>
-
-                                            <div className="comparison-row">
                                                 <span>
-                                                    Horizons
+                                                    HORIZONS
                                                 </span>
 
                                                 <strong>
@@ -650,59 +817,251 @@ function ExperimentHistory({
                                                             ?.evaluation_horizons
                                                     )}
                                                 </strong>
+
                                             </div>
 
                                         </div>
 
-                                        <div className="comparison-section">
+                                        {/* Key metrics */}
 
-                                            <h4>
-                                                Training Performance
-                                            </h4>
+                                        <div className="comparison-metric-grid">
 
-                                            {trainingPerformance.length >
-                                            0 ? (
-                                                trainingPerformance.map(
-                                                    ({
-                                                        horizon,
-                                                        value,
-                                                    }) => (
-                                                        <div
-                                                            className="comparison-row"
-                                                            key={
-                                                                horizon
-                                                            }
-                                                        >
-                                                            <span>
-                                                                {
-                                                                    horizon
-                                                                }
-                                                            </span>
+                                            <div className="comparison-metric-card">
 
-                                                            <strong>
-                                                                {formatValue(
-                                                                    value
-                                                                )}
-                                                            </strong>
-                                                        </div>
-                                                    )
-                                                )
-                                            ) : (
-                                                <div className="comparison-empty">
-                                                    No performance data available.
-                                                </div>
-                                            )}
+                                                <span>
+                                                    SIGNALS
+                                                </span>
+
+                                                <strong>
+                                                    {formatValue(
+                                                        t1?.observations
+                                                    )}
+                                                </strong>
+
+                                            </div>
+
+                                            <div className="comparison-metric-card">
+
+                                                <span>
+                                                    T+1 AVG
+                                                </span>
+
+                                                <strong>
+                                                    {formatNumber(
+                                                        t1?.average_return
+                                                    )}
+                                                    %
+                                                </strong>
+
+                                            </div>
+
+                                            <div className="comparison-metric-card">
+
+                                                <span>
+                                                    T+3 AVG
+                                                </span>
+
+                                                <strong>
+                                                    {formatNumber(
+                                                        t3?.average_return
+                                                    )}
+                                                    %
+                                                </strong>
+
+                                            </div>
+
+                                            <div className="comparison-metric-card">
+
+                                                <span>
+                                                    T+5 AVG
+                                                </span>
+
+                                                <strong>
+                                                    {formatNumber(
+                                                        t5?.average_return
+                                                    )}
+                                                    %
+                                                </strong>
+
+                                            </div>
+
+                                            <div className="comparison-metric-card">
+
+                                                <span>
+                                                    T+10 AVG
+                                                </span>
+
+                                                <strong>
+                                                    {formatNumber(
+                                                        t10?.average_return
+                                                    )}
+                                                    %
+                                                </strong>
+
+                                            </div>
 
                                         </div>
 
-                                    </div>
+                                    </article>
                                 )
                             }
                         )}
 
                     </div>
 
-                </div>
+                    {/* =================================================
+                        PERFORMANCE MATRIX
+                    ================================================= */}
+
+                    <div className="research-comparison-panel">
+
+                        <div className="research-comparison-panel-header">
+
+                            <div>
+
+                                <div className="section-eyebrow">
+                                    FORWARD RETURNS
+                                </div>
+
+                                <h3>
+                                    Training Performance Matrix
+                                </h3>
+
+                            </div>
+
+                        </div>
+
+                        <div className="research-comparison-performance-grid">
+
+                            {['T+1', 'T+3', 'T+5', 'T+10'].map(
+                                (horizon) => (
+
+                                    <div
+                                        className="comparison-horizon-card"
+                                        key={
+                                            horizon
+                                        }
+                                    >
+
+                                        <div className="comparison-horizon-title">
+                                            {horizon}
+                                        </div>
+
+                                        {comparison.experiments?.map(
+                                            (experiment) => {
+
+                                                const performance =
+                                                    getPerformance(
+                                                        experiment,
+                                                        horizon
+                                                    )
+
+                                                return (
+                                                    <div
+                                                        className="comparison-performance-row"
+                                                        key={
+                                                            experiment.experiment_id
+                                                        }
+                                                    >
+
+                                                        <div className="comparison-performance-name">
+
+                                                            <span>
+                                                                {
+                                                                    experiment.name ||
+                                                                    experiment.experiment_id
+                                                                }
+                                                            </span>
+
+                                                        </div>
+
+                                                        <div className="comparison-performance-main">
+
+                                                            <strong>
+                                                                {formatNumber(
+                                                                    performance?.average_return
+                                                                )}
+                                                                %
+                                                            </strong>
+
+                                                            <span>
+                                                                avg return
+                                                            </span>
+
+                                                        </div>
+
+                                                        <div className="comparison-performance-secondary">
+
+                                                            <span>
+                                                                Median
+                                                            </span>
+
+                                                            <strong>
+                                                                {formatNumber(
+                                                                    performance?.median_return
+                                                                )}
+                                                                %
+                                                            </strong>
+
+                                                        </div>
+
+                                                        <div className="comparison-performance-secondary">
+
+                                                            <span>
+                                                                Positive
+                                                            </span>
+
+                                                            <strong>
+                                                                {formatPercent(
+                                                                    performance?.positive_return_pct
+                                                                )}
+                                                            </strong>
+
+                                                        </div>
+
+                                                        <div className="comparison-performance-secondary">
+
+                                                            <span>
+                                                                Excess
+                                                            </span>
+
+                                                            <strong>
+                                                                {formatNumber(
+                                                                    performance?.average_excess_return
+                                                                )}
+                                                                %
+                                                            </strong>
+
+                                                        </div>
+
+                                                        <div className="comparison-performance-secondary">
+
+                                                            <span>
+                                                                Beat Market
+                                                            </span>
+
+                                                            <strong>
+                                                                {formatPercent(
+                                                                    performance?.outperformed_market_pct
+                                                                )}
+                                                            </strong>
+
+                                                        </div>
+
+                                                    </div>
+                                                )
+                                            }
+                                        )}
+
+                                    </div>
+                                )
+                            )}
+
+                        </div>
+
+                    </div>
+
+                </section>
             )}
 
         </section>

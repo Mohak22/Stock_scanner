@@ -913,14 +913,26 @@ def lock_experiment(
     experiment_id: str,
 ) -> dict:
 
-    path = experiment_path(
+    experiment_path_value = experiment_path(
         experiment_id
     )
 
+    metadata_path_value = (
+        experiment_metadata_path(
+            experiment_id
+        )
+    )
+
+    # ----------------------------------------------------------
+    # Load full experiment
+    # ----------------------------------------------------------
+
     try:
 
-        record, sha = store.get_large(
-            path
+        record, experiment_sha = (
+            store.get_large(
+                experiment_path_value
+            )
         )
 
     except RuntimeError as exc:
@@ -930,53 +942,73 @@ def lock_experiment(
             detail=str(exc),
         ) from exc
 
-    if (
-        record.get("status")
-        == "LOCKED"
-    ):
+    # ----------------------------------------------------------
+    # Already locked
+    # ----------------------------------------------------------
+
+    if record.get("status") == "LOCKED":
 
         return {
             "locked": True,
-            "experiment_id": (
-                experiment_id
-            ),
+            "experiment_id": experiment_id,
             "status": "LOCKED",
-            "locked_at": (
-                record.get(
-                    "locked_at"
-                )
+            "locked_at": record.get(
+                "locked_at"
             ),
         }
 
-    record["status"] = "LOCKED"
+    # ----------------------------------------------------------
+    # Update
+    # ----------------------------------------------------------
 
-    record["locked_at"] = now()
+    locked_at = now()
+
+    record["status"] = "LOCKED"
+    record["locked_at"] = locked_at
+
+    # ----------------------------------------------------------
+    # Save main experiment
+    # ----------------------------------------------------------
 
     try:
 
         commit_sha = store.put(
-            path,
+            experiment_path_value,
             record,
             (
                 "Lock research experiment "
                 f"{experiment_id}"
             ),
-            sha,
+            experiment_sha,
         )
 
-        metadata_path = experiment_metadata_path(
-            experiment_id
-        )
+    except RuntimeError as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Could not lock experiment: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    # ----------------------------------------------------------
+    # Save metadata
+    # ----------------------------------------------------------
+
+    try:
 
         metadata_sha = store.get_sha(
-            metadata_path
+            metadata_path_value
         )
 
         store.put(
-            metadata_path,
-            experiment_metadata(record),
+            metadata_path_value,
+            experiment_metadata(
+                record
+            ),
             (
-                "Lock experiment metadata "
+                "Update locked experiment metadata "
                 f"{experiment_id}"
             ),
             metadata_sha,
@@ -984,24 +1016,21 @@ def lock_experiment(
 
     except RuntimeError as exc:
 
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
+        # Main experiment is already locked.
+        # Do NOT report the lock itself as failed.
+        print(
+            "WARNING: experiment locked but "
+            "metadata update failed:",
+            exc,
+        )
 
     return {
         "locked": True,
-        "experiment_id": (
-            experiment_id
-        ),
+        "experiment_id": experiment_id,
         "status": "LOCKED",
-        "locked_at": (
-            record["locked_at"]
-        ),
+        "locked_at": locked_at,
         "commit_sha": commit_sha,
     }
-
-
 # ======================================================================
 # B8 — STRATEGY CONFIGURATION / VERSIONING
 # ======================================================================

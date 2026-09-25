@@ -84,7 +84,6 @@ function ExperimentTable({
                                     <input
                                         type="checkbox"
                                         checked={isSelected}
-                                        disabled={isLocked}
                                         onChange={() =>
                                             onToggleSelect(
                                                 experiment.experiment_id
