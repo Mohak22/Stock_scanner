@@ -301,6 +301,10 @@ function ResearchConfig() {
       return 'Please define a research question.'
     }
 
+    if (!hypothesis.trim()) {
+      return 'Please define a falsifiable hypothesis.'
+    }
+
     if (!developmentStart || !developmentEnd) {
       return 'Please select the development period.'
     }
