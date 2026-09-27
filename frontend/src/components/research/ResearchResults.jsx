@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 
 function ResearchResults({ researchResult, onSaveExperiment }) {
   const [activeAnalysisTab, setActiveAnalysisTab] = useState('stock')
+  const [activeStage, setActiveStage] = useState('development')
 
   const [sortConfig, setSortConfig] = useState({
     key: 'TIMESTAMP',
@@ -16,11 +17,11 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
    * ----------------------------------------------------------
    */
 
-  const training = researchResult?.training || {}
-  const summary = training.summary || {}
-  const diagnostics = training.diagnostics || {}
-  const performance = training.performance || {}
-  const analysis = training.analysis || {}
+  const stageResult = researchResult?.[activeStage] || {}
+  const summary = stageResult.summary || {}
+  const diagnostics = stageResult.diagnostics || {}
+  const performance = stageResult.performance || {}
+  const analysis = stageResult.analysis || {}
 
   const byFeature = analysis.by_feature || {}
   const byMarketRegime = analysis.by_market_regime || {}
@@ -35,8 +36,8 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
    * ----------------------------------------------------------
    */
 
-  const signalRows = Array.isArray(training.signals)
-    ? training.signals
+  const signalRows = Array.isArray(stageResult.signals)
+    ? stageResult.signals
     : []
 
   /*
@@ -306,7 +307,30 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
         </div>
       )}
       
-      {/* =====================================================
+      <div className="analysis-tabs research-stage-tabs">
+        {[
+          ['development', 'DEVELOPMENT', 'Iterate and inspect the hypothesis'],
+          ['validation', 'VALIDATION', 'Unseen period for candidate evaluation'],
+          ['final_holdout', 'FINAL HOLDOUT', 'Untouched evidence before locking'],
+        ].map(([value, label, help]) => (
+          <button
+            key={value}
+            className={`analysis-tab ${activeStage === value ? 'active' : ''}`}
+            onClick={() => setActiveStage(value)}
+            disabled={!researchResult?.[value]}
+          >
+            <span className="tab-number">
+              {value === 'development' ? '01' : value === 'validation' ? '02' : '03'}
+            </span>
+            <span>
+              <strong>{label}</strong>
+              <small>{researchResult?.[value] ? help : 'Not evaluated'}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+
+            {/* =====================================================
           SUMMARY
           ===================================================== */}
 
