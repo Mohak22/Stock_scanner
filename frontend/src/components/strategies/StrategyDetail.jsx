@@ -348,87 +348,45 @@ function StrategyDetail({
             <div className="strategy-detail-section">
 
                 <div className="detail-section-heading">
-
                     <div>
-
                         <span className="section-eyebrow">
                             LIFECYCLE
                         </span>
-
-                        <h2>
-                            Strategy State
-                        </h2>
-
+                        <h2>Strategy State</h2>
                     </div>
-
                 </div>
 
                 <div className="strategy-lifecycle">
-
                     <div className="strategy-lifecycle-step active">
-                        <span>
-                            01
-                        </span>
-
-                        <strong>
-                            DRAFT
-                        </strong>
-
-                        <small>
-                            Strategy definition created
-                        </small>
+                        <span>01</span>
+                        <strong>DRAFT</strong>
+                        <small>Strategy created from locked evidence</small>
                     </div>
 
                     <div className="strategy-lifecycle-line" />
 
                     <div className="strategy-lifecycle-step">
-                        <span>
-                            02
-                        </span>
-
-                        <strong>
-                            FORWARD TESTING
-                        </strong>
-
-                        <small>
-                            Future integration point
-                        </small>
+                        <span>02</span>
+                        <strong>LOCKED</strong>
+                        <small>Frozen strategy definition</small>
                     </div>
 
                     <div className="strategy-lifecycle-line" />
 
                     <div className="strategy-lifecycle-step">
-                        <span>
-                            03
-                        </span>
-
-                        <strong>
-                            VALIDATED
-                        </strong>
-
-                        <small>
-                            Future validation stage
-                        </small>
+                        <span>03</span>
+                        <strong>FORWARD TESTING</strong>
+                        <small>Evaluate only on future market data</small>
                     </div>
 
                     <div className="strategy-lifecycle-line" />
 
                     <div className="strategy-lifecycle-step">
-                        <span>
-                            04
-                        </span>
-
-                        <strong>
-                            DEPLOYED
-                        </strong>
-
-                        <small>
-                            Future execution stage
-                        </small>
+                        <span>04</span>
+                        <strong>DEPLOYMENT</strong>
+                        <small>Execution integration after forward testing</small>
                     </div>
-
                 </div>
-
             </div>
 
             {!isLocked && (
