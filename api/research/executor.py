@@ -58,12 +58,12 @@ def execute_research(
     # 1. VALIDATE DATE RANGE
     # ----------------------------------------------------------
 
-    if request.training_start > request.training_end:
+    if request.development_start > request.development_end:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Training start date must be "
-                "before training end date."
+                "Development start date must be "
+                "before development end date."
             ),
         )
 
@@ -82,16 +82,16 @@ def execute_research(
         )
 
     if (
-        request.testing_start is not None
-        and request.testing_end is not None
-        and request.testing_start > request.testing_end
+        request.holdout_start is not None
+        and request.holdout_end is not None
+        and request.holdout_start > request.holdout_end
     ):
 
         raise HTTPException(
             status_code=400,
             detail=(
-                "Testing start date must be "
-                "before testing end date."
+                "Final holdout start date must be "
+                "before final holdout end date."
             ),
         )
 
@@ -99,12 +99,12 @@ def execute_research(
     # 2. CONVERT REQUEST DATES
     # ----------------------------------------------------------
 
-    training_start = pd.Timestamp(
-        request.training_start
+    development_start = pd.Timestamp(
+        request.development_start
     )
 
-    training_end = pd.Timestamp(
-        request.training_end
+    development_end = pd.Timestamp(
+        request.development_end
     )
 
     validation_start = (
@@ -119,15 +119,15 @@ def execute_research(
         else None
     )
 
-    testing_start = (
-        pd.Timestamp(request.testing_start)
-        if request.testing_start is not None
+    holdout_start = (
+        pd.Timestamp(request.holdout_start)
+        if request.holdout_start is not None
         else None
     )
 
-    testing_end = (
-        pd.Timestamp(request.testing_end)
-        if request.testing_end is not None
+    holdout_end = (
+        pd.Timestamp(request.holdout_end)
+        if request.holdout_end is not None
         else None
     )
 
@@ -178,8 +178,8 @@ def execute_research(
     # ----------------------------------------------------------
 
     requested_dates = [
-        training_start,
-        training_end,
+        development_start,
+        development_end,
     ]
 
     if validation_start is not None:
@@ -188,11 +188,11 @@ def execute_research(
     if validation_end is not None:
         requested_dates.append(validation_end)
 
-    if testing_start is not None:
-        requested_dates.append(testing_start)
+    if holdout_start is not None:
+        requested_dates.append(holdout_start)
 
-    if testing_end is not None:
-        requested_dates.append(testing_end)
+    if holdout_end is not None:
+        requested_dates.append(holdout_end)
 
     requested_start = min(requested_dates)
     requested_end = max(requested_dates)
@@ -770,11 +770,11 @@ def execute_research(
     # 18. TRAINING
     # ----------------------------------------------------------
 
-    training_result = (
+    development_result = (
         build_split_result(
-            "training",
-            training_start,
-            training_end,
+            "development",
+            development_start,
+            development_end,
         )
     )
 
@@ -801,18 +801,18 @@ def execute_research(
     # 20. TESTING
     # ----------------------------------------------------------
 
-    testing_result = None
+    holdout_result = None
 
     if (
-        testing_start is not None
-        and testing_end is not None
+        holdout_start is not None
+        and holdout_end is not None
     ):
 
-        testing_result = (
+        holdout_result = (
             build_split_result(
-                "testing",
-                testing_start,
-                testing_end,
+                "final_holdout",
+                holdout_start,
+                holdout_end,
             )
         )
 
@@ -870,12 +870,24 @@ def execute_research(
 
     return {
         "research_config": {
-            "training_start": request.training_start,
-            "training_end": request.training_end,
+            "research_question": request.research_question,
+            "hypothesis": request.hypothesis,
+            "development_start": request.development_start,
+            "development_end": request.development_end,
             "validation_start": request.validation_start,
             "validation_end": request.validation_end,
-            "testing_start": request.testing_start,
-            "testing_end": request.testing_end,
+            "holdout_start": request.holdout_start,
+            "holdout_end": request.holdout_end,
+            "signal_timing": request.signal_timing.model_dump(),
+            "outcome_definition": (
+                request.outcome_definition.model_dump()
+                if request.outcome_definition is not None
+                else {
+                    "anchor": "entry_date",
+                    "price_basis": "CLOSE",
+                    "horizons": horizons,
+                }
+            ),
             "universe": request.universe.model_dump(),
             "features": features,
             "entry_conditions": conditions,
@@ -906,15 +918,15 @@ def execute_research(
             },
         },
 
-        "training": clean_result(
-            training_result
+        "development": clean_result(
+            development_result
         ),
 
         "validation": clean_result(
             validation_result
         ),
 
-        "testing": clean_result(
-            testing_result
+        "final_holdout": clean_result(
+            holdout_result
         ),
     }
