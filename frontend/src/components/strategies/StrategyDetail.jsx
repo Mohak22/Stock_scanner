@@ -274,6 +274,16 @@ function StrategyDetail({
             )}
 
             <div className="strategy-detail-section">
+                <div className="detail-section-heading">
+                    <div>
+                        <span className="section-eyebrow">FROZEN RESEARCH EVIDENCE</span>
+                        <h2>{strategyData.research_question || '—'}</h2>
+                        <p>{strategyData.hypothesis || '—'}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="strategy-detail-section">
 
                 <div className="detail-section-heading">
 
