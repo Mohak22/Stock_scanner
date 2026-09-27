@@ -19,7 +19,11 @@ function ResearchConfig() {
   const [jobStage, setJobStage] = useState('')
   const [jobStatus, setJobStatus] = useState(null)
   const [researchQuestion, setResearchQuestion] = useState(
-    'Find oversold stocks using RSI and evaluate their forward returns.'
+    'Can a one-day price spike persist over the next few sessions?'
+  )
+
+  const [hypothesis, setHypothesis] = useState(
+    'Stocks with a significant one-day price increase may continue to outperform over subsequent sessions.'
   )
 
   const [universe, setUniverse] = useState({
@@ -27,10 +31,10 @@ function ResearchConfig() {
     value: '',
     symbols: [],
   })
-  const [trainingStart, setTrainingStart] =
+  const [developmentStart, setDevelopmentStart] =
     useState('2016-01-01')
 
-  const [trainingEnd, setTrainingEnd] =
+  const [developmentEnd, setDevelopmentEnd] =
     useState('2022-12-31')
 
   const [validationStart, setValidationStart] =
@@ -39,11 +43,11 @@ function ResearchConfig() {
   const [validationEnd, setValidationEnd] =
     useState('2024-12-31')
 
-  const [testingStart, setTestingStart] =
+  const [holdoutStart, setHoldoutStart] =
     useState('2025-01-01')
 
-  const [testingEnd, setTestingEnd] =
-    useState('2026-12-31')
+  const [holdoutEnd, setHoldoutEnd] =
+    useState('')
 
   const [conditions, setConditions] = useState([
     {
@@ -61,6 +65,41 @@ function ResearchConfig() {
   const [researchResult, setResearchResult] = useState(null)
 
   const eventSourceRef = useRef(null)
+
+  useEffect(() => {
+    async function loadAvailableDates() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/data/dates`
+        )
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            data.detail || 'Failed to load available market dates.'
+          )
+        }
+
+        const dates = Array.isArray(data.available_dates)
+          ? data.available_dates
+          : []
+
+        if (dates.length > 0) {
+          setHoldoutEnd(
+            String(dates[dates.length - 1]).slice(0, 10)
+          )
+        }
+      } catch (error) {
+        setFeatureError(
+          error.message ||
+          'Failed to load available market dates.'
+        )
+      }
+    }
+
+    loadAvailableDates()
+  }, [])
 
   useEffect(() => {
     async function loadFeatures() {
@@ -198,8 +237,10 @@ function ResearchConfig() {
     })
 
     return {
-      training_start: trainingStart,
-      training_end: trainingEnd,
+      research_question: researchQuestion.trim(),
+      hypothesis: hypothesis.trim(),
+      development_start: developmentStart,
+      development_end: developmentEnd,
 
       validation_start:
         validationStart || null,
@@ -207,11 +248,11 @@ function ResearchConfig() {
       validation_end:
         validationEnd || null,
 
-      testing_start:
-        testingStart || null,
+      holdout_start:
+        holdoutStart || null,
 
-      testing_end:
-        testingEnd || null,
+      holdout_end:
+        holdoutEnd || null,
 
       universe,
 
@@ -242,6 +283,16 @@ function ResearchConfig() {
       }),
 
       evaluation_horizons: evaluationHorizons,
+      signal_timing: {
+        observation: 'signal_date_close',
+        entry: 'next_available_symbol_session_close',
+        price_basis: 'CLOSE',
+      },
+      outcome_definition: {
+        anchor: 'entry_date',
+        price_basis: 'CLOSE',
+        horizons: evaluationHorizons,
+      },
     }
   }
 
@@ -250,12 +301,16 @@ function ResearchConfig() {
       return 'Please define a research question.'
     }
 
-    if (!trainingStart || !trainingEnd) {
-      return 'Please select the training period.'
+    if (!hypothesis.trim()) {
+      return 'Please define a falsifiable hypothesis.'
     }
 
-    if (trainingStart >= trainingEnd) {
-      return 'Training start date must be before the training end date.'
+    if (!developmentStart || !developmentEnd) {
+      return 'Please select the development period.'
+    }
+
+    if (developmentStart >= developmentEnd) {
+      return 'Development start date must be before the development end date.'
     }
 
     if (!validationStart || !validationEnd) {
@@ -266,20 +321,20 @@ function ResearchConfig() {
       return 'Validation start date must be before the validation end date.'
     }
 
-    if (!testingStart || !testingEnd) {
-      return 'Please select the testing period.'
+    if (!holdoutStart || !holdoutEnd) {
+      return 'Please select the holdout period.'
     }
 
-    if (testingStart >= testingEnd) {
-      return 'Testing start date must be before the testing end date.'
+    if (holdoutStart >= holdoutEnd) {
+      return 'Holdout start date must be before the holdout end date.'
     }
 
-    if (trainingEnd >= validationStart) {
-      return 'Training must finish before validation begins.'
+    if (developmentEnd >= validationStart) {
+      return 'Development must finish before validation begins.'
     }
 
-    if (validationEnd >= testingStart) {
-      return 'Validation must finish before testing begins.'
+    if (validationEnd >= holdoutStart) {
+      return 'Validation must finish before holdout begins.'
     }
 
     if (conditions.length === 0) {
@@ -636,8 +691,10 @@ function ResearchConfig() {
       </div>
 
       <ResearchQuestion
-        value={researchQuestion}
-        onChange={setResearchQuestion}
+        question={researchQuestion}
+        hypothesis={hypothesis}
+        onQuestionChange={setResearchQuestion}
+        onHypothesisChange={setHypothesis}
       />
 
       <div className="config-grid">
@@ -648,18 +705,18 @@ function ResearchConfig() {
         />
 
         <DateRangeConfig
-          trainingStart={trainingStart}
-          trainingEnd={trainingEnd}
+          developmentStart={developmentStart}
+          developmentEnd={developmentEnd}
           validationStart={validationStart}
           validationEnd={validationEnd}
-          testingStart={testingStart}
-          testingEnd={testingEnd}
-          onTrainingStartChange={setTrainingStart}
-          onTrainingEndChange={setTrainingEnd}
+          holdoutStart={holdoutStart}
+          holdoutEnd={holdoutEnd}
+          onDevelopmentStartChange={setDevelopmentStart}
+          onDevelopmentEndChange={setDevelopmentEnd}
           onValidationStartChange={setValidationStart}
           onValidationEndChange={setValidationEnd}
-          onTestingStartChange={setTestingStart}
-          onTestingEndChange={setTestingEnd}
+          onHoldoutStartChange={setHoldoutStart}
+          onHoldoutEndChange={setHoldoutEnd}
           isRunning={isRunning}
         />
       </div>

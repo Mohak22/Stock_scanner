@@ -191,6 +191,73 @@ class ResearchDataRepository:
         }
 
     # ==========================================================
+    # RESEARCH DATA REVISION
+    # ==========================================================
+
+    def get_revision(self) -> str:
+        """
+        Return the Git commit SHA currently pointed to by the
+        research data repository's main branch.
+
+        This is the primary data revision identifier for
+        reproducible research runs.
+        """
+
+        url = (
+            f"{GITHUB_API_BASE_URL}"
+            f"/repos/{self.repository}/git/ref/"
+            f"heads/{DATA_REPOSITORY_BRANCH}"
+        )
+
+        payload = json.loads(
+            self._request(url)
+            .decode("utf-8")
+        )
+
+        sha = (
+            payload.get("object", {})
+            .get("sha")
+        )
+
+        if not sha:
+            raise RuntimeError(
+                "GitHub data repository revision could not be determined."
+            )
+
+        return str(sha)
+
+    def get_file_revision(self, path: str) -> str:
+        """
+        Return the Git blob SHA for a specific file in the
+        research data repository.
+
+        This allows individual research artifacts such as
+        research_universe.csv to be versioned independently.
+        """
+
+        url = (
+            f"{GITHUB_API_BASE_URL}"
+            f"/repos/{self.repository}"
+            f"/contents/{path}"
+            f"?ref={DATA_REPOSITORY_BRANCH}"
+        )
+
+        payload = json.loads(
+            self._request(url)
+            .decode("utf-8")
+        )
+
+        sha = payload.get("sha")
+
+        if not sha:
+            raise RuntimeError(
+                "GitHub file revision could not be determined "
+                f"for: {path}"
+            )
+
+        return str(sha)
+    
+    # ==========================================================
     # CSV
     # ==========================================================
 

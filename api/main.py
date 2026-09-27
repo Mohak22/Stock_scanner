@@ -65,6 +65,10 @@ app.include_router(workflow_router)
 
 repository = ResearchDataRepository()
 
+data_revision = repository.get_revision()
+universe_revision = repository.get_file_revision(
+    "research_universe.csv"
+)
 
 # ======================================================================
 # SYSTEM

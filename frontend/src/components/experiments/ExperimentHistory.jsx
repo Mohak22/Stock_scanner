@@ -59,7 +59,7 @@ function getPerformance(
     horizon
 ) {
     return (
-        experiment?.training?.performance?.[
+        experiment?.development?.performance?.[
             horizon
         ] || null
     )
@@ -69,7 +69,7 @@ function getConditionText(
     experiment
 ) {
     const conditions =
-        experiment?.research_config?.conditions
+        experiment?.research_config?.entry_conditions
 
     if (!conditions) {
         return '—'
@@ -924,7 +924,7 @@ function ExperimentHistory({
                                 </div>
 
                                 <h3>
-                                    Training Performance Matrix
+                                    Development Performance Matrix
                                 </h3>
 
                             </div>
