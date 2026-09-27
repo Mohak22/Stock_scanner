@@ -1,0 +1,433 @@
+.live-trading {
+    max-width: 1450px;
+    margin: 0 auto;
+}
+
+.live-trading-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.live-trading-kicker {
+    display: block;
+    margin-bottom: 7px;
+    color: #00d9ff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.7px;
+}
+
+.live-trading-header h1 {
+    margin: 0;
+    font-size: 28px;
+    color: #e6f7ff;
+}
+
+.live-trading-header p {
+    max-width: 700px;
+    margin: 9px 0 0;
+    color: #71899a;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.execution-mode-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 13px;
+    border-radius: 7px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.execution-mode-badge span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.execution-mode-badge.paper {
+    color: #f2c66d;
+    border: 1px solid #65532b;
+    background: #211b0d;
+}
+
+.execution-mode-badge.paper span {
+    background: #f2c66d;
+}
+
+.execution-mode-badge.live {
+    color: #ff6f87;
+    border: 1px solid #67303b;
+    background: #261117;
+}
+
+.execution-mode-badge.live span {
+    background: #ff6f87;
+}
+
+.execution-message {
+    margin-bottom: 16px;
+    padding: 12px 15px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.execution-message.success {
+    border: 1px solid #285a48;
+    background: #0b241c;
+    color: #4de0a9;
+}
+
+.execution-message.error {
+    border: 1px solid #5a2930;
+    background: #281318;
+    color: #ff8395;
+}
+
+.execution-section {
+    margin-bottom: 16px;
+    padding: 21px;
+    border: 1px solid #12324a;
+    border-radius: 11px;
+    background: #071421;
+}
+
+.execution-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.execution-section-header > div > span {
+    display: block;
+    margin-bottom: 6px;
+    color: #5d7890;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.3px;
+}
+
+.execution-section-header h2 {
+    margin: 0;
+    color: #dffaff;
+    font-size: 17px;
+}
+
+.execution-section-header p {
+    margin: 7px 0 0;
+    color: #657e90;
+    font-size: 11px;
+}
+
+.execution-primary-button,
+.execution-secondary-button {
+    padding: 10px 14px;
+    border-radius: 7px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.7px;
+    cursor: pointer;
+}
+
+.execution-primary-button {
+    border: 1px solid #00b8d9;
+    background: #00b8d9;
+    color: #021018;
+}
+
+.execution-primary-button:hover {
+    background: #00d9ff;
+}
+
+.execution-secondary-button {
+    border: 1px solid #21445d;
+    background: #0b1d2d;
+    color: #8fb5c8;
+}
+
+.execution-secondary-button:hover {
+    border-color: #00a9cf;
+    color: #00e5ff;
+}
+
+.execution-primary-button:disabled,
+.execution-secondary-button:disabled,
+.account-action-grid button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.connection-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.connection-card {
+    padding: 15px;
+    border: 1px solid #132d43;
+    border-radius: 8px;
+    background: #050b14;
+}
+
+.connection-card span,
+.execution-result-grid span {
+    display: block;
+    margin-bottom: 7px;
+    color: #5e7588;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.connection-card strong {
+    color: #d6edf7;
+    font-size: 12px;
+}
+
+.connection-actions {
+    margin-top: 13px;
+}
+
+.market-data-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.market-data-controls input {
+    flex: 1;
+    min-width: 0;
+    padding: 11px 13px;
+    border: 1px solid #1b3b51;
+    border-radius: 7px;
+    outline: none;
+    background: #050b14;
+    color: #dffaff;
+    font-size: 11px;
+}
+
+.market-data-controls input:focus {
+    border-color: #00a9cf;
+}
+
+.account-action-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.account-action-grid button {
+    padding: 12px;
+    border: 1px solid #21445d;
+    border-radius: 7px;
+    background: #0b1d2d;
+    color: #91bfd0;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+}
+
+.account-action-grid button:hover {
+    border-color: #00a9cf;
+    color: #00e5ff;
+}
+
+.data-panel,
+.json-panel {
+    margin-top: 12px;
+    border: 1px solid #132d43;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #050b14;
+}
+
+.data-panel-header {
+    padding: 10px 13px;
+    border-bottom: 1px solid #132d43;
+    color: #61cce9;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.9px;
+}
+
+.data-panel pre,
+.json-panel pre {
+    max-height: 350px;
+    margin: 0;
+    padding: 14px;
+    overflow: auto;
+    color: #8fb5c8;
+    font-family: Consolas, monospace;
+    font-size: 10px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.order-section {
+    border-color: #17445c;
+}
+
+.execution-form-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.execution-field {
+    min-width: 0;
+}
+
+.execution-field.wide {
+    grid-column: span 2;
+}
+
+.execution-field label {
+    display: block;
+    margin-bottom: 7px;
+    color: #7991a3;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.9px;
+    text-transform: uppercase;
+}
+
+.execution-field input,
+.execution-field select {
+    width: 100%;
+    padding: 10px 11px;
+    border: 1px solid #1b3b51;
+    border-radius: 7px;
+    outline: none;
+    background: #050b14;
+    color: #dffaff;
+    font-size: 11px;
+}
+
+.execution-field input:focus,
+.execution-field select:focus {
+    border-color: #00a9cf;
+}
+
+.execution-warning {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 16px;
+    padding: 13px 15px;
+    border: 1px solid #5a4823;
+    border-radius: 8px;
+    background: #1b170d;
+}
+
+.execution-warning strong {
+    color: #f2c66d;
+    font-size: 10px;
+    letter-spacing: 0.7px;
+}
+
+.execution-warning span {
+    color: #a79772;
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+.live-confirmation {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 13px;
+    color: #ff8395;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.live-confirmation input {
+    width: 15px;
+    height: 15px;
+    accent-color: #ff6f87;
+}
+
+.execution-submit-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+
+.submit-order-button {
+    min-width: 190px;
+}
+
+.execution-result-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.execution-result-grid > div {
+    padding: 14px;
+    border: 1px solid #132d43;
+    border-radius: 8px;
+    background: #050b14;
+}
+
+.execution-result-grid strong {
+    display: block;
+    color: #61cce9;
+    font-family: Consolas, monospace;
+    font-size: 10px;
+    word-break: break-word;
+}
+
+@media (max-width: 1100px) {
+    .connection-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .execution-form-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .execution-field.wide {
+        grid-column: span 2;
+    }
+
+    .execution-result-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    .live-trading-header {
+        flex-direction: column;
+    }
+
+    .connection-grid,
+    .account-action-grid,
+    .execution-form-grid,
+    .execution-result-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .execution-field.wide {
+        grid-column: span 1;
+    }
+
+    .market-data-controls {
+        flex-direction: column;
+    }
+
+    .execution-section-header {
+        flex-direction: column;
+    }
+}

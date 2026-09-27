@@ -47,7 +47,15 @@ function Sidebar({ activePage, setActivePage }) {
           Strategy Library
         </div>
 
-        <div className="menu-item">
+        <div
+          className={`menu-item ${activePage === 'live-trading'
+              ? 'active'
+              : ''
+            }`}
+          onClick={() =>
+            setActivePage('live-trading')
+          }
+        >
           Live Trading
         </div>
 

@@ -1,15 +1,22 @@
 import { useState } from 'react'
 import './App.css'
+
 import Sidebar from './components/Sidebar'
 import TopBar from './components/TopBar'
+
 import ResearchConfig from './components/ResearchConfig'
 import ExperimentHistory from './components/experiments/ExperimentHistory'
 import ExperimentDetail from './components/experiments/ExperimentDetail'
+
 import StrategyLibrary from './components/strategies/StrategyLibrary'
 import StrategyDetail from './components/strategies/StrategyDetail'
 
+import LiveTrading from './components/LiveTrading'
+
+
 function App() {
-    const [activePage, setActivePage] = useState('research')
+    const [activePage, setActivePage] =
+        useState('research')
 
     const [selectedExperimentId, setSelectedExperimentId] =
         useState(null)
@@ -17,28 +24,44 @@ function App() {
     const [selectedStrategy, setSelectedStrategy] =
         useState(null)
 
+
     function openExperiment(experiment) {
         setSelectedExperimentId(
             experiment.experiment_id
         )
 
-        setActivePage('experiment-detail')
+        setActivePage(
+            'experiment-detail'
+        )
     }
+
 
     function backToExperimentHistory() {
         setSelectedExperimentId(null)
-        setActivePage('experiments')
+
+        setActivePage(
+            'experiments'
+        )
     }
+
 
     function openStrategy(strategy) {
         setSelectedStrategy(strategy)
-        setActivePage('strategy-detail')
+
+        setActivePage(
+            'strategy-detail'
+        )
     }
+
 
     function backToStrategyLibrary() {
         setSelectedStrategy(null)
-        setActivePage('strategies')
+
+        setActivePage(
+            'strategies'
+        )
     }
+
 
     return (
         <div className="app">
@@ -58,6 +81,7 @@ function App() {
                         <ResearchConfig />
                     )}
 
+
                     {activePage === 'experiments' && (
                         <ExperimentHistory
                             onOpenExperiment={
@@ -66,7 +90,9 @@ function App() {
                         />
                     )}
 
-                    {activePage === 'experiment-detail' &&
+
+                    {activePage ===
+                        'experiment-detail' &&
                         selectedExperimentId && (
                             <ExperimentDetail
                                 experimentId={
@@ -78,6 +104,7 @@ function App() {
                             />
                         )}
 
+
                     {activePage === 'strategies' && (
                         <StrategyLibrary
                             onOpenStrategy={
@@ -86,12 +113,24 @@ function App() {
                         />
                     )}
 
-                    {activePage === 'strategy-detail' &&
+
+                    {activePage ===
+                        'strategy-detail' &&
                         selectedStrategy && (
                             <StrategyDetail
-                                strategy={selectedStrategy}
-                                onBack={backToStrategyLibrary}
+                                strategy={
+                                    selectedStrategy
+                                }
+                                onBack={
+                                    backToStrategyLibrary
+                                }
                             />
+                        )}
+
+
+                    {activePage ===
+                        'live-trading' && (
+                            <LiveTrading />
                         )}
 
                 </main>
@@ -101,5 +140,6 @@ function App() {
         </div>
     )
 }
+
 
 export default App
