@@ -382,50 +382,28 @@ store = GitHubStore()
 # ======================================================================
 
 def now() -> str:
-
     return datetime.now(
         ZoneInfo("Asia/Kolkata")
     ).isoformat()
 
 
 def experiment_id() -> str:
-
     current = datetime.now(
         ZoneInfo("Asia/Kolkata")
     )
-
     suffix = uuid4().hex[:4].upper()
-
-    return (
-        f"EXP-"
-        f"{current:%Y%m%d-%H%M%S}-"
-        f"{suffix}"
-    )
+    return f"EXP-{current:%Y%m%d-%H%M%S}-{suffix}"
 
 
-def experiment_path(
-    experiment_id: str,
-) -> str:
-
-    return (
-        f"{EXP_PREFIX}"
-        f"{experiment_id}.json"
-    )
+def experiment_path(experiment_id: str) -> str:
+    return f"{EXP_PREFIX}{experiment_id}.json"
 
 
-def experiment_metadata_path(
-    experiment_id: str,
-) -> str:
-    return (
-        f"{EXP_PREFIX}"
-        f"{experiment_id}.meta.json"
-    )
+def experiment_metadata_path(experiment_id: str) -> str:
+    return f"{EXP_PREFIX}{experiment_id}.meta.json"
 
 
-def strategy_slug(
-    name: str,
-) -> str:
-
+def strategy_slug(name: str) -> str:
     slug = re.sub(
         r"[^A-Za-z0-9]+",
         "-",
@@ -433,7 +411,6 @@ def strategy_slug(
     ).strip("-").lower()
 
     if not slug:
-
         raise HTTPException(
             status_code=400,
             detail="Invalid strategy name.",
@@ -442,258 +419,174 @@ def strategy_slug(
     return slug
 
 
-def strategy_path(
-    slug: str,
-    version: int,
-) -> str:
-
-    return (
-        f"{STRAT_PREFIX}"
-        f"{slug}/"
-        f"v{version}.json"
-    )
-
-
-def experiment_summary(
-    record: dict,
-) -> dict:
-
-    result = record.get(
-        "research_result",
-        {},
-    )
-
-    return {
-        "experiment_id": (
-            record["experiment_id"]
-        ),
-        "name": record.get("name"),
-        "status": record.get("status"),
-        "created_at": (
-            record.get("created_at")
-        ),
-        "locked_at": (
-            record.get("locked_at")
-        ),
-        "tags": record.get(
-            "tags",
-            [],
-        ),
-        "research_config": (
-            result.get(
-                "research_config",
-                {},
-            )
-        ),
-        "training": result.get(
-            "training"
-        ),
-        "validation": result.get(
-            "validation"
-        ),
-        "testing": result.get(
-            "testing"
-        ),
-    }
-
-
-def experiment_metadata(
-    record: dict,
-) -> dict:
-    return {
-        "schema_version": record.get(
-            "schema_version",
-            1,
-        ),
-        "experiment_id": record[
-            "experiment_id"
-        ],
-        "name": record.get("name"),
-        "status": record.get("status"),
-        "created_at": record.get(
-            "created_at"
-        ),
-        "locked_at": record.get(
-            "locked_at"
-        ),
-        "tags": record.get(
-            "tags",
-            [],
-        ),
-    }
+def strategy_path(slug: str, version: int) -> str:
+    return f"{STRAT_PREFIX}{slug}/v{version}.json"
 
 
 def experiment_metadata(record: dict) -> dict:
     return {
+        "schema_version": record.get("schema_version", 2),
         "experiment_id": record["experiment_id"],
         "name": record.get("name"),
         "status": record.get("status"),
         "created_at": record.get("created_at"),
+        "updated_at": record.get("updated_at"),
         "locked_at": record.get("locked_at"),
+        "parent_experiment_id": record.get(
+            "parent_experiment_id"
+        ),
         "tags": record.get("tags", []),
     }
 
-def experiment_compare_summary(
-    record: dict,
-) -> dict:
 
-    result = record.get(
-        "research_result",
-        {},
-    )
-
-    research_config = result.get(
-        "research_config",
-        {},
-    )
-
-    training = result.get(
-        "training",
-        {},
-    ) or {}
-
-    validation = result.get(
-        "validation",
-        {},
-    ) or {}
-
-    testing = result.get(
-        "testing",
-        {},
-    ) or {}
+def _stage_result(result: dict | None) -> dict | None:
+    if not isinstance(result, dict):
+        return None
 
     return {
-        "experiment_id": record.get(
-            "experiment_id"
+        "summary": result.get("summary", {}),
+        "performance": result.get("performance", {}),
+        "diagnostics": result.get("diagnostics", {}),
+        "analysis": result.get("analysis", {}),
+        "warnings": result.get("warnings", []),
+    }
+
+
+def experiment_summary(record: dict) -> dict:
+    result = record.get("research_result", {})
+    config = result.get("research_config", {})
+
+    return {
+        **experiment_metadata(record),
+        "research_question": config.get("research_question"),
+        "hypothesis": config.get("hypothesis"),
+        "research_config": config,
+        "development": _stage_result(
+            result.get("development")
         ),
-        "name": record.get("name"),
-        "status": record.get("status"),
-        "created_at": record.get("created_at"),
-        "locked_at": record.get("locked_at"),
-        "tags": record.get("tags", []),
+        "validation": _stage_result(
+            result.get("validation")
+        ),
+        "final_holdout": _stage_result(
+            result.get("final_holdout")
+        ),
+    }
 
-        "research_config": {
-            "question": research_config.get(
-                "question"
-            ),
-            "universe": research_config.get(
-                "universe"
-            ),
-            "date_range": research_config.get(
-                "date_range"
-            ),
-            "conditions": research_config.get(
-                "conditions"
-            ),
-            "evaluation_horizons": (
-                research_config.get(
-                    "evaluation_horizons"
-                )
-            ),
-        },
 
-        "training": {
-            "summary": training.get(
-                "summary"
-            ),
-            "performance": training.get(
-                "performance"
-            ),
-        },
+def experiment_compare_summary(record: dict) -> dict:
+    result = record.get("research_result", {})
+    config = result.get("research_config", {})
 
-        "validation": {
-            "summary": validation.get(
-                "summary"
-            ),
-            "performance": validation.get(
-                "performance"
-            ),
-        },
-
-        "testing": {
-            "summary": testing.get(
-                "summary"
-            ),
-            "performance": testing.get(
-                "performance"
+    return {
+        **experiment_metadata(record),
+        "research_question": config.get("research_question"),
+        "hypothesis": config.get("hypothesis"),
+        "research_config": config,
+        "development": _stage_result(
+            result.get("development")
+        ),
+        "validation": _stage_result(
+            result.get("validation")
+        ),
+        "final_holdout": _stage_result(
+            result.get("final_holdout")
+        ),
+        "lineage": {
+            "parent_experiment_id": record.get(
+                "parent_experiment_id"
             ),
         },
     }
 
-# ======================================================================
-# B5 — SAVE EXPERIMENT
-# ======================================================================
 
-@router.post(
-    "/experiments",
-    status_code=201,
-)
-def save_experiment(
-    request: SaveExperimentRequest,
-) -> dict:
-
-    if not request.research_result:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot save an experiment without research results.",
-        )
-    
-    experiment_id_value = (
-        experiment_id()
+def _validate_research_result(
+    research_result: dict,
+) -> None:
+    config = research_result.get(
+        "research_config"
     )
 
+    if not isinstance(config, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="research_result.research_config is required.",
+        )
+
+    required = [
+        "research_question",
+        "hypothesis",
+        "development_start",
+        "development_end",
+        "universe",
+        "features",
+        "entry_conditions",
+        "evaluation_horizons",
+    ]
+
+    missing = [
+        key for key in required
+        if config.get(key) in (None, "")
+    ]
+
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Research result is missing canonical fields: "
+                + ", ".join(missing)
+            ),
+        )
+
+    if research_result.get("development") is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Development evaluation result is required.",
+        )
+
+
+# ======================================================================
+# EXPERIMENT PERSISTENCE
+# ======================================================================
+
+@router.post("/experiments", status_code=201)
+def save_experiment(request: SaveExperimentRequest) -> dict:
+    _validate_research_result(
+        request.research_result
+    )
+
+    experiment_id_value = experiment_id()
     created_at = now()
 
     record = {
-        "schema_version": 1,
-
-        "experiment_id": (
-            experiment_id_value
-        ),
-
+        "schema_version": 2,
+        "experiment_id": experiment_id_value,
         "status": "SAVED",
-
         "name": request.name,
-
         "notes": request.notes,
-
         "tags": request.tags,
-
         "created_at": created_at,
-
+        "updated_at": created_at,
         "locked_at": None,
-
-        "research_result": (
-            request.research_result
+        "parent_experiment_id": request.research_result.get(
+            "parent_experiment_id"
         ),
+        "research_result": request.research_result,
     }
 
     try:
-
         commit_sha = store.put(
-            experiment_path(
-                experiment_id_value
-            ),
+            experiment_path(experiment_id_value),
             record,
-            (
-                "Save research experiment "
-                f"{experiment_id_value}"
-            ),
+            f"Save research experiment {experiment_id_value}",
         )
 
-        metadata_commit_sha = store.put(
-            experiment_metadata_path(
-                experiment_id_value
-            ),
+        store.put(
+            experiment_metadata_path(experiment_id_value),
             experiment_metadata(record),
-            (
-                "Save experiment metadata "
-                f"{experiment_id_value}"
-            ),
+            f"Save experiment metadata {experiment_id_value}",
         )
 
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -701,59 +594,39 @@ def save_experiment(
 
     return {
         "saved": True,
-        "experiment_id": (
-            experiment_id_value
-        ),
+        "experiment_id": experiment_id_value,
         "status": "SAVED",
         "created_at": created_at,
         "commit_sha": commit_sha,
     }
 
 
-# ======================================================================
-# B6 — EXPERIMENT HISTORY
-# ======================================================================
-
-@router.get(
-    "/experiments",
-)
+@router.get("/experiments")
 def list_experiments() -> dict:
-
     try:
-
         paths = [
             item["path"]
             for item in store.tree()
             if (
                 item.get("type") == "blob"
-                and item.get("path", "").startswith(
-                    EXP_PREFIX
-                )
-                and item.get("path", "").endswith(
-                    ".meta.json"
-                )
+                and item.get("path", "").startswith(EXP_PREFIX)
+                and item.get("path", "").endswith(".meta.json")
             )
         ]
 
-        records = []
-
-        for path in paths:
-
-            record, _ = store.get(path)
-
-            records.append(record)
+        records = [
+            experiment_summary(store.get(path)[0])
+            for path in paths
+        ]
 
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
         ) from exc
 
     records.sort(
-        key=lambda item: (
-            item.get("created_at") or ""
-        ),
+        key=lambda item: item.get("created_at") or "",
         reverse=True,
     )
 
@@ -763,63 +636,46 @@ def list_experiments() -> dict:
     }
 
 
-@router.get(
-    "/experiments/{experiment_id}",
-)
-def get_experiment(
-    experiment_id: str,
-) -> dict:
-
+@router.get("/experiments/{experiment_id}")
+def get_experiment(experiment_id: str) -> dict:
     try:
-
         record, _ = store.get_large(
-            experiment_path(
-                experiment_id
-            )
+            experiment_path(experiment_id)
         )
-
         return record
-
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
 
-@router.delete(
-    "/experiments/{experiment_id}",
-)
-def delete_experiment(
-    experiment_id: str,
-) -> dict:
-
-    path = experiment_path(
-        experiment_id
-    )
+@router.delete("/experiments/{experiment_id}")
+def delete_experiment(experiment_id: str) -> dict:
+    path = experiment_path(experiment_id)
 
     try:
-    
-        sha = store.get_sha(
-            path
+        record, sha = store.get_large(path)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    if record.get("status") == "LOCKED":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Locked experiments are immutable and cannot be deleted. "
+                "Create a new experiment with lineage instead."
+            ),
         )
-    
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=404,
-            detail=str(exc),
-        ) from exc
 
     try:
-
         commit_sha = store.delete(
             path,
             sha,
-            (
-                "Delete research experiment "
-                f"{experiment_id}"
-            ),
+            f"Delete research experiment {experiment_id}",
         )
 
         metadata_path = experiment_metadata_path(
@@ -830,21 +686,15 @@ def delete_experiment(
             metadata_sha = store.get_sha(
                 metadata_path
             )
-
             store.delete(
                 metadata_path,
                 metadata_sha,
-                (
-                    "Delete experiment metadata "
-                    f"{experiment_id}"
-                ),
+                f"Delete experiment metadata {experiment_id}",
             )
-
         except RuntimeError:
             pass
 
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -853,176 +703,106 @@ def delete_experiment(
     return {
         "deleted": True,
         "experiment_id": experiment_id,
-        "name": None,
         "commit_sha": commit_sha,
     }
 
 
-# ======================================================================
-# B7 — EXPERIMENT COMPARISON
-# ======================================================================
-
-@router.post(
-    "/experiments/compare",
-)
+@router.post("/experiments/compare")
 def compare_experiments(
     request: CompareExperimentsRequest,
 ) -> dict:
-
     records = []
 
-    for experiment_id in request.experiment_ids:
-
+    for experiment_id_value in request.experiment_ids:
         try:
             record, _ = store.get_large(
-                experiment_path(
-                    experiment_id
-                )
+                experiment_path(experiment_id_value)
             )
-
-        except Exception as exc:
-
+        except RuntimeError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=(
                     f"Could not load experiment "
-                    f"{experiment_id}: {exc}"
+                    f"{experiment_id_value}: {exc}"
                 ),
             ) from exc
 
         records.append(
-            experiment_compare_summary(
-                record
-            )
+            experiment_compare_summary(record)
         )
 
     return {
-        "experiment_ids": (
-            request.experiment_ids
-        ),
+        "experiment_ids": request.experiment_ids,
         "experiments": records,
     }
-# ======================================================================
-# B9 — EXPERIMENT LOCKING
-# ======================================================================
 
-@router.post(
-    "/experiments/{experiment_id}/lock",
-)
-def lock_experiment(
-    experiment_id: str,
-) -> dict:
 
-    experiment_path_value = experiment_path(
+@router.post("/experiments/{experiment_id}/lock")
+def lock_experiment(experiment_id: str) -> dict:
+    path = experiment_path(experiment_id)
+    metadata_path = experiment_metadata_path(
         experiment_id
     )
 
-    metadata_path_value = (
-        experiment_metadata_path(
-            experiment_id
-        )
-    )
-
-    # ----------------------------------------------------------
-    # Load full experiment
-    # ----------------------------------------------------------
-
     try:
-
-        record, experiment_sha = (
-            store.get_large(
-                experiment_path_value
-            )
-        )
-
+        record, sha = store.get_large(path)
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
-    # ----------------------------------------------------------
-    # Already locked
-    # ----------------------------------------------------------
-
     if record.get("status") == "LOCKED":
-
         return {
             "locked": True,
             "experiment_id": experiment_id,
             "status": "LOCKED",
-            "locked_at": record.get(
-                "locked_at"
-            ),
+            "locked_at": record.get("locked_at"),
         }
 
-    # ----------------------------------------------------------
-    # Update
-    # ----------------------------------------------------------
+    holdout = (
+        record.get("research_result", {})
+        .get("final_holdout")
+    )
 
-    locked_at = now()
-
-    record["status"] = "LOCKED"
-    record["locked_at"] = locked_at
-
-    # ----------------------------------------------------------
-    # Save main experiment
-    # ----------------------------------------------------------
-
-    try:
-
-        commit_sha = store.put(
-            experiment_path_value,
-            record,
-            (
-                "Lock research experiment "
-                f"{experiment_id}"
+    if holdout is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Final holdout evaluation must be present "
+                "before an experiment can be locked."
             ),
-            experiment_sha,
         )
 
-    except RuntimeError as exc:
-
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Could not lock experiment: "
-                f"{exc}"
-            ),
-        ) from exc
-
-    # ----------------------------------------------------------
-    # Save metadata
-    # ----------------------------------------------------------
+    locked_at = now()
+    record["status"] = "LOCKED"
+    record["locked_at"] = locked_at
+    record["updated_at"] = locked_at
 
     try:
+        commit_sha = store.put(
+            path,
+            record,
+            f"Lock research experiment {experiment_id}",
+            sha,
+        )
 
         metadata_sha = store.get_sha(
-            metadata_path_value
+            metadata_path
         )
 
         store.put(
-            metadata_path_value,
-            experiment_metadata(
-                record
-            ),
-            (
-                "Update locked experiment metadata "
-                f"{experiment_id}"
-            ),
+            metadata_path,
+            experiment_metadata(record),
+            f"Update locked experiment metadata {experiment_id}",
             metadata_sha,
         )
 
     except RuntimeError as exc:
-
-        # Main experiment is already locked.
-        # Do NOT report the lock itself as failed.
-        print(
-            "WARNING: experiment locked but "
-            "metadata update failed:",
-            exc,
-        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not lock experiment: {exc}",
+        ) from exc
 
     return {
         "locked": True,
@@ -1031,146 +811,100 @@ def lock_experiment(
         "locked_at": locked_at,
         "commit_sha": commit_sha,
     }
+
+
 # ======================================================================
-# B8 — STRATEGY CONFIGURATION / VERSIONING
+# STRATEGY VERSIONING
 # ======================================================================
 
-@router.post(
-    "/strategies",
-    status_code=201,
-)
+@router.post("/strategies", status_code=201)
 def create_strategy_version(
     request: CreateStrategyRequest,
 ) -> dict:
-
     try:
-
         experiment = store.get_large(
-            experiment_path(
-                request.experiment_id
-            )
+            experiment_path(request.experiment_id)
         )[0]
-
         tree = store.tree()
-
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
-    if (
-        experiment.get("status")
-        != "LOCKED"
-    ):
-
+    if experiment.get("status") != "LOCKED":
         raise HTTPException(
             status_code=409,
             detail=(
-                "Only a LOCKED experiment "
-                "can be promoted to a "
-                "strategy version."
+                "Only a LOCKED experiment can create a strategy version."
             ),
         )
 
-    slug = strategy_slug(
-        request.strategy_name
-    )
+    slug = strategy_slug(request.strategy_name)
 
-    prefix = (
-        f"{STRAT_PREFIX}"
-        f"{slug}/v"
-    )
-
+    prefix = f"{STRAT_PREFIX}{slug}/v"
     versions = []
 
     for item in tree:
-
-        path = item.get(
-            "path",
-            "",
-        )
-
-        if (
-            path.startswith(prefix)
-            and path.endswith(".json")
-        ):
-
-            value = path[
-                len(prefix):-5
-            ]
-
+        path = item.get("path", "")
+        if path.startswith(prefix) and path.endswith(".json"):
+            value = path[len(prefix):-5]
             if value.isdigit():
+                versions.append(int(value))
 
-                versions.append(
-                    int(value)
-                )
-
-    version = (
-        max(versions, default=0)
-        + 1
-    )
+    version = max(versions, default=0) + 1
+    research_result = experiment["research_result"]
+    config = research_result["research_config"]
 
     record = {
-        "schema_version": 1,
-
-        "strategy_name": (
-            request.strategy_name.strip()
-        ),
-
+        "schema_version": 2,
+        "strategy_name": request.strategy_name.strip(),
         "strategy_slug": slug,
-
         "version": version,
-
         "status": "DRAFT",
-
         "created_at": now(),
-
         "locked_at": None,
-
-        "source_experiment_id": (
-            request.experiment_id
+        "source_experiment_id": request.experiment_id,
+        "source_experiment_locked_at": experiment.get(
+            "locked_at"
         ),
-
-        "description": (
-            request.description
+        "parent_strategy_version": None,
+        "description": request.description,
+        "version_notes": request.version_notes,
+        "research_question": config.get(
+            "research_question"
         ),
-
-        "version_notes": (
-            request.version_notes
-        ),
-
-        "research_config": (
-            experiment
-            .get(
-                "research_result",
-                {},
-            )
-            .get(
-                "research_config",
-                {},
-            )
-        ),
+        "hypothesis": config.get("hypothesis"),
+        "research_config": config,
+        "evaluation_evidence": {
+            "development": research_result.get(
+                "development"
+            ),
+            "validation": research_result.get(
+                "validation"
+            ),
+            "final_holdout": research_result.get(
+                "final_holdout"
+            ),
+        },
+        "lineage": {
+            "source_experiment_id": request.experiment_id,
+            "source_experiment_parent_id": experiment.get(
+                "parent_experiment_id"
+            ),
+        },
     }
 
     try:
-
         commit_sha = store.put(
-            strategy_path(
-                slug,
-                version,
-            ),
+            strategy_path(slug, version),
             record,
             (
-                "Create strategy "
-                f"{request.strategy_name} "
-                f"v{version}"
+                f"Create strategy "
+                f"{request.strategy_name} v{version}"
             ),
         )
-
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -1182,29 +916,16 @@ def create_strategy_version(
     }
 
 
-@router.get(
-    "/strategies",
-)
+@router.get("/strategies")
 def list_strategies() -> dict:
-
     try:
-
         paths = [
             item["path"]
             for item in store.tree()
             if (
-                item.get("type")
-                == "blob"
-                and item.get(
-                    "path",
-                    "",
-                ).startswith(
-                    STRAT_PREFIX
-                )
-                and item.get(
-                    "path",
-                    "",
-                ).endswith(".json")
+                item.get("type") == "blob"
+                and item.get("path", "").startswith(STRAT_PREFIX)
+                and item.get("path", "").endswith(".json")
             )
         ]
 
@@ -1214,7 +935,6 @@ def list_strategies() -> dict:
         ]
 
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -1222,14 +942,8 @@ def list_strategies() -> dict:
 
     records.sort(
         key=lambda item: (
-            item.get(
-                "strategy_name",
-                "",
-            ),
-            item.get(
-                "version",
-                0,
-            ),
+            item.get("strategy_name", ""),
+            item.get("version", 0),
         )
     )
 
@@ -1239,93 +953,70 @@ def list_strategies() -> dict:
     }
 
 
-@router.get(
-    "/strategies/{strategy_slug}/v{version}",
-)
+@router.get("/strategies/{strategy_slug}/v{version}")
 def get_strategy(
     strategy_slug: str,
     version: int,
 ) -> dict:
-
-    path = strategy_path(
-        strategy_slug,
-        version,
-    )
-
     try:
         record, _ = store.get(
-            path
+            strategy_path(strategy_slug, version)
         )
-
         return record
-
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
-        
-        
-# ======================================================================
-# B9 — STRATEGY LOCKING
-# ======================================================================
 
-@router.post(
-    "/strategies/{strategy_slug}/v{version}/lock",
-)
+
+@router.post("/strategies/{strategy_slug}/v{version}/lock")
 def lock_strategy(
     strategy_slug: str,
     version: int,
 ) -> dict:
-
     path = strategy_path(
         strategy_slug,
         version,
     )
 
     try:
-
-        record, sha = store.get(
-            path
-        )
-
+        record, sha = store.get(path)
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
-    if (
-        record.get("status")
-        == "LOCKED"
-    ):
-
+    if record.get("status") == "LOCKED":
         return record
 
-    record["status"] = "LOCKED"
+    if not record.get("source_experiment_id"):
+        raise HTTPException(
+            status_code=409,
+            detail="Strategy is missing its source experiment.",
+        )
 
+    record["status"] = "LOCKED"
     record["locked_at"] = now()
 
     try:
-
-        store.put(
+        commit_sha = store.put(
             path,
             record,
             (
-                "Lock strategy "
-                f"{record['strategy_name']} "
-                f"v{version}"
+                f"Lock strategy "
+                f"{record['strategy_name']} v{version}"
             ),
             sha,
         )
-
     except RuntimeError as exc:
-
         raise HTTPException(
             status_code=502,
             detail=str(exc),
         ) from exc
 
-    return record
+    return {
+        **record,
+        "commit_sha": commit_sha,
+    }
