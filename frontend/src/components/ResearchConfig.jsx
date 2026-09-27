@@ -47,7 +47,7 @@ function ResearchConfig() {
     useState('2025-01-01')
 
   const [holdoutEnd, setHoldoutEnd] =
-    useState('2026-12-31')
+    useState('')
 
   const [conditions, setConditions] = useState([
     {
@@ -65,6 +65,41 @@ function ResearchConfig() {
   const [researchResult, setResearchResult] = useState(null)
 
   const eventSourceRef = useRef(null)
+
+  useEffect(() => {
+    async function loadAvailableDates() {
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/data/dates`
+        )
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(
+            data.detail || 'Failed to load available market dates.'
+          )
+        }
+
+        const dates = Array.isArray(data.available_dates)
+          ? data.available_dates
+          : []
+
+        if (dates.length > 0) {
+          setHoldoutEnd(
+            String(dates[dates.length - 1]).slice(0, 10)
+          )
+        }
+      } catch (error) {
+        setFeatureError(
+          error.message ||
+          'Failed to load available market dates.'
+        )
+      }
+    }
+
+    loadAvailableDates()
+  }, [])
 
   useEffect(() => {
     async function loadFeatures() {
@@ -248,6 +283,16 @@ function ResearchConfig() {
       }),
 
       evaluation_horizons: evaluationHorizons,
+      signal_timing: {
+        observation: 'signal_date_close',
+        entry: 'next_available_symbol_session_close',
+        price_basis: 'CLOSE',
+      },
+      outcome_definition: {
+        anchor: 'entry_date',
+        price_basis: 'CLOSE',
+        horizons: evaluationHorizons,
+      },
     }
   }
 
