@@ -1,22 +1,20 @@
 function DateRangeConfig({
-  trainingStart,
-  trainingEnd,
+  developmentStart,
+  developmentEnd,
   validationStart,
   validationEnd,
-  testingStart,
-  testingEnd,
-  onTrainingStartChange,
-  onTrainingEndChange,
+  holdoutStart,
+  holdoutEnd,
+  onDevelopmentStartChange,
+  onDevelopmentEndChange,
   onValidationStartChange,
   onValidationEndChange,
-  onTestingStartChange,
-  onTestingEndChange,
+  onHoldoutStartChange,
+  onHoldoutEndChange,
   isRunning,
 }) {
   const openDatePicker = (event) => {
-    if (isRunning) {
-      return
-    }
+    if (isRunning) return
 
     const input = event.currentTarget
 
@@ -32,77 +30,63 @@ function DateRangeConfig({
     onStartChange,
     onEndChange,
     helpText,
-  ) => {
-    return (
-      <div className="research-split">
-
-        <div className="research-split-header">
-          <span className="research-split-label">
-            {label}
-          </span>
-        </div>
-
-        <div className="date-inputs">
-
-          <input
-            type="date"
-            value={startDate || ''}
-            onChange={(event) =>
-              onStartChange(event.target.value)
-            }
-            onClick={openDatePicker}
-            disabled={isRunning}
-          />
-
-          <span>→</span>
-
-          <input
-            type="date"
-            value={endDate || ''}
-            onChange={(event) =>
-              onEndChange(event.target.value)
-            }
-            onClick={openDatePicker}
-            disabled={isRunning}
-          />
-
-        </div>
-
-        <span className="field-help">
-          {helpText}
+    optional = false,
+  ) => (
+    <div className="research-split">
+      <div className="research-split-header">
+        <span className="research-split-label">
+          {label}{optional ? ' · OPTIONAL' : ''}
         </span>
-
       </div>
-    )
-  }
+
+      <div className="date-inputs">
+        <input
+          type="date"
+          value={startDate || ''}
+          onChange={(event) => onStartChange(event.target.value)}
+          onClick={openDatePicker}
+          disabled={isRunning}
+        />
+
+        <span>→</span>
+
+        <input
+          type="date"
+          value={endDate || ''}
+          onChange={(event) => onEndChange(event.target.value)}
+          onClick={openDatePicker}
+          disabled={isRunning}
+        />
+      </div>
+
+      <span className="field-help">
+        {helpText}
+      </span>
+    </div>
+  )
 
   return (
     <div className="config-card research-period-card">
-
       <div className="config-card-header">
-
         <div>
-          <label>
-            Research Evaluation Periods
-          </label>
+          <label>Research Evaluation Periods</label>
 
           <span className="field-help">
-            Define the historical periods used for
-            training, validation and final testing.
+            Development is iterative. Validation evaluates an unseen
+            period. Final Holdout is inspected only when the candidate
+            is ready to lock.
           </span>
         </div>
-
       </div>
 
       <div className="research-splits">
-
         {renderDateRange(
-          'TRAINING',
-          trainingStart,
-          trainingEnd,
-          onTrainingStartChange,
-          onTrainingEndChange,
-          'Used to develop and evaluate the initial hypothesis.',
+          'DEVELOPMENT',
+          developmentStart,
+          developmentEnd,
+          onDevelopmentStartChange,
+          onDevelopmentEndChange,
+          'Primary research period used to develop the hypothesis.',
         )}
 
         {renderDateRange(
@@ -111,20 +95,20 @@ function DateRangeConfig({
           validationEnd,
           onValidationStartChange,
           onValidationEndChange,
-          'Used to evaluate the hypothesis on unseen data.',
+          'Unseen period used to evaluate a candidate without touching the holdout.',
+          true,
         )}
 
         {renderDateRange(
-          'TESTING',
-          testingStart,
-          testingEnd,
-          onTestingStartChange,
-          onTestingEndChange,
-          'Final unseen period used before the experiment is locked.',
+          'FINAL HOLDOUT',
+          holdoutStart,
+          holdoutEnd,
+          onHoldoutStartChange,
+          onHoldoutEndChange,
+          'Final historical evidence. Changing the candidate after inspection creates a new experiment.',
+          true,
         )}
-
       </div>
-
     </div>
   )
 }
