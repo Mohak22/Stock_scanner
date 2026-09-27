@@ -17,7 +17,9 @@ Data source:
 
 Important:
     This module does not calculate features or run strategies.
-    It only retrieves the research universe.
+    It only retrieves the research universe.  The current CSV is a current
+    snapshot, not point-in-time historical constituent membership.  Callers
+    must not treat it as evidence of historical universe eligibility.
 """
 
 import pandas as pd
@@ -76,4 +78,5 @@ def get_research_universe() -> dict:
     return {
         "universe": rows,
         "total_stocks": len(rows),
+        "membership_basis": "current_snapshot_not_point_in_time",
     }

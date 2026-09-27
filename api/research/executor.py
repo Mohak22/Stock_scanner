@@ -18,13 +18,18 @@ from api.research.universe import load_research_universe_dataframe
 
 from research.engine.feature_engine import calculate_features
 from research.engine.market_data_loader import load_market_index
-from research.engine.market_return_engine import calculate_market_forward_returns
 from research.engine.research_engine import (
-    run_research,
     build_research_diagnostics,
     analyze_by_market_regime,
 )
 from research.engine.regime_engine import calculate_market_regime
+from research.engine.temporal_evaluation import (
+    TEMPORAL_CONVENTION,
+    TemporalStage,
+    evaluate_temporal_stage,
+    feature_lookback_requirements,
+    generate_signal_mask,
+)
 
 
 ProgressCallback = Callable[[int, str], None]
@@ -196,6 +201,14 @@ def execute_research(
     # 5. FEATURE LOOKBACK
     # ----------------------------------------------------------
 
+    # Feature requirements are expressed as observations.  The data source is
+    # date-addressed, so the existing calendar buffer remains a conservative
+    # retrieval buffer rather than a statement of indicator semantics.
+    try:
+        lookback_requirements = feature_lookback_requirements(features)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     feature_periods = []
 
     for feature in features:
@@ -233,7 +246,7 @@ def execute_research(
             feature_periods.append(period)
 
     max_feature_period = max(
-        feature_periods,
+        [*feature_periods, *lookback_requirements.values()],
         default=1,
     )
 
@@ -588,68 +601,6 @@ def execute_research(
         .reset_index(drop=True)
     )
 
-    # ----------------------------------------------------------
-    report(55, "Calculating market returns")
-    # 13. CALCULATE MARKET FORWARD RETURNS
-    # ----------------------------------------------------------
-
-    try:
-
-        market_returns = (
-            calculate_market_forward_returns(
-                market_dataframe=market_data,
-                horizons=horizons,
-            )
-        )
-
-    except ValueError as exc:
-
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Market return calculation "
-                f"failed: {exc}"
-            ),
-        ) from exc
-
-    # Normalize market return timestamp.
-    if "TIMESTAMP" not in market_returns.columns:
-
-        if "Date" in market_returns.columns:
-
-            market_returns = market_returns.rename(
-                columns={
-                    "Date": "TIMESTAMP",
-                }
-            )
-
-        else:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Market forward-return data "
-                    "does not contain TIMESTAMP."
-                ),
-            )
-
-    market_returns["TIMESTAMP"] = pd.to_datetime(
-        market_returns["TIMESTAMP"],
-        errors="coerce",
-    ).dt.normalize()
-
-    market_returns = (
-        market_returns
-        .dropna(subset=["TIMESTAMP"])
-        .sort_values("TIMESTAMP")
-        .drop_duplicates(
-            subset=["TIMESTAMP"],
-            keep="last",
-        )
-        .reset_index(drop=True)
-    )
-
-    # ----------------------------------------------------------
     report(60, "Calculating market regime")
     # 14. CALCULATE CAUSAL MARKET REGIME
     #
@@ -678,130 +629,21 @@ def execute_research(
         ) from exc
 
     # ----------------------------------------------------------
-    report(70, "Evaluating signals")
-    # 15. RUN STOCK RESEARCH ON FULL DATASET
-    #
-    # Forward stock returns MUST be calculated across
-    # the complete extended dataset before splitting.
+    report(70, "Generating causal signals")
+    # Conditions are evaluated once, after causal feature calculation and
+    # before any entry/outcome evaluation.
     # ----------------------------------------------------------
-
     try:
-
-        full_result = run_research(
-            dataframe=data,
-            features=features,
-            conditions=conditions,
-            horizons=horizons,
-        )
-
+        signal_mask = generate_signal_mask(data, conditions)
     except Exception as exc:
-
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Research execution failed: "
-                f"{exc}"
-            ),
+            detail=f"Signal generation failed: {exc}",
         ) from exc
 
-    full_signals = (
-        full_result["signals"]
-        .copy()
-    )
-
-    # ----------------------------------------------------------
-    # 16. ENRICH SIGNALS
-    #
-    # Add:
-    #   - market forward returns
-    #   - excess returns
-    #   - causal market trailing return
-    #   - causal market regime
-    # ----------------------------------------------------------
-
-    if not full_signals.empty:
-
-        full_signals["TIMESTAMP"] = pd.to_datetime(
-            full_signals["TIMESTAMP"],
-            errors="coerce",
-        ).dt.normalize()
-
-        full_signals = (
-            full_signals
-            .dropna(subset=["TIMESTAMP"])
-            .sort_values(
-                [
-                    "SYMBOL",
-                    "TIMESTAMP",
-                ]
-            )
-            .reset_index(drop=True)
-        )
-
-        # ------------------------------------------------------
-        # MARKET FORWARD RETURNS
-        # ------------------------------------------------------
-
-        full_signals = (
-            full_signals.merge(
-                market_returns,
-                on="TIMESTAMP",
-                how="left",
-            )
-        )
-
-        # ------------------------------------------------------
-        # EXCESS RETURNS
-        # ------------------------------------------------------
-
-        for horizon in horizons:
-
-            horizon = int(horizon)
-
-            stock_column = (
-                f"RETURN_T{horizon}"
-            )
-
-            market_column = (
-                f"MARKET_RETURN_T{horizon}"
-            )
-
-            excess_column = (
-                f"EXCESS_RETURN_T{horizon}"
-            )
-
-            if (
-                stock_column in full_signals.columns
-                and market_column in full_signals.columns
-            ):
-
-                full_signals[excess_column] = (
-                    full_signals[stock_column]
-                    - full_signals[market_column]
-                )
-
-        # ------------------------------------------------------
-        # CAUSAL MARKET REGIME
-        # ------------------------------------------------------
-
-        regime_merge_data = (
-            market_regime_data[
-                [
-                    "TIMESTAMP",
-                    "MARKET_TRAILING_RETURN",
-                    "MARKET_REGIME",
-                ]
-            ]
-            .copy()
-        )
-
-        full_signals = (
-            full_signals.merge(
-                regime_merge_data,
-                on="TIMESTAMP",
-                how="left",
-            )
-        )
+    regime_merge_data = market_regime_data[
+        ["TIMESTAMP", "MARKET_TRAILING_RETURN", "MARKET_REGIME"]
+    ].copy()
 
     # ----------------------------------------------------------
     report(85, "Building split analysis")
@@ -809,6 +651,7 @@ def execute_research(
     # ----------------------------------------------------------
 
     def build_split_result(
+        split_name: str,
         split_start: pd.Timestamp,
         split_end: pd.Timestamp,
     ) -> dict:
@@ -837,28 +680,23 @@ def execute_research(
         )
 
         # ------------------------------------------------------
-        # Select signals in split
+        # Evaluate entries and outcomes against this stage.  The evaluator
+        # retains a signal but marks each horizon independently ineligible
+        # when its entry/outcome would cross the boundary.
         # ------------------------------------------------------
-
-        if full_signals.empty:
-
-            signal_data = (
-                full_signals.copy()
-            )
-
-        else:
-
-            signal_data = (
-                full_signals[
-                    (
-                        full_signals["TIMESTAMP"]
-                        >= split_start
-                    )
-                    & (
-                        full_signals["TIMESTAMP"]
-                        < split_end_exclusive
-                    )
-                ].copy()
+        stage = TemporalStage.create(split_name, split_start, split_end)
+        signal_data = evaluate_temporal_stage(
+            dataframe=data,
+            signal_mask=signal_mask,
+            stage=stage,
+            horizons=horizons,
+            market_dataframe=market_data,
+        )
+        if not signal_data.empty:
+            signal_data = signal_data.merge(
+                regime_merge_data,
+                on="TIMESTAMP",
+                how="left",
             )
 
         # ------------------------------------------------------
@@ -934,6 +772,7 @@ def execute_research(
 
     training_result = (
         build_split_result(
+            "training",
             training_start,
             training_end,
         )
@@ -952,6 +791,7 @@ def execute_research(
 
         validation_result = (
             build_split_result(
+                "validation",
                 validation_start,
                 validation_end,
             )
@@ -970,6 +810,7 @@ def execute_research(
 
         testing_result = (
             build_split_result(
+                "testing",
                 testing_start,
                 testing_end,
             )
@@ -993,14 +834,11 @@ def execute_research(
         )
 
         if not signals.empty:
-
-            signals["TIMESTAMP"] = (
-                pd.to_datetime(
-                    signals["TIMESTAMP"],
-                    errors="coerce",
-                )
-                .dt.strftime("%Y-%m-%d")
-            )
+            for column in signals.columns:
+                if column.endswith("_DATE") or "_DATE_T" in column or column == "TIMESTAMP":
+                    signals[column] = pd.to_datetime(
+                        signals[column], errors="coerce"
+                    ).dt.strftime("%Y-%m-%d")
 
             signals = (
                 signals
@@ -1042,6 +880,17 @@ def execute_research(
             "features": features,
             "entry_conditions": conditions,
             "evaluation_horizons": horizons,
+            "temporal_convention": TEMPORAL_CONVENTION,
+            "feature_lookback_requirements": lookback_requirements,
+            "reproducibility_hooks": {
+                "data_revision": None,
+                "universe_revision": None,
+                "engine_version": None,
+            },
+            "universe_membership_note": (
+                "research_universe.csv is a current-universe snapshot; "
+                "it is not point-in-time historical membership."
+            ),
             "market_benchmark": {
                 "name": "NIFTY 50",
                 "file": "nifty_50.parquet",
