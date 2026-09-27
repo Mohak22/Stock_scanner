@@ -104,6 +104,7 @@ def _normalise_stock_data(dataframe: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {sorted(missing)}")
 
     data = dataframe.copy()
+    data["_TEMPORAL_ROW_ID"] = range(len(dataframe))
     data["TIMESTAMP"] = pd.to_datetime(data["TIMESTAMP"], errors="coerce").dt.normalize()
     data["CLOSE"] = pd.to_numeric(data["CLOSE"], errors="coerce")
     data["SYMBOL"] = data["SYMBOL"].astype(str).str.strip().str.upper()
@@ -173,13 +174,33 @@ def evaluate_temporal_stage(
 
     if not horizons or any(int(horizon) <= 0 for horizon in horizons):
         raise ValueError("At least one positive horizon is required.")
-    data = _normalise_stock_data(dataframe)
-    market = _normalise_market_data(market_dataframe)
-    # The caller normally passes a mask produced from the same sorted frame.
-    # Preserve position only when index identity survived normalization.
     if len(signal_mask) != len(dataframe):
         raise ValueError("signal_mask must align with dataframe rows.")
-    data["_SIGNAL"] = pd.Series(signal_mask.to_numpy(), index=data.index).fillna(False).astype(bool)
+
+    original = dataframe.copy()
+    original["_TEMPORAL_ROW_ID"] = range(len(original))
+    original["_SIGNAL"] = (
+        signal_mask.fillna(False).astype(bool).to_numpy()
+    )
+
+    data = _normalise_stock_data(original)
+
+    signal_lookup = (
+        original[
+            ["_TEMPORAL_ROW_ID", "_SIGNAL"]
+        ]
+        .drop_duplicates("_TEMPORAL_ROW_ID")
+        .set_index("_TEMPORAL_ROW_ID")["_SIGNAL"]
+    )
+
+    data["_SIGNAL"] = (
+        data["_TEMPORAL_ROW_ID"]
+        .map(signal_lookup)
+        .fillna(False)
+        .astype(bool)
+    )
+
+    market = _normalise_market_data(market_dataframe)
 
     groups = {symbol: group.reset_index(drop=True) for symbol, group in data.groupby("SYMBOL", sort=False)}
     records: list[dict] = []
@@ -187,7 +208,9 @@ def evaluate_temporal_stage(
         for position, row in group.iterrows():
             if not row["_SIGNAL"] or not (stage.start <= row["TIMESTAMP"] <= stage.end):
                 continue
-            record = row.drop(labels=["_SIGNAL"]).to_dict()
+            record = row.drop(
+                labels=["_SIGNAL", "_TEMPORAL_ROW_ID"]
+            ).to_dict()
             signal_date = row["TIMESTAMP"]
             entry_position = position + 1
             entry = group.iloc[entry_position] if entry_position < len(group) else None
@@ -256,7 +279,10 @@ def evaluate_temporal_stage(
         return pd.DataFrame(records)
 
     # Keep downstream diagnostics stable even when a stage has no signals.
-    empty = data.drop(columns=["_SIGNAL"]).head(0).copy()
+    empty = data.drop(
+        columns=["_SIGNAL", "_TEMPORAL_ROW_ID"],
+        errors="ignore",
+    ).head(0).copy()
     for horizon_value in sorted(set(int(value) for value in horizons)):
         suffix = f"T{horizon_value}"
         for column in (
