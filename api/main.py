@@ -33,7 +33,7 @@ from api.research.job import (
     JobStatus,
     job_store,
 )
-
+from api.execution.router import router as execution_router
 
 # ======================================================================
 # APPLICATION
@@ -62,6 +62,8 @@ app.add_middleware(
 app.include_router(experiment_router)
 
 app.include_router(workflow_router)
+
+app.include_router(execution_router)
 
 repository = ResearchDataRepository()
 

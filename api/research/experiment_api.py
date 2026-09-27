@@ -8,6 +8,7 @@ Created on Mon Sep  7 15:28:57 2026
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -198,12 +199,12 @@ class GitHubStore:
         self,
         path: str,
     ) -> tuple[dict, str]:
-    
+
         payload = self._request(
             "GET",
             self.url(path),
         )
-    
+
         if (
             "content" not in payload
             or "sha" not in payload
@@ -211,52 +212,52 @@ class GitHubStore:
             raise RuntimeError(
                 f"GitHub file content missing: {path}"
             )
-    
+
         content = base64.b64decode(
             payload["content"]
         ).decode("utf-8")
-    
+
         return (
             json.loads(content),
             payload["sha"],
         )
-    
+
     def get_sha(
         self,
         path: str,
     ) -> str:
-    
+
         payload = self._request(
             "GET",
             self.url(path),
         )
-    
+
         if "sha" not in payload:
             raise RuntimeError(
                 f"GitHub file SHA missing: {path}"
             )
-    
+
         return payload["sha"]
 
     def get_large(
         self,
         path: str,
     ) -> tuple[dict, str]:
-    
+
         payload = self._request(
             "GET",
             self.url(path),
         )
-    
+
         if "sha" not in payload:
             raise RuntimeError(
                 f"GitHub file SHA missing: {path}"
             )
-    
+
         blob_sha = payload["sha"]
-    
+
         record = self.get_blob(blob_sha)
-    
+
         return record, blob_sha
 
     def put(
@@ -266,12 +267,12 @@ class GitHubStore:
         message: str,
         sha: str | None = None,
     ) -> str:
-    
+
         if not isinstance(document, dict) or not document:
             raise RuntimeError(
                 f"Cannot save empty document: {path}"
             )
-    
+
         try:
             serialized = json.dumps(
                 document,
@@ -282,40 +283,40 @@ class GitHubStore:
             raise RuntimeError(
                 f"Could not serialize document: {path}"
             ) from exc
-    
+
         if not serialized.strip():
             raise RuntimeError(
                 f"Serialized document is empty: {path}"
             )
-    
+
         encoded = base64.b64encode(
             serialized.encode("utf-8")
         ).decode("ascii")
-    
+
         body = {
             "message": message,
             "content": encoded,
             "branch": BRANCH,
         }
-    
+
         if sha:
             body["sha"] = sha
-    
+
         payload = self._request(
             "PUT",
             self.url(path),
             body,
         )
-    
+
         commit_sha = payload.get("commit", {}).get("sha", "")
-    
+
         if not commit_sha:
             raise RuntimeError(
                 f"GitHub did not return a commit SHA for: {path}"
             )
-    
-        return commit_sha    
-    
+
+        return commit_sha
+
     def delete(
         self,
         path: str,
@@ -340,22 +341,22 @@ class GitHubStore:
             .get("commit", {})
             .get("sha", "")
         )
-    
+
     def get_blob(self, sha: str) -> dict:
         payload = self._request(
             "GET",
             f"{API}/repos/{self.repository}/git/blobs/{sha}",
         )
-    
+
         if "content" not in payload:
             raise RuntimeError(
                 f"GitHub blob content missing: {sha}"
             )
-    
+
         content = base64.b64decode(
             payload["content"]
         ).decode("utf-8")
-    
+
         return json.loads(content)
 
     def tree(self) -> list[dict]:
@@ -424,6 +425,16 @@ def strategy_path(slug: str, version: int) -> str:
     return f"{STRAT_PREFIX}{slug}/v{version}.json"
 
 
+def _stable_hash(document: dict) -> str:
+    payload = json.dumps(
+        document,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def experiment_metadata(record: dict) -> dict:
     return {
         "schema_version": record.get("schema_version", 2),
@@ -438,6 +449,10 @@ def experiment_metadata(record: dict) -> dict:
         ),
         "lineage": record.get(
             "lineage",
+            {},
+        ),
+        "snapshot": record.get(
+            "snapshot",
             {},
         ),
         "reproducibility_hooks": (
@@ -538,47 +553,73 @@ def experiment_compare_summary(record: dict) -> dict:
 def _validate_research_result(
     research_result: dict,
 ) -> None:
-    config = research_result.get(
+    """
+    Validate that a research result contains the complete
+    canonical research contract required for experiment storage.
+
+    Experiments are research snapshots.  A result without the
+    canonical configuration or reproducibility metadata
+    must not be persisted as an experiment.
+    """
+
+    if not isinstance(research_result, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Research result must be an object.",
+        )
+
+    research_config = research_result.get(
         "research_config"
     )
 
-    if not isinstance(config, dict):
+    if not isinstance(research_config, dict):
         raise HTTPException(
             status_code=400,
-            detail="research_result.research_config is required.",
+            detail=(
+                "Research result must contain "
+                "research_config."
+            ),
         )
 
-    required = [
+    required_config_fields = {
+        "research_schema_version",
         "research_question",
         "hypothesis",
         "development_start",
         "development_end",
+        "signal_timing",
+        "outcome_definition",
         "universe",
-        "features",
-        "entry_conditions",
         "evaluation_horizons",
-    ]
+        "temporal_convention",
+        "reproducibility_hooks",
+    }
 
-    missing = [
-        key
-        for key in required
-        if config.get(key) in (None, "")
-    ]
+    missing_fields = (
+        required_config_fields
+        - set(research_config.keys())
+    )
 
-    if missing:
+    if missing_fields:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Research result is missing canonical fields: "
-                + ", ".join(missing)
+                "Research result is missing required "
+                "configuration fields: "
+                f"{sorted(missing_fields)}"
             ),
         )
 
-    reproducibility_hooks = config.get(
-        "reproducibility_hooks"
+    reproducibility_hooks = (
+        research_config.get(
+            "reproducibility_hooks"
+        )
     )
 
-    if not isinstance(reproducibility_hooks, dict):
+    if not isinstance(
+        reproducibility_hooks,
+        dict,
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -587,35 +628,38 @@ def _validate_research_result(
             ),
         )
 
-    required_hooks = (
+    required_provenance_fields = {
         "data_revision",
         "universe_revision",
         "engine_version",
         "run_timestamp",
+    }
+
+    missing_provenance = (
+        required_provenance_fields
+        - set(reproducibility_hooks.keys())
     )
 
-    missing_hooks = [
-        key
-        for key in required_hooks
-        if not reproducibility_hooks.get(key)
-    ]
-
-    if missing_hooks:
+    if missing_provenance:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Research result is missing "
+                "Research result is missing required "
                 "reproducibility fields: "
-                + ", ".join(missing_hooks)
+                f"{sorted(missing_provenance)}"
             ),
         )
 
-    if research_result.get("development") is None:
+    if not research_result.get(
+        "development"
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Development evaluation result is required.",
+            detail=(
+                "Research result must contain "
+                "development results."
+            ),
         )
-
 
 def _validate_parent_experiment(
     parent_experiment_id: str | None,
@@ -646,8 +690,8 @@ def _validate_parent_experiment(
             f"requested ID: {parent_experiment_id}"
         ),
     )
-    
-    
+
+
 # ======================================================================
 # EXPERIMENT PERSISTENCE
 # ======================================================================
@@ -707,6 +751,39 @@ def save_experiment(
         "parent_experiment_id": parent_experiment_id,
 
         "lineage": lineage,
+
+        "snapshot": {
+            "research_schema_version": (
+                request.research_result
+                .get("research_config", {})
+                .get("research_schema_version")
+            ),
+            "research_question": (
+                request.research_result
+                .get("research_config", {})
+                .get("research_question")
+            ),
+            "hypothesis": (
+                request.research_result
+                .get("research_config", {})
+                .get("hypothesis")
+            ),
+            "reproducibility_hooks": (
+                request.research_result
+                .get("research_config", {})
+                .get("reproducibility_hooks", {})
+            ),
+            "universe_membership_basis": (
+                request.research_result
+                .get("research_config", {})
+                .get("universe_membership_basis")
+            ),
+            "temporal_convention": (
+                request.research_result
+                .get("research_config", {})
+                .get("temporal_convention")
+            ),
+        },
 
         "research_result": request.research_result,
     }
@@ -966,9 +1043,9 @@ def create_strategy_version(
     request: CreateStrategyRequest,
 ) -> dict:
     try:
-        experiment = store.get_large(
+        experiment, experiment_sha = store.get_large(
             experiment_path(request.experiment_id)
-        )[0]
+        )
         tree = store.tree()
     except RuntimeError as exc:
         raise HTTPException(
@@ -997,18 +1074,64 @@ def create_strategy_version(
                 versions.append(int(value))
 
     version = max(versions, default=0) + 1
-    research_result = experiment["research_result"]
-    config = research_result["research_config"]
+    research_result = experiment.get("research_result")
+    config = research_result.get("research_config") if isinstance(research_result, dict) else None
+
+    if not isinstance(config, dict):
+        raise HTTPException(
+            status_code=409,
+            detail="Locked experiment does not contain a valid research configuration.",
+        )
+
+    source_snapshot = experiment.get("snapshot", {})
+    if not isinstance(source_snapshot, dict) or not source_snapshot:
+        source_snapshot = {
+            "research_schema_version": config.get("research_schema_version"),
+            "research_question": config.get("research_question"),
+            "hypothesis": config.get("hypothesis"),
+            "reproducibility_hooks": config.get(
+                "reproducibility_hooks", {}
+            ),
+            "universe_membership_basis": config.get(
+                "universe_membership_basis"
+            ),
+            "temporal_convention": config.get(
+                "temporal_convention"
+            ),
+        }
+
+    strategy_snapshot = {
+        "source_experiment_id": request.experiment_id,
+        "source_experiment_sha": experiment_sha,
+        "source_experiment_locked_at": experiment.get("locked_at"),
+        "research_schema_version": config.get(
+            "research_schema_version"
+        ),
+        "research_question": config.get("research_question"),
+        "hypothesis": config.get("hypothesis"),
+        "research_config": config,
+        "evaluation_evidence": {
+            "development": research_result.get("development"),
+            "validation": research_result.get("validation"),
+            "final_holdout": research_result.get("final_holdout"),
+        },
+        "experiment_snapshot": source_snapshot,
+    }
+
+    strategy_fingerprint = _stable_hash(strategy_snapshot)
+    created_at = now()
 
     record = {
-        "schema_version": 2,
+        "schema_version": 3,
         "strategy_name": request.strategy_name.strip(),
         "strategy_slug": slug,
         "version": version,
         "status": "DRAFT",
-        "created_at": now(),
+        "created_at": created_at,
+        "updated_at": created_at,
         "locked_at": None,
         "source_experiment_id": request.experiment_id,
+        "source_experiment_sha": experiment_sha,
         "source_experiment_locked_at": experiment.get(
             "locked_at"
         ),
@@ -1020,17 +1143,11 @@ def create_strategy_version(
         ),
         "hypothesis": config.get("hypothesis"),
         "research_config": config,
-        "evaluation_evidence": {
-            "development": research_result.get(
-                "development"
-            ),
-            "validation": research_result.get(
-                "validation"
-            ),
-            "final_holdout": research_result.get(
-                "final_holdout"
-            ),
-        },
+        "evaluation_evidence": strategy_snapshot[
+            "evaluation_evidence"
+        ],
+        "snapshot": strategy_snapshot,
+        "strategy_fingerprint": strategy_fingerprint,
         "lineage": {
             "source_experiment_id": request.experiment_id,
             "source_experiment_parent_id": experiment.get(
@@ -1040,12 +1157,12 @@ def create_strategy_version(
                 "lineage",
                 {},
             ),
-            "source_experiment_reproducibility": (
-                config.get(
-                    "reproducibility_hooks",
-                    {}
-                )
+            "source_experiment_reproducibility": config.get(
+                "reproducibility_hooks",
+                {},
             ),
+            "source_experiment_sha": experiment_sha,
+            "strategy_fingerprint": strategy_fingerprint,
         },
     }
 
@@ -1143,16 +1260,47 @@ def lock_strategy(
         ) from exc
 
     if record.get("status") == "LOCKED":
-        return record
+        return {
+            **record,
+            "message": "Strategy version is already locked and immutable.",
+        }
 
-    if not record.get("source_experiment_id"):
+    source_experiment_id = record.get("source_experiment_id")
+    if not source_experiment_id:
         raise HTTPException(
             status_code=409,
             detail="Strategy is missing its source experiment.",
         )
 
+    try:
+        source_experiment, _ = store.get_large(
+            experiment_path(source_experiment_id)
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Source experiment is no longer available: "
+                f"{source_experiment_id}"
+            ),
+        ) from exc
+
+    if source_experiment.get("status") != "LOCKED":
+        raise HTTPException(
+            status_code=409,
+            detail="Source experiment must remain LOCKED before strategy locking.",
+        )
+
+    if not record.get("snapshot") or not record.get("strategy_fingerprint"):
+        raise HTTPException(
+            status_code=409,
+            detail="Strategy snapshot and fingerprint are required before locking.",
+        )
+
+    locked_at = now()
     record["status"] = "LOCKED"
-    record["locked_at"] = now()
+    record["locked_at"] = locked_at
+    record["updated_at"] = locked_at
 
     try:
         commit_sha = store.put(
@@ -1172,5 +1320,52 @@ def lock_strategy(
 
     return {
         **record,
+        "commit_sha": commit_sha,
+    }
+
+
+@router.delete("/strategies/{strategy_slug}/v{version}")
+def delete_strategy(
+    strategy_slug: str,
+    version: int,
+) -> dict:
+    path = strategy_path(strategy_slug, version)
+
+    try:
+        record, sha = store.get(path)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
+
+    if record.get("status") == "LOCKED":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Locked strategy versions are immutable and cannot be deleted. "
+                "Create a new strategy version instead."
+            ),
+        )
+
+    try:
+        commit_sha = store.delete(
+            path,
+            sha,
+            (
+                f"Delete strategy "
+                f"{record.get('strategy_name', strategy_slug)} v{version}"
+            ),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "deleted": True,
+        "strategy_slug": strategy_slug,
+        "version": version,
         "commit_sha": commit_sha,
     }
