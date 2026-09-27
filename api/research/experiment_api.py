@@ -46,6 +46,7 @@ class SaveExperimentRequest(BaseModel):
     name: str | None = None
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
+    parent_experiment_id: str | None = None
 
 
 class CompareExperimentsRequest(BaseModel):
@@ -567,9 +568,8 @@ def save_experiment(request: SaveExperimentRequest) -> dict:
         "created_at": created_at,
         "updated_at": created_at,
         "locked_at": None,
-        "parent_experiment_id": request.research_result.get(
-            "parent_experiment_id"
-        ),
+        "parent_experiment_id": request.parent_experiment_id
+        or request.research_result.get("parent_experiment_id"),
         "research_result": request.research_result,
     }
 
