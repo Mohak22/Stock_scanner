@@ -51,9 +51,6 @@ class OutcomeDefinition(BaseModel):
 
 
 class ResearchRequest(BaseModel):
-    research_question: str = Field(min_length=1)
-    hypothesis: str = Field(min_length=1)
-
     development_start: date
     development_end: date
 

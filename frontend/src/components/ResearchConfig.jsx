@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { getFeatures } from '../api/researchApi'
-import ResearchQuestion from './research/ResearchQuestion'
 import UniverseConfig from './research/UniverseConfig'
 import DateRangeConfig from './research/DateRangeConfig'
 import ConditionBuilder from './research/ConditionBuilder'
@@ -14,23 +13,18 @@ function ResearchConfig() {
   const [features, setFeatures] = useState([])
   const [loadingFeatures, setLoadingFeatures] = useState(true)
   const [featureError, setFeatureError] = useState('')
+
   const [jobId, setJobId] = useState(null)
   const [jobProgress, setJobProgress] = useState(0)
   const [jobStage, setJobStage] = useState('')
   const [jobStatus, setJobStatus] = useState(null)
-  const [researchQuestion, setResearchQuestion] = useState(
-    'Can a one-day price spike persist over the next few sessions?'
-  )
-
-  const [hypothesis, setHypothesis] = useState(
-    'Stocks with a significant one-day price increase may continue to outperform over subsequent sessions.'
-  )
 
   const [universe, setUniverse] = useState({
     type: 'all_stocks',
     value: '',
     symbols: [],
   })
+
   const [developmentStart, setDevelopmentStart] =
     useState('2016-01-01')
 
@@ -46,8 +40,7 @@ function ResearchConfig() {
   const [holdoutStart, setHoldoutStart] =
     useState('2025-01-01')
 
-  const [holdoutEnd, setHoldoutEnd] =
-    useState('')
+  const [holdoutEnd, setHoldoutEnd] = useState('')
 
   const [conditions, setConditions] = useState([
     {
@@ -59,7 +52,9 @@ function ResearchConfig() {
     },
   ])
 
-  const [evaluationHorizons, setEvaluationHorizons] = useState([1, 3, 5, 10])
+  const [evaluationHorizons, setEvaluationHorizons] =
+    useState([1, 3, 5, 10])
+
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState('')
   const [researchResult, setResearchResult] = useState(null)
@@ -77,7 +72,8 @@ function ResearchConfig() {
 
         if (!response.ok) {
           throw new Error(
-            data.detail || 'Failed to load available market dates.'
+            data.detail ||
+            'Failed to load available market dates.'
           )
         }
 
@@ -104,10 +100,52 @@ function ResearchConfig() {
   useEffect(() => {
     async function loadFeatures() {
       try {
+        setFeatureError('')
+
         const data = await getFeatures()
-        setFeatures(data.features)
+
+        const availableFeatures =
+          Array.isArray(data.features)
+            ? data.features
+            : []
+
+        if (availableFeatures.length === 0) {
+          throw new Error(
+            'No research indicators are available.'
+          )
+        }
+
+        setFeatures(availableFeatures)
+
+        const firstFeature = availableFeatures[0]
+
+        setConditions((current) =>
+          current.map((condition) => {
+            if (
+              availableFeatures.some(
+                (feature) =>
+                  feature.id === condition.feature
+              )
+            ) {
+              return condition
+            }
+
+            const parameter =
+              firstFeature.parameters?.[0]
+
+            return {
+              ...condition,
+              feature: firstFeature.id,
+              period:
+                parameter?.default ?? undefined,
+            }
+          })
+        )
       } catch (error) {
-        setFeatureError(error.message)
+        setFeatureError(
+          error.message ||
+          'Failed to load research indicators.'
+        )
       } finally {
         setLoadingFeatures(false)
       }
@@ -126,40 +164,60 @@ function ResearchConfig() {
   }, [])
 
   const getFeatureDefinition = (featureId) =>
-    features.find((feature) => feature.id === featureId)
+    features.find(
+      (feature) => feature.id === featureId
+    )
 
   const addCondition = () => {
+    const defaultFeature = features[0]
+
     setConditions((current) => [
       ...current,
       {
         id: Date.now(),
-        feature: 'rsi',
-        period: 14,
+        feature: defaultFeature?.id || '',
+        period:
+          defaultFeature?.parameters?.[0]?.default,
         operator: '<',
-        value: 30,
+        value: 0,
       },
     ])
   }
 
   const removeCondition = (id) => {
     setConditions((current) =>
-      current.filter((condition) => condition.id !== id)
+      current.filter(
+        (condition) => condition.id !== id
+      )
     )
   }
 
-  const updateCondition = (id, field, value) => {
+  const updateCondition = (
+    id,
+    field,
+    value
+  ) => {
     setConditions((current) =>
       current.map((condition) =>
         condition.id === id
-          ? { ...condition, [field]: value }
+          ? {
+              ...condition,
+              [field]: value,
+            }
           : condition
       )
     )
   }
 
-  const updateFeature = (id, featureId) => {
-    const selectedFeature = getFeatureDefinition(featureId)
-    const parameter = selectedFeature?.parameters?.[0]
+  const updateFeature = (
+    id,
+    featureId
+  ) => {
+    const selectedFeature =
+      getFeatureDefinition(featureId)
+
+    const parameter =
+      selectedFeature?.parameters?.[0]
 
     let defaultValue = 0
 
@@ -169,7 +227,6 @@ function ResearchConfig() {
         break
 
       case 'volume':
-      case 'delivery_quantity':
         defaultValue = 100000
         break
 
@@ -186,18 +243,18 @@ function ResearchConfig() {
     }
 
     setConditions((current) =>
-      current.map((condition) => {
-        if (condition.id !== id) {
-          return condition
-        }
-
-        return {
-          ...condition,
-          feature: featureId,
-          period: parameter?.default ?? undefined,
-          value: defaultValue,
-        }
-      })
+      current.map((condition) =>
+        condition.id === id
+          ? {
+              ...condition,
+              feature: featureId,
+              period:
+                parameter?.default ??
+                undefined,
+              value: defaultValue,
+            }
+          : condition
+      )
     )
   }
 
@@ -207,10 +264,16 @@ function ResearchConfig() {
         if (current.length === 1) {
           return current
         }
-        return current.filter((item) => item !== horizon)
+
+        return current.filter(
+          (item) => item !== horizon
+        )
       }
 
-      return [...current, horizon].sort((a, b) => a - b)
+      return [
+        ...current,
+        horizon,
+      ].sort((a, b) => a - b)
     })
   }
 
@@ -218,29 +281,38 @@ function ResearchConfig() {
     const configuredFeatures = []
 
     conditions.forEach((condition) => {
-      const alreadyExists = configuredFeatures.some(
-        (feature) =>
-          feature.type === condition.feature &&
-          feature.period === condition.period
-      )
+      const alreadyExists =
+        configuredFeatures.some(
+          (feature) =>
+            feature.type ===
+              condition.feature &&
+            feature.period ===
+              condition.period
+        )
 
       if (!alreadyExists) {
         configuredFeatures.push({
           type: condition.feature,
           ...(condition.period !== undefined &&
-            condition.period !== null &&
-            condition.period !== ''
-            ? { period: Number(condition.period) }
+          condition.period !== null &&
+          condition.period !== ''
+            ? {
+                period:
+                  Number(
+                    condition.period
+                  ),
+              }
             : {}),
         })
       }
     })
 
     return {
-      research_question: researchQuestion.trim(),
-      hypothesis: hypothesis.trim(),
-      development_start: developmentStart,
-      development_end: developmentEnd,
+      development_start:
+        developmentStart,
+
+      development_end:
+        developmentEnd,
 
       validation_start:
         validationStart || null,
@@ -256,93 +328,150 @@ function ResearchConfig() {
 
       universe,
 
-      features: configuredFeatures,
+      features:
+        configuredFeatures,
 
-      entry_conditions: conditions.map((condition) => {
-        const numericValue = Number(condition.value)
+      entry_conditions:
+        conditions.map((condition) => {
+          const numericValue =
+            Number(condition.value)
 
-        return {
-          feature: condition.feature,
+          return {
+            feature:
+              condition.feature,
 
-          ...(condition.period !== undefined &&
+            ...(condition.period !== undefined &&
             condition.period !== null &&
             condition.period !== ''
-            ? {
-              period: Number(condition.period),
-            }
-            : {}),
+              ? {
+                  period:
+                    Number(
+                      condition.period
+                    ),
+                }
+              : {}),
 
-          operator: condition.operator,
+            operator:
+              condition.operator,
 
-          value:
-            condition.value !== '' &&
-              !Number.isNaN(numericValue)
-              ? numericValue
-              : condition.value,
-        }
-      }),
+            value:
+              condition.value !== '' &&
+              !Number.isNaN(
+                numericValue
+              )
+                ? numericValue
+                : condition.value,
+          }
+        }),
 
-      evaluation_horizons: evaluationHorizons,
+      evaluation_horizons:
+        evaluationHorizons,
+
       signal_timing: {
-        observation: 'signal_date_close',
-        entry: 'next_available_symbol_session_close',
+        observation:
+          'signal_date_close',
+        entry:
+          'next_available_symbol_session_close',
         price_basis: 'CLOSE',
       },
+
       outcome_definition: {
         anchor: 'entry_date',
         price_basis: 'CLOSE',
-        horizons: evaluationHorizons,
+        horizons:
+          evaluationHorizons,
       },
     }
   }
 
   const validateResearch = () => {
-    if (!researchQuestion.trim()) {
-      return 'Please define a research question.'
-    }
-
-    if (!hypothesis.trim()) {
-      return 'Please define a falsifiable hypothesis.'
-    }
-
-    if (!developmentStart || !developmentEnd) {
+    if (
+      !developmentStart ||
+      !developmentEnd
+    ) {
       return 'Please select the development period.'
     }
 
-    if (developmentStart >= developmentEnd) {
-      return 'Development start date must be before the development end date.'
+    if (
+      developmentStart >=
+      developmentEnd
+    ) {
+      return (
+        'Development start date must be before ' +
+        'the development end date.'
+      )
     }
 
-    if (!validationStart || !validationEnd) {
+    if (
+      !validationStart ||
+      !validationEnd
+    ) {
       return 'Please select the validation period.'
     }
 
-    if (validationStart >= validationEnd) {
-      return 'Validation start date must be before the validation end date.'
+    if (
+      validationStart >=
+      validationEnd
+    ) {
+      return (
+        'Validation start date must be before ' +
+        'validation end date.'
+      )
     }
 
-    if (!holdoutStart || !holdoutEnd) {
+    if (
+      !holdoutStart ||
+      !holdoutEnd
+    ) {
       return 'Please select the holdout period.'
     }
 
-    if (holdoutStart >= holdoutEnd) {
-      return 'Holdout start date must be before the holdout end date.'
+    if (
+      holdoutStart >=
+      holdoutEnd
+    ) {
+      return (
+        'Holdout start date must be before ' +
+        'holdout end date.'
+      )
     }
 
-    if (developmentEnd >= validationStart) {
-      return 'Development must finish before validation begins.'
+    if (
+      developmentEnd >=
+      validationStart
+    ) {
+      return (
+        'Development must finish before validation begins.'
+      )
     }
 
-    if (validationEnd >= holdoutStart) {
-      return 'Validation must finish before holdout begins.'
+    if (
+      validationEnd >=
+      holdoutStart
+    ) {
+      return (
+        'Validation must finish before holdout begins.'
+      )
     }
 
     if (conditions.length === 0) {
-      return 'Add at least one research condition.'
+      return (
+        'Add at least one research condition.'
+      )
     }
 
-    if (evaluationHorizons.length === 0) {
-      return 'Select at least one evaluation horizon.'
+    if (
+      evaluationHorizons.length === 0
+    ) {
+      return (
+        'Select at least one evaluation horizon.'
+      )
+    }
+
+    if (features.length === 0) {
+      return (
+        'Research indicators are still loading.'
+      )
     }
 
     if (
@@ -350,59 +479,91 @@ function ResearchConfig() {
       universe.type !== 'symbols' &&
       !universe.value
     ) {
-      throw new Error('Please select a universe filter value.')
+      return (
+        'Please select a universe filter value.'
+      )
     }
 
     if (
       universe.type === 'symbols' &&
-      (!universe.symbols || universe.symbols.length === 0)
+      (!universe.symbols ||
+        universe.symbols.length === 0)
     ) {
-      throw new Error('Please enter at least one symbol.')
+      return (
+        'Please enter at least one symbol.'
+      )
     }
 
     for (const condition of conditions) {
       if (!condition.feature) {
-        return 'Every condition must have a feature.'
+        return (
+          'Every condition must have an indicator.'
+        )
       }
 
       if (!condition.operator) {
-        return 'Every condition must have an operator.'
-      }
-
-      if (!Number.isFinite(Number(condition.value))) {
-        return 'Every condition value must be a valid number.'
+        return (
+          'Every condition must have an operator.'
+        )
       }
 
       if (
         condition.value === '' ||
         condition.value === null ||
-        condition.value === undefined
+        condition.value === undefined ||
+        !Number.isFinite(
+          Number(condition.value)
+        )
       ) {
-        return 'Every condition must have a value.'
+        return (
+          'Every condition must have a valid numeric value.'
+        )
       }
 
-      const featureDefinition = getFeatureDefinition(condition.feature)
-      const parameter = featureDefinition?.parameters?.[0]
+      const featureDefinition =
+        getFeatureDefinition(
+          condition.feature
+        )
 
-      if (parameter && condition.period !== '' && condition.period != null) {
-        const period = Number(condition.period)
+      if (!featureDefinition) {
+        return (
+          'Every condition must use a valid research indicator.'
+        )
+      }
+
+      const parameter =
+        featureDefinition.parameters?.[0]
+
+      if (
+        parameter &&
+        condition.period !== '' &&
+        condition.period != null
+      ) {
+        const period =
+          Number(condition.period)
 
         if (!Number.isInteger(period)) {
-          return `${featureDefinition.name} period must be a whole number.`
+          return (
+            `${featureDefinition.name} period must be a whole number.`
+          )
         }
 
         if (
           parameter.minimum != null &&
           period < parameter.minimum
         ) {
-          return `${featureDefinition.name} period must be at least ${parameter.minimum}.`
+          return (
+            `${featureDefinition.name} period must be at least ${parameter.minimum}.`
+          )
         }
 
         if (
           parameter.maximum != null &&
           period > parameter.maximum
         ) {
-          return `${featureDefinition.name} period must be at most ${parameter.maximum}.`
+          return (
+            `${featureDefinition.name} period must be at most ${parameter.maximum}.`
+          )
         }
       }
     }
@@ -422,23 +583,13 @@ function ResearchConfig() {
 
     setRunError('')
     setResearchResult(null)
-
     setJobId(null)
     setJobProgress(0)
     setJobStage('')
     setJobStatus(null)
 
-    let validationError
-
-    try {
-      validationError = validateResearch()
-    } catch (error) {
-      setRunError(
-        error.message ||
-        'Invalid research configuration.'
-      )
-      return
-    }
+    const validationError =
+      validateResearch()
 
     if (validationError) {
       setRunError(validationError)
@@ -453,7 +604,8 @@ function ResearchConfig() {
         {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type':
+              'application/json',
           },
           body: JSON.stringify(
             buildResearchRequest()
@@ -461,16 +613,18 @@ function ResearchConfig() {
         }
       )
 
-      const data = await response.json()
+      const data =
+        await response.json()
 
       if (!response.ok) {
         throw new Error(
           data.detail ||
-          'Failed to start research.'
+            'Failed to start research.'
         )
       }
 
-      const newJobId = data.job_id
+      const newJobId =
+        data.job_id
 
       if (!newJobId) {
         throw new Error(
@@ -480,37 +634,54 @@ function ResearchConfig() {
 
       setJobId(newJobId)
       setJobStatus(data.status)
-      setJobProgress(data.progress ?? 0)
+      setJobProgress(
+        data.progress ?? 0
+      )
       setJobStage(
         data.stage || 'Queued'
       )
 
-      const eventSource = new EventSource(
-        `${API_BASE_URL}/research/jobs/${newJobId}/stream`
-      )
+      const eventSource =
+        new EventSource(
+          `${API_BASE_URL}/research/jobs/${newJobId}/stream`
+        )
 
-      eventSourceRef.current = eventSource
+      eventSourceRef.current =
+        eventSource
 
       eventSource.addEventListener(
         'progress',
         async (event) => {
           try {
-            const job = JSON.parse(event.data)
+            const job =
+              JSON.parse(
+                event.data
+              )
 
-            setJobStatus(job.status)
-            setJobProgress(job.progress ?? 0)
+            setJobStatus(
+              job.status
+            )
+
+            setJobProgress(
+              job.progress ?? 0
+            )
+
             setJobStage(
               job.stage || ''
             )
 
-            if (job.status === 'COMPLETED') {
-
+            if (
+              job.status ===
+              'COMPLETED'
+            ) {
               eventSource.close()
 
               if (
-                eventSourceRef.current === eventSource
+                eventSourceRef.current ===
+                eventSource
               ) {
-                eventSourceRef.current = null
+                eventSourceRef.current =
+                  null
               }
 
               try {
@@ -522,56 +693,58 @@ function ResearchConfig() {
                 const resultData =
                   await resultResponse.json()
 
-                if (!resultResponse.ok) {
+                if (
+                  !resultResponse.ok
+                ) {
                   throw new Error(
                     resultData.detail ||
-                    'Failed to retrieve research result.'
+                      'Failed to retrieve research result.'
                   )
                 }
 
                 setResearchResult(
                   resultData.result
                 )
-
               } catch (error) {
-
                 setRunError(
                   error.message ||
-                  'Failed to retrieve research result.'
+                    'Failed to retrieve research result.'
                 )
-
               } finally {
-
                 setIsRunning(false)
               }
             }
 
-            if (job.status === 'FAILED') {
-
+            if (
+              job.status ===
+              'FAILED'
+            ) {
               eventSource.close()
 
               if (
-                eventSourceRef.current === eventSource
+                eventSourceRef.current ===
+                eventSource
               ) {
-                eventSourceRef.current = null
+                eventSourceRef.current =
+                  null
               }
 
               setRunError(
                 job.error ||
-                'Research execution failed.'
+                  'Research execution failed.'
               )
 
               setIsRunning(false)
             }
-
-          } catch (error) {
-
+          } catch {
             eventSource.close()
 
             if (
-              eventSourceRef.current === eventSource
+              eventSourceRef.current ===
+              eventSource
             ) {
-              eventSourceRef.current = null
+              eventSourceRef.current =
+                null
             }
 
             setRunError(
@@ -583,73 +756,79 @@ function ResearchConfig() {
         }
       )
 
-      eventSource.onerror = () => {
+      eventSource.onerror =
+        () => {
+          eventSource.close()
 
-        eventSource.close()
+          if (
+            eventSourceRef.current ===
+            eventSource
+          ) {
+            eventSourceRef.current =
+              null
+          }
 
-        if (
-          eventSourceRef.current === eventSource
-        ) {
-          eventSourceRef.current = null
+          setRunError(
+            'Research progress connection was interrupted.'
+          )
+
+          setIsRunning(false)
         }
-
-        setRunError(
-          'Research progress connection was interrupted.'
-        )
-
-        setIsRunning(false)
-      }
-
     } catch (error) {
-
       setRunError(
         error.message ||
-        'Failed to start research.'
+          'Failed to start research.'
       )
 
       setIsRunning(false)
     }
   }
 
-  const saveExperiment = async (result) => {
-    const response = await fetch(
-      `${API_BASE_URL}/research/experiments`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          research_result: result,
+  const saveExperiment = async (
+    result
+  ) => {
+    const response =
+      await fetch(
+        `${API_BASE_URL}/research/experiments`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          body: JSON.stringify({
+            research_result:
+              result,
 
-          name:
-            researchQuestion.trim() ||
-            'Untitled Research Experiment',
+            name:
+              'Research Experiment',
 
-          notes:
-            'Saved from Research Cockpit.',
+            notes:
+              'Saved from Research Cockpit.',
 
-          tags: [
-            ...new Set(
-              conditions
-                .map((condition) =>
-                  String(
-                    condition.feature || ''
-                  ).toUpperCase()
-                )
-                .filter(Boolean)
-            ),
-          ],
-        }),
-      }
-    )
+            tags: [
+              ...new Set(
+                conditions
+                  .map((condition) =>
+                    String(
+                      condition.feature ||
+                        ''
+                    ).toUpperCase()
+                  )
+                  .filter(Boolean)
+              ),
+            ],
+          }),
+        }
+      )
 
-    const data = await response.json()
+    const data =
+      await response.json()
 
     if (!response.ok) {
       throw new Error(
         data.detail ||
-        'Failed to save experiment.'
+          'Failed to save experiment.'
       )
     }
 
@@ -660,42 +839,49 @@ function ResearchConfig() {
     <section className="research-config">
       <div className="section-header">
         <div>
-          <span className="section-kicker">RESEARCH CONFIGURATION</span>
+          <span className="section-kicker">
+            RESEARCH CONFIGURATION
+          </span>
 
-          <h2>Define Your Research Question</h2>
+          <h2>
+            Configure Historical Research
+          </h2>
 
           <p>
-            Build a hypothesis using historical market data and test its
-            behaviour across different market conditions.
+            Select a universe, time periods,
+            indicators, conditions and
+            evaluation horizons to test
+            a market hypothesis.
           </p>
 
           {loadingFeatures && (
-            <p className="backend-status">Loading research features...</p>
+            <p className="backend-status">
+              Loading research indicators...
+            </p>
           )}
 
           {featureError && (
-            <p className="backend-error">{featureError}</p>
-          )}
-
-          {!loadingFeatures && !featureError && (
-            <p className="backend-status">
-              {features.length} research features available
+            <p className="backend-error">
+              {featureError}
             </p>
           )}
+
+          {!loadingFeatures &&
+            !featureError && (
+              <p className="backend-status">
+                {features.length} research
+                indicators available
+              </p>
+            )}
         </div>
 
         <div className="research-status">
           <span className="status-dot"></span>
-          {isRunning ? 'RUNNING' : 'READY'}
+          {isRunning
+            ? 'RUNNING'
+            : 'READY'}
         </div>
       </div>
-
-      <ResearchQuestion
-        question={researchQuestion}
-        hypothesis={hypothesis}
-        onQuestionChange={setResearchQuestion}
-        onHypothesisChange={setHypothesis}
-      />
 
       <div className="config-grid">
         <UniverseConfig
@@ -705,18 +891,42 @@ function ResearchConfig() {
         />
 
         <DateRangeConfig
-          developmentStart={developmentStart}
-          developmentEnd={developmentEnd}
-          validationStart={validationStart}
-          validationEnd={validationEnd}
-          holdoutStart={holdoutStart}
-          holdoutEnd={holdoutEnd}
-          onDevelopmentStartChange={setDevelopmentStart}
-          onDevelopmentEndChange={setDevelopmentEnd}
-          onValidationStartChange={setValidationStart}
-          onValidationEndChange={setValidationEnd}
-          onHoldoutStartChange={setHoldoutStart}
-          onHoldoutEndChange={setHoldoutEnd}
+          developmentStart={
+            developmentStart
+          }
+          developmentEnd={
+            developmentEnd
+          }
+          validationStart={
+            validationStart
+          }
+          validationEnd={
+            validationEnd
+          }
+          holdoutStart={
+            holdoutStart
+          }
+          holdoutEnd={
+            holdoutEnd
+          }
+          onDevelopmentStartChange={
+            setDevelopmentStart
+          }
+          onDevelopmentEndChange={
+            setDevelopmentEnd
+          }
+          onValidationStartChange={
+            setValidationStart
+          }
+          onValidationEndChange={
+            setValidationEnd
+          }
+          onHoldoutStartChange={
+            setHoldoutStart
+          }
+          onHoldoutEndChange={
+            setHoldoutEnd
+          }
           isRunning={isRunning}
         />
       </div>
@@ -724,32 +934,64 @@ function ResearchConfig() {
       <ConditionBuilder
         conditions={conditions}
         features={features}
+        loadingFeatures={
+          loadingFeatures
+        }
+        featureError={
+          featureError
+        }
         isRunning={isRunning}
-        onAddCondition={addCondition}
-        onRemoveCondition={removeCondition}
-        onUpdateCondition={updateCondition}
-        onUpdateFeature={updateFeature}
+        onAddCondition={
+          addCondition
+        }
+        onRemoveCondition={
+          removeCondition
+        }
+        onUpdateCondition={
+          updateCondition
+        }
+        onUpdateFeature={
+          updateFeature
+        }
       />
 
       <EvaluationHorizons
-        horizons={[1, 3, 5, 10]}
-        selectedHorizons={evaluationHorizons}
-        onToggle={toggleHorizon}
+        horizons={[
+          1, 3, 5, 10
+        ]}
+        selectedHorizons={
+          evaluationHorizons
+        }
+        onToggle={
+          toggleHorizon
+        }
         disabled={isRunning}
       />
 
       <ResearchExecution
         isRunning={isRunning}
         runError={runError}
-        onRunResearch={runResearch}
-        jobProgress={jobProgress}
-        jobStage={jobStage}
-        jobStatus={jobStatus}
+        onRunResearch={
+          runResearch
+        }
+        jobProgress={
+          jobProgress
+        }
+        jobStage={
+          jobStage
+        }
+        jobStatus={
+          jobStatus
+        }
       />
 
       <ResearchResults
-        researchResult={researchResult}
-        onSaveExperiment={saveExperiment}
+        researchResult={
+          researchResult
+        }
+        onSaveExperiment={
+          saveExperiment
+        }
       />
     </section>
   )
