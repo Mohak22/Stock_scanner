@@ -279,6 +279,16 @@ function ExperimentDetail({
             )}
 
             <div className="experiment-detail-section">
+                <div className="detail-section-heading">
+                    <div>
+                        <span className="section-eyebrow">RESEARCH QUESTION</span>
+                        <h2>{researchConfig.research_question || '—'}</h2>
+                        <p>{researchConfig.hypothesis || '—'}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="experiment-detail-section">
 
                 <div className="detail-section-heading">
                     <div>
@@ -307,7 +317,7 @@ function ExperimentDetail({
                         </span>
 
                         <h2>
-                            Training Results
+                            Development / Validation / Holdout Results
                         </h2>
                     </div>
                 </div>
