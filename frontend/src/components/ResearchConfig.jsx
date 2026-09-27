@@ -27,8 +27,23 @@ function ResearchConfig() {
     value: '',
     symbols: [],
   })
-  const [trainingStart, setTrainingStart] = useState('2023-01-01')
-  const [trainingEnd, setTrainingEnd] = useState('2025-12-31')
+  const [trainingStart, setTrainingStart] =
+    useState('2016-01-01')
+
+  const [trainingEnd, setTrainingEnd] =
+    useState('2022-12-31')
+
+  const [validationStart, setValidationStart] =
+    useState('2023-01-01')
+
+  const [validationEnd, setValidationEnd] =
+    useState('2024-12-31')
+
+  const [testingStart, setTestingStart] =
+    useState('2025-01-01')
+
+  const [testingEnd, setTestingEnd] =
+    useState('2026-12-31')
 
   const [conditions, setConditions] = useState([
     {
@@ -185,25 +200,47 @@ function ResearchConfig() {
     return {
       training_start: trainingStart,
       training_end: trainingEnd,
+
+      validation_start:
+        validationStart || null,
+
+      validation_end:
+        validationEnd || null,
+
+      testing_start:
+        testingStart || null,
+
+      testing_end:
+        testingEnd || null,
+
       universe,
+
       features: configuredFeatures,
+
       entry_conditions: conditions.map((condition) => {
         const numericValue = Number(condition.value)
 
         return {
           feature: condition.feature,
+
           ...(condition.period !== undefined &&
             condition.period !== null &&
             condition.period !== ''
-            ? { period: Number(condition.period) }
+            ? {
+              period: Number(condition.period),
+            }
             : {}),
+
           operator: condition.operator,
+
           value:
-            condition.value !== '' && !Number.isNaN(numericValue)
+            condition.value !== '' &&
+              !Number.isNaN(numericValue)
               ? numericValue
               : condition.value,
         }
       }),
+
       evaluation_horizons: evaluationHorizons,
     }
   }
@@ -214,11 +251,35 @@ function ResearchConfig() {
     }
 
     if (!trainingStart || !trainingEnd) {
-      return 'Please select a research period.'
+      return 'Please select the training period.'
     }
 
     if (trainingStart >= trainingEnd) {
       return 'Training start date must be before the training end date.'
+    }
+
+    if (!validationStart || !validationEnd) {
+      return 'Please select the validation period.'
+    }
+
+    if (validationStart >= validationEnd) {
+      return 'Validation start date must be before the validation end date.'
+    }
+
+    if (!testingStart || !testingEnd) {
+      return 'Please select the testing period.'
+    }
+
+    if (testingStart >= testingEnd) {
+      return 'Testing start date must be before the testing end date.'
+    }
+
+    if (trainingEnd >= validationStart) {
+      return 'Training must finish before validation begins.'
+    }
+
+    if (validationEnd >= testingStart) {
+      return 'Validation must finish before testing begins.'
     }
 
     if (conditions.length === 0) {
@@ -587,10 +648,18 @@ function ResearchConfig() {
         />
 
         <DateRangeConfig
-          startDate={trainingStart}
-          endDate={trainingEnd}
-          onStartChange={setTrainingStart}
-          onEndChange={setTrainingEnd}
+          trainingStart={trainingStart}
+          trainingEnd={trainingEnd}
+          validationStart={validationStart}
+          validationEnd={validationEnd}
+          testingStart={testingStart}
+          testingEnd={testingEnd}
+          onTrainingStartChange={setTrainingStart}
+          onTrainingEndChange={setTrainingEnd}
+          onValidationStartChange={setValidationStart}
+          onValidationEndChange={setValidationEnd}
+          onTestingStartChange={setTestingStart}
+          onTestingEndChange={setTestingEnd}
           isRunning={isRunning}
         />
       </div>
