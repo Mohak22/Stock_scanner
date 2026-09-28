@@ -80,6 +80,72 @@ def calculate_features(
         ["SYMBOL", "TIMESTAMP"]
     ).reset_index(drop=True)
 
+    # ----------------------------------------------------------
+    # PRICE ACTION / CANDLE FEATURES
+    # ----------------------------------------------------------
+
+    if any(
+        feature["type"].lower()
+        in {
+            "upper_wick",
+            "lower_wick",
+            "candle_range",
+            "body",
+            "upper_wick_pct",
+            "lower_wick_pct",
+            "body_pct",
+            "close_position",
+        }
+        for feature in features
+    ):
+
+        result["CANDLE_RANGE"] = (
+            result["HIGH"] - result["LOW"]
+        )
+
+        result["BODY"] = (
+            result["CLOSE"] - result["OPEN"]
+        ).abs()
+
+        result["UPPER_WICK"] = (
+            result["HIGH"]
+            - result[["OPEN", "CLOSE"]].max(axis=1)
+        )
+
+        result["LOWER_WICK"] = (
+            result[["OPEN", "CLOSE"]].min(axis=1)
+            - result["LOW"]
+        )
+
+        candle_range = result["CANDLE_RANGE"]
+
+        result["UPPER_WICK_PCT"] = (
+            result["UPPER_WICK"]
+            .div(candle_range.replace(0, pd.NA))
+            * 100
+        )
+
+        result["LOWER_WICK_PCT"] = (
+            result["LOWER_WICK"]
+            .div(candle_range.replace(0, pd.NA))
+            * 100
+        )
+
+        result["BODY_PCT"] = (
+            result["BODY"]
+            .div(candle_range.replace(0, pd.NA))
+            * 100
+        )
+
+        result["CLOSE_POSITION"] = (
+            (
+                result["CLOSE"]
+                - result["LOW"]
+            )
+            .div(candle_range.replace(0, pd.NA))
+            * 100
+        )
+        
     for feature in features:
 
         feature_type = feature["type"].lower()

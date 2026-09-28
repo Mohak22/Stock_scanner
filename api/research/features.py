@@ -132,7 +132,71 @@ FEATURE_REGISTRY = [
                 "maximum": 500
             }
         ]
-    }
+    },
+    
+    {
+    "id": "upper_wick",
+    "name": "Upper Wick",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "lower_wick",
+    "name": "Lower Wick",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "candle_range",
+    "name": "Candle Range",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "body",
+    "name": "Candle Body",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "upper_wick_pct",
+    "name": "Upper Wick %",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "lower_wick_pct",
+    "name": "Lower Wick %",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "body_pct",
+    "name": "Body %",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
+
+{
+    "id": "close_position",
+    "name": "Close Position %",
+    "category": "price_action",
+    "type": "numeric",
+    "parameters": []
+},
 ]
 
 

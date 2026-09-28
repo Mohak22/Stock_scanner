@@ -257,6 +257,141 @@ class ResearchDataRepository:
 
         return str(sha)
     
+    def load_mto(
+        self,
+        start_date: str | date,
+        end_date: str | date,
+    ) -> pd.DataFrame:
+    
+        start = pd.Timestamp(start_date).date()
+        end = pd.Timestamp(end_date).date()
+    
+        tree = self._tree()
+    
+        prefix = "processed/mto/"
+        selected_paths = []
+    
+        for item in tree:
+    
+            path = item.get("path", "")
+    
+            if not path.startswith(prefix):
+                continue
+    
+            if not path.endswith(".parquet"):
+                continue
+    
+            filename = path.rsplit("/", 1)[-1]
+    
+            date_text = filename[
+                len("MTO_"):-len(".parquet")
+            ]
+    
+            if (
+                len(date_text) != 8
+                or not date_text.isdigit()
+            ):
+                continue
+    
+            try:
+                file_date = pd.to_datetime(
+                    date_text,
+                    format="%d%m%Y"
+                ).date()
+            except ValueError:
+                continue
+    
+            if start <= file_date <= end:
+                selected_paths.append(
+                    (file_date, path)
+                )
+    
+        selected_paths.sort(
+            key=lambda item: item[0]
+        )
+    
+        if not selected_paths:
+            return pd.DataFrame()
+    
+        with ThreadPoolExecutor(
+            max_workers=MAX_DOWNLOAD_WORKERS
+        ) as executor:
+    
+            future_map = {
+                executor.submit(
+                    self._download_bhavcopy_file,
+                    file_date,
+                    path,
+                ): file_date
+                for file_date, path in selected_paths
+            }
+    
+            results = []
+    
+            for future in as_completed(future_map):
+    
+                file_date = future_map[future]
+    
+                try:
+                    dataframe = future.result()
+    
+                    results.append(
+                        (file_date, dataframe)
+                    )
+    
+                except Exception as exc:
+    
+                    raise RuntimeError(
+                        "Failed to load MTO "
+                        f"for {file_date}: {exc}"
+                    ) from exc
+    
+        results.sort(
+            key=lambda item: item[0]
+        )
+    
+        frames = [
+            dataframe
+            for _, dataframe in results
+        ]
+    
+        if not frames:
+            return pd.DataFrame()
+    
+        result = pd.concat(
+            frames,
+            ignore_index=True
+        )
+    
+        result["SYMBOL"] = (
+            result["SYMBOL"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+    
+        result["TIMESTAMP"] = pd.to_datetime(
+            result["TIMESTAMP"],
+            errors="coerce"
+        )
+    
+        return (
+            result[
+                [
+                    "SYMBOL",
+                    "TIMESTAMP",
+                    "MTO_QTY_TRADED",
+                    "DELIV_QTY",
+                    "DELIV_PER",
+                ]
+            ]
+            .drop_duplicates(
+                subset=["SYMBOL", "TIMESTAMP"],
+                keep="last"
+            )
+            .reset_index(drop=True)
+        )
+    
     # ==========================================================
     # CSV
     # ==========================================================

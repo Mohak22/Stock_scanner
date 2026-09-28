@@ -46,10 +46,20 @@ function ResearchConfig() {
   const [conditions, setConditions] = useState([
     {
       id: 1,
+
       feature: 'rsi',
       period: 14,
+
       operator: '<',
+
+      rightType: 'value',
+
       value: 30,
+
+      rightFeature: '',
+      rightPeriod: '',
+
+      rightMultiplier: 1,
     },
   ])
 
@@ -176,11 +186,23 @@ function ResearchConfig() {
       ...current,
       {
         id: Date.now(),
-        feature: defaultFeature?.id || '',
+
+        feature:
+          defaultFeature?.id || '',
+
         period:
           defaultFeature?.parameters?.[0]?.default,
+
         operator: '<',
+
+        rightType: 'value',
+
         value: 0,
+
+        rightFeature: '',
+        rightPeriod: '',
+
+        rightMultiplier: 1,
       },
     ])
   }
@@ -248,11 +270,31 @@ function ResearchConfig() {
         condition.id === id
           ? {
             ...condition,
+
             feature: featureId,
+
             period:
               parameter?.default ??
               undefined,
-            value: defaultValue,
+
+            value:
+              defaultValue,
+
+            rightType:
+              condition.rightType ||
+              'value',
+
+            rightFeature:
+              condition.rightFeature ||
+              '',
+
+            rightPeriod:
+              condition.rightPeriod ??
+              '',
+
+            rightMultiplier:
+              condition.rightMultiplier ??
+              1,
           }
           : condition
       )
@@ -330,29 +372,88 @@ function ResearchConfig() {
 
       features: configuredFeatures,
 
-      entry_conditions: conditions.map((condition) => {
-        const numericValue = Number(condition.value)
+      entry_conditions: conditions.map(
+        (condition) => {
+          const numericValue =
+            Number(condition.value)
 
-        return {
-          feature: condition.feature,
+          let rightValue
 
-          ...(condition.period !== undefined &&
-            condition.period !== null &&
-            condition.period !== ''
-            ? {
-              period: Number(condition.period),
+          if (
+            condition.rightType ===
+            'feature'
+          ) {
+            rightValue = {
+              feature:
+                condition.rightFeature,
+
+              ...(condition.rightPeriod !==
+                undefined &&
+                condition.rightPeriod !== null &&
+                condition.rightPeriod !== ''
+                ? {
+                  period: Number(
+                    condition.rightPeriod
+                  ),
+                }
+                : {}),
+
+              multiplier:
+                condition.rightMultiplier ??
+                1,
             }
-            : {}),
+          } else {
+            rightValue =
+              condition.rightMultiplier !==
+                undefined &&
+                condition.rightMultiplier !==
+                null &&
+                condition.rightMultiplier !==
+                1
+                ? {
+                  value:
+                    condition.value !==
+                      '' &&
+                      !Number.isNaN(
+                        numericValue
+                      )
+                      ? numericValue
+                      : condition.value,
 
-          operator: condition.operator,
+                  multiplier:
+                    condition.rightMultiplier,
+                }
+                : condition.value !==
+                  '' &&
+                  !Number.isNaN(
+                    numericValue
+                  )
+                  ? numericValue
+                  : condition.value
+          }
 
-          value:
-            condition.value !== '' &&
-              !Number.isNaN(numericValue)
-              ? numericValue
-              : condition.value,
+          return {
+            feature:
+              condition.feature,
+
+            ...(condition.period !==
+              undefined &&
+              condition.period !== null &&
+              condition.period !== ''
+              ? {
+                period: Number(
+                  condition.period
+                ),
+              }
+              : {}),
+
+            operator:
+              condition.operator,
+
+            value: rightValue,
+          }
         }
-      }),
+      ),
 
       evaluation_horizons: evaluationHorizons,
 
