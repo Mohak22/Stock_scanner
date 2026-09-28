@@ -533,9 +533,11 @@ def execute_research(
 
     for feature in features:
 
-        period = feature.get(
-            "period"
-        )
+        parameters = dict(feature.get("parameters") or {})
+        if feature.get("period") is not None and "period" not in parameters:
+            parameters["period"] = feature["period"]
+
+        period = parameters.get("period")
 
         if period is not None:
 

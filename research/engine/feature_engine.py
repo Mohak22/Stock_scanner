@@ -13,6 +13,13 @@ from indicators.ema_engine import calculate_ema
 from indicators.rsi_engine import calculate_rsi_series
 
 
+def _feature_parameters(feature):
+    params=dict(feature.get("parameters") or {})
+    if feature.get("period") is not None and "period" not in params:
+        params["period"]=feature["period"]
+    return params
+
+
 def calculate_sma_series(
     values: pd.Series,
     period: int
@@ -149,7 +156,8 @@ def calculate_features(
     for feature in features:
 
         feature_type = feature["type"].lower()
-        period = feature.get("period")
+        parameters = _feature_parameters(feature)
+        period = parameters.get("period")
 
         if period is not None:
             period = int(period)

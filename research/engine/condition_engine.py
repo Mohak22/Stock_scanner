@@ -1,199 +1,58 @@
-# -*- coding: utf-8 -*-
-"""
-Research Condition Engine
-
-Purpose:
-    Apply research conditions against calculated dataframe features.
-
-Supports:
-    - Numeric comparisons
-    - Feature-to-feature comparisons
-    - Parameterized features
-    - Arithmetic multiplier expressions
-"""
 
 from __future__ import annotations
-
+from typing import Any
 import pandas as pd
+from api.research.features import get_feature_column_candidates, normalize_feature_parameters
 
+def _normalize_expression(expression: Any) -> dict:
+    if isinstance(expression,dict):
+        p=dict(expression); params=dict(p.get("parameters") or {})
+        if "period" in p and "period" not in params: params["period"]=p["period"]
+        p["parameters"]=params; p.pop("period",None); return p
+    if isinstance(expression,str): return {"feature":expression,"parameters":{},"multiplier":1}
+    return {"value":expression,"multiplier":1}
 
-def _resolve_feature_column(
-    dataframe: pd.DataFrame,
-    feature: str,
-    period=None,
-) -> str:
-    feature = str(feature).strip()
+def _resolve_feature_column(dataframe,feature,parameters=None):
+    candidates=get_feature_column_candidates(feature,parameters)
+    lookup={str(c).upper():c for c in dataframe.columns}
+    for c in candidates:
+        if c in dataframe.columns: return c
+        if str(c).upper() in lookup: return lookup[str(c).upper()]
+    raise ValueError(f"Feature '{feature}' with parameters {parameters or {}} not found in dataframe.")
 
-    candidates = []
+def _resolve_expression(dataframe,expression):
+    p=_normalize_expression(expression)
+    has_feature=bool(p.get("feature")); has_value=p.get("value") is not None
+    if has_feature == has_value: raise ValueError("An expression must contain exactly one of 'feature' or 'value'.")
+    multiplier=float(p.get("multiplier",1))
+    if multiplier<0: raise ValueError("Arithmetic multiplier must be non-negative.")
+    if has_feature:
+        col=_resolve_feature_column(dataframe,str(p["feature"]).strip(),p.get("parameters"))
+        base=dataframe[col]
+    else: base=p["value"]
+    return base*multiplier
 
-    if period is not None:
-        try:
-            period = int(period)
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Invalid period '{period}' for feature '{feature}'."
-            )
+def _legacy_condition_to_canonical(condition):
+    if "left" in condition and "right" in condition: return condition
+    lp={}
+    if condition.get("period") not in (None,""): lp["period"]=condition["period"]
+    rv=condition.get("value")
+    right=dict(rv) if isinstance(rv,dict) else ({"feature":rv} if isinstance(rv,str) else {"value":rv})
+    if "period" in right and "parameters" not in right: right["parameters"]={"period":right.pop("period")}
+    return {"left":{"feature":condition.get("feature"),"parameters":lp,"multiplier":1},"operator":condition.get("operator"),"right":right}
 
-        if period <= 0:
-            raise ValueError(
-                f"Period must be greater than zero. "
-                f"Received {period} for feature '{feature}'."
-            )
-
-        candidates.extend(
-            [
-                f"{feature}_{period}",
-                f"{feature.upper()}_{period}",
-                f"{feature.lower()}_{period}",
-            ]
-        )
-
-    candidates.extend(
-        [
-            feature,
-            feature.upper(),
-            feature.lower(),
-        ]
-    )
-
-    for candidate in candidates:
-        if candidate in dataframe.columns:
-            return candidate
-
-    lookup = {
-        str(column).upper(): column
-        for column in dataframe.columns
-    }
-
-    for candidate in candidates:
-        key = str(candidate).upper()
-        if key in lookup:
-            return lookup[key]
-
-    raise ValueError(
-        f"Feature '{feature}'"
-        + (
-            f" with period {period}"
-            if period is not None
-            else ""
-        )
-        + " not found in dataframe."
-    )
-
-
-def _resolve_right_expression(
-    dataframe: pd.DataFrame,
-    right_value,
-):
-    """
-    Resolve the right-hand side of a condition.
-
-    Supported forms:
-        30
-        {"feature": "ema", "period": 50}
-        {"feature": "average_volume", "period": 20, "multiplier": 2}
-        {"value": 30, "multiplier": 2}
-    """
-
-    if isinstance(right_value, dict):
-        if "feature" in right_value:
-            right_column = _resolve_feature_column(
-                dataframe=dataframe,
-                feature=right_value["feature"],
-                period=right_value.get("period"),
-            )
-            base_value = dataframe[right_column]
-
-        elif "value" in right_value:
-            base_value = right_value["value"]
-
-        else:
-            raise ValueError(
-                "Right-hand expression must contain either "
-                "'feature' or 'value'."
-            )
-
-        multiplier = right_value.get(
-            "multiplier",
-            1,
-        )
-
-        try:
-            multiplier = float(multiplier)
-        except (TypeError, ValueError):
-            raise ValueError(
-                f"Invalid arithmetic multiplier: {multiplier}"
-            )
-
-        if multiplier < 0:
-            raise ValueError(
-                "Arithmetic multiplier must be non-negative."
-            )
-
-        return base_value * multiplier
-
-    if isinstance(right_value, str):
-        return dataframe[
-            _resolve_feature_column(
-                dataframe=dataframe,
-                feature=right_value,
-            )
-        ]
-
-    return right_value
-
-
-def apply_conditions(
-    dataframe: pd.DataFrame,
-    conditions: list[dict],
-) -> pd.Series:
-
-    if not conditions:
-        return pd.Series(
-            True,
-            index=dataframe.index,
-        )
-
-    signal = pd.Series(
-        True,
-        index=dataframe.index,
-    )
-
-    for condition in conditions:
-        left_feature = condition["feature"]
-        operator = condition["operator"]
-        right_value = condition["value"]
-
-        left_column = _resolve_feature_column(
-            dataframe=dataframe,
-            feature=left_feature,
-            period=condition.get("period"),
-        )
-
-        left_series = dataframe[left_column]
-
-        right_series = _resolve_right_expression(
-            dataframe=dataframe,
-            right_value=right_value,
-        )
-
-        if operator == "<":
-            current_condition = left_series < right_series
-        elif operator == "<=":
-            current_condition = left_series <= right_series
-        elif operator == ">":
-            current_condition = left_series > right_series
-        elif operator == ">=":
-            current_condition = left_series >= right_series
-        elif operator == "==":
-            current_condition = left_series == right_series
-        elif operator == "!=":
-            current_condition = left_series != right_series
-        else:
-            raise ValueError(
-                f"Unsupported operator: {operator}"
-            )
-
-        signal = signal & current_condition.fillna(False)
-
+def apply_conditions(dataframe,conditions):
+    signal=pd.Series(True,index=dataframe.index)
+    for raw in conditions:
+        c=_legacy_condition_to_canonical(raw)
+        left=_resolve_expression(dataframe,c["left"]); right=_resolve_expression(dataframe,c["right"])
+        op=c["operator"]
+        if op=="<": current=left<right
+        elif op=="<=": current=left<=right
+        elif op==">": current=left>right
+        elif op==">=": current=left>=right
+        elif op=="==": current=left==right
+        elif op=="!=": current=left!=right
+        else: raise ValueError(f"Unsupported operator: {op}")
+        signal &= current.fillna(False)
     return signal

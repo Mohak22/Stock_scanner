@@ -46,20 +46,9 @@ function ResearchConfig() {
   const [conditions, setConditions] = useState([
     {
       id: 1,
-
-      feature: 'rsi',
-      period: 14,
-
+      left: { feature: 'rsi', parameters: { period: 14 }, multiplier: 1 },
       operator: '<',
-
-      rightType: 'value',
-
-      value: 30,
-
-      rightFeature: '',
-      rightPeriod: '',
-
-      rightMultiplier: 1,
+      right: { value: 30, multiplier: 1 },
     },
   ])
 
@@ -175,131 +164,69 @@ function ResearchConfig() {
   }, [])
 
   const getFeatureDefinition = (featureId) =>
-    features.find(
-      (feature) => feature.id === featureId
+    features.find((feature) => feature.id === featureId)
+
+  const buildFeatureExpression = (featureId) => {
+    const feature = getFeatureDefinition(featureId)
+    return {
+      feature: feature?.id || featureId || '',
+      parameters: Object.fromEntries(
+        (feature?.parameters || []).map((parameter) => [
+          parameter.id,
+          parameter.default ?? '',
+        ])
+      ),
+      multiplier: 1,
+    }
+  }
+
+  const setNestedValue = (object, path, value) => {
+    const keys = path.split('.')
+    const result = { ...object }
+    let cursor = result
+    for (let i = 0; i < keys.length - 1; i += 1) {
+      cursor[keys[i]] = { ...(cursor[keys[i]] || {}) }
+      cursor = cursor[keys[i]]
+    }
+    cursor[keys[keys.length - 1]] = value
+    return result
+  }
+
+  const updateCondition = (id, path, value) => {
+    setConditions((current) =>
+      current.map((condition) =>
+        condition.id === id ? setNestedValue(condition, path, value) : condition
+      )
     )
+  }
 
   const addCondition = () => {
-    const defaultFeature = features[0]
-
     setConditions((current) => [
       ...current,
       {
         id: Date.now(),
-
-        feature:
-          defaultFeature?.id || '',
-
-        period:
-          defaultFeature?.parameters?.[0]?.default,
-
+        left: buildFeatureExpression(features[0]?.id || ''),
         operator: '<',
-
-        rightType: 'value',
-
-        value: 0,
-
-        rightFeature: '',
-        rightPeriod: '',
-
-        rightMultiplier: 1,
+        right: { value: 0, multiplier: 1 },
       },
     ])
   }
 
   const removeCondition = (id) => {
     setConditions((current) =>
-      current.filter(
-        (condition) => condition.id !== id
-      )
+      current.filter((condition) => condition.id !== id)
     )
   }
 
-  const updateCondition = (
-    id,
-    field,
-    value
-  ) => {
+  const updateFeature = (id, side, featureId) => {
+    const expression = buildFeatureExpression(featureId)
     setConditions((current) =>
       current.map((condition) =>
-        condition.id === id
-          ? {
-            ...condition,
-            [field]: value,
-          }
-          : condition
+        condition.id === id ? { ...condition, [side]: expression } : condition
       )
     )
   }
 
-  const updateFeature = (
-    id,
-    featureId
-  ) => {
-    const selectedFeature =
-      getFeatureDefinition(featureId)
-
-    const parameter =
-      selectedFeature?.parameters?.[0]
-
-    let defaultValue = 0
-
-    switch (featureId) {
-      case 'rsi':
-        defaultValue = 30
-        break
-
-      case 'volume':
-        defaultValue = 100000
-        break
-
-      case 'delivery_percentage':
-        defaultValue = 50
-        break
-
-      case 'return':
-        defaultValue = 0
-        break
-
-      default:
-        defaultValue = 0
-    }
-
-    setConditions((current) =>
-      current.map((condition) =>
-        condition.id === id
-          ? {
-            ...condition,
-
-            feature: featureId,
-
-            period:
-              parameter?.default ??
-              undefined,
-
-            value:
-              defaultValue,
-
-            rightType:
-              condition.rightType ||
-              'value',
-
-            rightFeature:
-              condition.rightFeature ||
-              '',
-
-            rightPeriod:
-              condition.rightPeriod ??
-              '',
-
-            rightMultiplier:
-              condition.rightMultiplier ??
-              1,
-          }
-          : condition
-      )
-    )
-  }
 
   const toggleHorizon = (horizon) => {
     setEvaluationHorizons((current) => {
@@ -322,180 +249,78 @@ function ResearchConfig() {
 
   const buildResearchRequest = () => {
     const configuredFeatures = []
-
-    const addConfiguredFeature = (
-      featureType,
-      period
-    ) => {
-      if (!featureType) {
-        return
+    const addFeature = (expression) => {
+      if (!expression?.feature) return
+      const config = {
+        type: expression.feature,
+        parameters: { ...(expression.parameters || {}) },
       }
-
-      const normalizedPeriod =
-        period !== undefined &&
-        period !== null &&
-        period !== ''
-          ? Number(period)
-          : undefined
-
-      const alreadyExists =
-        configuredFeatures.some(
-          (feature) =>
-            feature.type === featureType &&
-            feature.period === normalizedPeriod
-        )
-
-      if (!alreadyExists) {
-        configuredFeatures.push({
-          type: featureType,
-          ...(normalizedPeriod !== undefined
-            ? {
-              period: normalizedPeriod,
-            }
-            : {}),
-        })
+      const key = JSON.stringify(config)
+      if (!configuredFeatures.some((item) => JSON.stringify(item) === key)) {
+        configuredFeatures.push(config)
       }
     }
 
     conditions.forEach((condition) => {
-      addConfiguredFeature(
-        condition.feature,
-        condition.period
-      )
-
-      if (
-        condition.rightType ===
-        'feature'
-      ) {
-        addConfiguredFeature(
-          condition.rightFeature,
-          condition.rightPeriod
-        )
-      }
+      addFeature(condition.left)
+      addFeature(condition.right)
     })
 
     let activeStart = developmentStart
     let activeEnd = developmentEnd
-
     if (researchStage === 'validation') {
       activeStart = validationStart
       activeEnd = validationEnd
     }
-
     if (researchStage === 'testing') {
       activeStart = holdoutStart
       activeEnd = holdoutEnd
     }
 
+    const expression = (item) =>
+      item?.feature
+        ? {
+            feature: item.feature,
+            parameters: { ...(item.parameters || {}) },
+            ...(item.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
+              ? { multiplier: Number(item.multiplier) }
+              : {}),
+          }
+        : {
+            value: Number(item?.value),
+            ...(item?.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
+              ? { multiplier: Number(item.multiplier) }
+              : {}),
+          }
+
     return {
       development_start: activeStart,
       development_end: activeEnd,
-
       validation_start: null,
       validation_end: null,
-
       holdout_start: null,
       holdout_end: null,
-
       universe,
-
       features: configuredFeatures,
-
-      entry_conditions: conditions.map(
-        (condition) => {
-          const multiplier =
-            condition.rightMultiplier === '' ||
-            condition.rightMultiplier === null ||
-            condition.rightMultiplier === undefined
-              ? 1
-              : Number(condition.rightMultiplier)
-
-          let rightValue
-
-          if (
-            condition.rightType ===
-            'feature'
-          ) {
-            rightValue = {
-              feature:
-                condition.rightFeature,
-
-              ...(condition.rightPeriod !==
-                undefined &&
-              condition.rightPeriod !== null &&
-              condition.rightPeriod !== ''
-                ? {
-                  period: Number(
-                    condition.rightPeriod
-                  ),
-                }
-                : {}),
-
-              ...(multiplier !== 1
-                ? {
-                  multiplier,
-                }
-                : {}),
-            }
-          } else {
-            const numericValue =
-              Number(condition.value)
-
-            if (multiplier !== 1) {
-              rightValue = {
-                value: numericValue,
-                multiplier,
-              }
-            } else {
-              rightValue =
-                numericValue
-            }
-          }
-
-          return {
-            feature:
-              condition.feature,
-
-            ...(condition.period !==
-              undefined &&
-            condition.period !== null &&
-            condition.period !== ''
-              ? {
-                period: Number(
-                  condition.period
-                ),
-              }
-              : {}),
-
-            operator:
-              condition.operator,
-
-            value: rightValue,
-          }
-        }
-      ),
-
-      evaluation_horizons:
-        evaluationHorizons,
-
+      entry_conditions: conditions.map((condition) => ({
+        left: expression(condition.left),
+        operator: condition.operator,
+        right: expression(condition.right),
+      })),
+      evaluation_horizons: evaluationHorizons,
       signal_timing: {
-        observation:
-          'signal_date_close',
-        entry:
-          'next_available_symbol_session_close',
+        observation: 'signal_date_close',
+        entry: 'next_available_symbol_session_close',
         price_basis: 'CLOSE',
       },
-
       outcome_definition: {
-        anchor:
-          'entry_date',
-        price_basis:
-          'CLOSE',
-        horizons:
-          evaluationHorizons,
+        anchor: 'entry_date',
+        price_basis: 'CLOSE',
+        horizons: evaluationHorizons,
       },
     }
   }
+
 
   const validateResearch = () => {
     let startDate = developmentStart
