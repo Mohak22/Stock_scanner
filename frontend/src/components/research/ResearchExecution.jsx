@@ -1,16 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 
 function ResearchExecution({
+  researchStage,
   isRunning,
   runError,
   onRunResearch,
+  onCancel,
+  onModify,
+  onProceed,
   jobProgress,
   jobStage,
   jobStatus,
 }) {
-  const [displayStage, setDisplayStage] = useState(jobStage || 'Starting research')
+  const [displayStage, setDisplayStage] =
+    useState(jobStage || 'Starting research')
+
   const [stageKey, setStageKey] = useState(0)
-  const previousStageRef = useRef(jobStage)
+
+  const previousStageRef =
+    useRef(jobStage)
 
   useEffect(() => {
     if (!jobStage) return
@@ -26,24 +34,35 @@ function ResearchExecution({
     previousStageRef.current = jobStage
   }, [jobStage])
 
-  const progress = Math.max(0, Math.min(100, jobProgress || 0))
+  const progress = Math.max(
+    0,
+    Math.min(100, jobProgress || 0),
+  )
+
+  const stageLabel =
+    researchStage === 'development'
+      ? 'DEVELOPMENT'
+      : researchStage === 'validation'
+        ? 'VALIDATION'
+        : 'FINAL TESTING'
 
   return (
     <>
       {isRunning && (
         <div className="execution-status">
-
-          {/* HEADER */}
           <div className="execution-status-header">
             <div className="execution-status-title">
               <span className="execution-live-dot" />
-              <span>RESEARCH ENGINE EXECUTING</span>
+              <span>
+                {stageLabel} RUNNING
+              </span>
             </div>
 
-            <strong>{progress}%</strong>
+            <strong>
+              {progress}%
+            </strong>
           </div>
 
-          {/* WINDOWS-STYLE PROGRESS BAR */}
           <div
             className="execution-progress-track"
             role="progressbar"
@@ -56,81 +75,133 @@ function ResearchExecution({
               style={{
                 width: `${progress}%`,
               }}
-            >
-              <div className="execution-progress-glow" />
-            </div>
+            />
           </div>
 
-          {/* CURRENT STAGE */}
-          <div className="execution-stage-window">
+          <div
+            key={stageKey}
+            className="execution-stage-current"
+          >
+            <span className="execution-stage-spinner" />
 
-            <div
-              key={stageKey}
-              className="execution-stage-current"
-            >
-              <span className="execution-stage-spinner" />
+            <div className="execution-stage-content">
+              <span className="execution-stage-label">
+                CURRENT STAGE
+              </span>
 
-              <div className="execution-stage-content">
-                <span className="execution-stage-label">
-                  CURRENT STAGE
-                </span>
-
-                <span className="execution-stage-name">
-                  {displayStage}
-                </span>
-              </div>
+              <span className="execution-stage-name">
+                {displayStage}
+              </span>
             </div>
-
-          </div>
-
-          {/* STATUS META */}
-          <div className="execution-status-meta">
-            <span>
-              {progress < 100
-                ? 'Research engine is processing your configuration'
-                : 'Finalizing research results'}
-            </span>
-
-            <span className="execution-status-badge">
-              {jobStatus || 'RUNNING'}
-            </span>
           </div>
         </div>
       )}
 
       {runError && (
         <div className="run-error">
-          <strong>Research could not be executed</strong>
-          <span>{runError}</span>
-        </div>
-      )}
-
-      <div className="run-section">
-        <div>
           <strong>
-            {isRunning
-              ? 'Running your research...'
-              : 'Ready to test your hypothesis?'}
+            Research could not be executed
           </strong>
 
           <span>
-            {isRunning
-              ? displayStage ||
-                'The backend research engine is processing your configuration.'
-              : 'Running research does not save an experiment automatically.'}
+            {runError}
           </span>
         </div>
+      )}
 
-        <button
-          className="run-button"
-          onClick={onRunResearch}
-          disabled={isRunning}
-        >
-          {isRunning
-            ? `${progress}% RUNNING...`
-            : 'RUN RESEARCH'}
-        </button>
-      </div>
+      {!isRunning && !runError && (
+        <div className="run-section">
+          <div>
+            <strong>
+              {researchStage === 'development' &&
+                'Ready to run development research?'}
+
+              {researchStage === 'validation' &&
+                'Ready to run validation?'}
+
+              {researchStage === 'testing' &&
+                'Ready to run final testing?'}
+            </strong>
+
+            <span>
+              {researchStage === 'development' &&
+                'Only the development period will be processed.'}
+
+              {researchStage === 'validation' &&
+                'Only the validation period will be processed.'}
+
+              {researchStage === 'testing' &&
+                'Only the final holdout period will be processed.'}
+            </span>
+          </div>
+
+          <button
+            className="run-button"
+            onClick={onRunResearch}
+          >
+            {researchStage === 'development' &&
+              'RUN DEVELOPMENT'}
+
+            {researchStage === 'validation' &&
+              'RUN VALIDATION'}
+
+            {researchStage === 'testing' &&
+              'RUN FINAL TESTING'}
+          </button>
+        </div>
+      )}
+
+      {!isRunning &&
+        jobStatus === 'COMPLETED' &&
+        !runError && (
+          <div className="research-stage-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onCancel}
+            >
+              CANCEL
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onModify}
+            >
+              MODIFY
+            </button>
+
+            {researchStage === 'development' && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={onProceed}
+              >
+                PROCEED TO VALIDATION
+              </button>
+            )}
+
+            {researchStage === 'validation' && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={onProceed}
+              >
+                PROCEED TO TESTING
+              </button>
+            )}
+
+            {researchStage === 'testing' && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={onProceed}
+              >
+                SAVE EXPERIMENT
+              </button>
+            )}
+          </div>
+        )}
     </>
   )
 }

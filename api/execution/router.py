@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from api.data.github_data import GitHubStore
+from api.data.github_data import ResearchDataRepository
 from api.execution.models import OrderRequest
 from api.execution.zerodha_client import ZerodhaClient
 
@@ -24,7 +24,7 @@ router = APIRouter(
     tags=["execution"],
 )
 
-store = GitHubStore()
+store = ResearchDataRepository()
 
 EXECUTION_PREFIX = "research/execution/"
 

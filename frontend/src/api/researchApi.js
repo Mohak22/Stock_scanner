@@ -1,23 +1,67 @@
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeout = 5000
+) {
+  const controller = new AbortController()
+
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    timeout
+  )
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(
+        'Research API is not responding on http://127.0.0.1:8000'
+      )
+    }
+
+    throw new Error(
+      'Cannot connect to Research API on http://127.0.0.1:8000'
+    )
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export async function getFeatures() {
-  const response = await fetch(`${API_BASE_URL}/research/features`)
+  const response = await fetchWithTimeout(
+    `${API_BASE_URL}/research/features`
+  )
+
+  const data = await response.json()
 
   if (!response.ok) {
-    throw new Error('Failed to load research features')
+    throw new Error(
+      data.detail ||
+      'Failed to load research indicators'
+    )
   }
 
-  return response.json()
+  return data
 }
 
 export async function getResearchUniverse() {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${API_BASE_URL}/research/universe`
   )
 
+  const data = await response.json()
+
   if (!response.ok) {
-    throw new Error('Failed to load research universe')
+    throw new Error(
+      data.detail ||
+      'Failed to load research universe'
+    )
   }
 
-  return response.json()
+  return data
 }

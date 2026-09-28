@@ -1,4 +1,5 @@
 function DateRangeConfig({
+  researchStage,
   developmentStart,
   developmentEnd,
   validationStart,
@@ -30,12 +31,11 @@ function DateRangeConfig({
     onStartChange,
     onEndChange,
     helpText,
-    optional = false,
   ) => (
     <div className="research-split">
       <div className="research-split-header">
         <span className="research-split-label">
-          {label}{optional ? ' · OPTIONAL' : ''}
+          {label}
         </span>
       </div>
 
@@ -43,7 +43,9 @@ function DateRangeConfig({
         <input
           type="date"
           value={startDate || ''}
-          onChange={(event) => onStartChange(event.target.value)}
+          onChange={(event) =>
+            onStartChange(event.target.value)
+          }
           onClick={openDatePicker}
           disabled={isRunning}
         />
@@ -53,7 +55,9 @@ function DateRangeConfig({
         <input
           type="date"
           value={endDate || ''}
-          onChange={(event) => onEndChange(event.target.value)}
+          onChange={(event) =>
+            onEndChange(event.target.value)
+          }
           onClick={openDatePicker}
           disabled={isRunning}
         />
@@ -69,45 +73,51 @@ function DateRangeConfig({
     <div className="config-card research-period-card">
       <div className="config-card-header">
         <div>
-          <label>Research Evaluation Periods</label>
+          <label>Research Evaluation Period</label>
 
           <span className="field-help">
-            Development is iterative. Validation evaluates an unseen
-            period. Final Holdout is inspected only when the candidate
-            is ready to lock.
+            {researchStage === 'development' &&
+              'Use this period to iteratively develop and refine the candidate.'}
+
+            {researchStage === 'validation' &&
+              'Validation evaluates the candidate on an unseen period.'}
+
+            {researchStage === 'testing' &&
+              'Final testing evaluates the candidate on the untouched holdout period.'}
           </span>
         </div>
       </div>
 
       <div className="research-splits">
-        {renderDateRange(
-          'DEVELOPMENT',
-          developmentStart,
-          developmentEnd,
-          onDevelopmentStartChange,
-          onDevelopmentEndChange,
-          'Primary research period used to develop the hypothesis.',
-        )}
+        {researchStage === 'development' &&
+          renderDateRange(
+            'DEVELOPMENT',
+            developmentStart,
+            developmentEnd,
+            onDevelopmentStartChange,
+            onDevelopmentEndChange,
+            'Primary research period used for iterative development.',
+          )}
 
-        {renderDateRange(
-          'VALIDATION',
-          validationStart,
-          validationEnd,
-          onValidationStartChange,
-          onValidationEndChange,
-          'Unseen period used to evaluate a candidate without touching the holdout.',
-          true,
-        )}
+        {researchStage === 'validation' &&
+          renderDateRange(
+            'VALIDATION',
+            validationStart,
+            validationEnd,
+            onValidationStartChange,
+            onValidationEndChange,
+            'Unseen historical period used to evaluate the candidate.',
+          )}
 
-        {renderDateRange(
-          'FINAL HOLDOUT',
-          holdoutStart,
-          holdoutEnd,
-          onHoldoutStartChange,
-          onHoldoutEndChange,
-          'Final historical evidence. Changing the candidate after inspection creates a new experiment.',
-          true,
-        )}
+        {researchStage === 'testing' &&
+          renderDateRange(
+            'FINAL TESTING',
+            holdoutStart,
+            holdoutEnd,
+            onHoldoutStartChange,
+            onHoldoutEndChange,
+            'Final holdout period. Do not modify the candidate after inspecting this result.',
+          )}
       </div>
     </div>
   )

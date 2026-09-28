@@ -5,89 +5,21 @@ Created on Sun Aug 30 13:17:33 2026
 @author: mohak
 """
 
+# -*- coding: utf-8 -*-
+
 """
 Research Feature Registry
 
-Purpose:
-    Define the features that the Strategy Inventor can use.
-
-Important:
-    This is a FEATURE REGISTRY, not the actual feature calculation engine.
-
-    It tells the frontend:
-        - what features exist
-        - what category they belong to
-        - what parameters they accept
-        - what type of value they produce
-
-    Actual calculation of features will be handled later.
+The registry must contain only features supported by
+research.engine.feature_engine.calculate_features().
 """
 
-
-# ======================================================================
-# FEATURE REGISTRY
-# ======================================================================
-
 FEATURE_REGISTRY = [
-
-    # ------------------------------------------------------------------
-    # PRICE
-    # ------------------------------------------------------------------
-
-    {
-        "id": "open",
-        "name": "Open",
-        "category": "price",
-        "type": "numeric",
-        "parameters": []
-    },
-
-    {
-        "id": "high",
-        "name": "High",
-        "category": "price",
-        "type": "numeric",
-        "parameters": []
-    },
-
-    {
-        "id": "low",
-        "name": "Low",
-        "category": "price",
-        "type": "numeric",
-        "parameters": []
-    },
-
-    {
-        "id": "close",
-        "name": "Close",
-        "category": "price",
-        "type": "numeric",
-        "parameters": []
-    },
-
-
-    # ------------------------------------------------------------------
-    # VOLUME
-    # ------------------------------------------------------------------
 
     {
         "id": "volume",
         "name": "Volume",
         "category": "volume",
-        "type": "numeric",
-        "parameters": []
-    },
-
-
-    # ------------------------------------------------------------------
-    # DELIVERY
-    # ------------------------------------------------------------------
-
-    {
-        "id": "delivery_quantity",
-        "name": "Delivery Quantity",
-        "category": "delivery",
         "type": "numeric",
         "parameters": []
     },
@@ -99,11 +31,6 @@ FEATURE_REGISTRY = [
         "type": "numeric",
         "parameters": []
     },
-
-
-    # ------------------------------------------------------------------
-    # RSI
-    # ------------------------------------------------------------------
 
     {
         "id": "rsi",
@@ -122,11 +49,6 @@ FEATURE_REGISTRY = [
         ]
     },
 
-
-    # ------------------------------------------------------------------
-    # EMA
-    # ------------------------------------------------------------------
-
     {
         "id": "ema",
         "name": "EMA",
@@ -143,11 +65,6 @@ FEATURE_REGISTRY = [
             }
         ]
     },
-
-
-    # ------------------------------------------------------------------
-    # SMA
-    # ------------------------------------------------------------------
 
     {
         "id": "sma",
@@ -166,11 +83,6 @@ FEATURE_REGISTRY = [
         ]
     },
 
-
-    # ------------------------------------------------------------------
-    # RETURNS
-    # ------------------------------------------------------------------
-
     {
         "id": "return",
         "name": "Return",
@@ -188,13 +100,8 @@ FEATURE_REGISTRY = [
         ]
     },
 
-
-    # ------------------------------------------------------------------
-    # VOLUME AVERAGE
-    # ------------------------------------------------------------------
-
     {
-        "id": "volume_average",
+        "id": "average_volume",
         "name": "Average Volume",
         "category": "volume",
         "type": "numeric",
@@ -210,13 +117,8 @@ FEATURE_REGISTRY = [
         ]
     },
 
-
-    # ------------------------------------------------------------------
-    # DELIVERY AVERAGE
-    # ------------------------------------------------------------------
-
     {
-        "id": "delivery_percentage_average",
+        "id": "average_delivery_percentage",
         "name": "Average Delivery %",
         "category": "delivery",
         "type": "numeric",
@@ -231,14 +133,8 @@ FEATURE_REGISTRY = [
             }
         ]
     }
-
 ]
 
 
-# ======================================================================
-# GET ALL FEATURES
-# ======================================================================
-
 def get_feature_registry() -> list:
-
     return FEATURE_REGISTRY

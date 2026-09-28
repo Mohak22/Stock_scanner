@@ -13,7 +13,8 @@ function ResearchConfig() {
   const [features, setFeatures] = useState([])
   const [loadingFeatures, setLoadingFeatures] = useState(true)
   const [featureError, setFeatureError] = useState('')
-
+  const [researchStage, setResearchStage] =
+    useState('development')
   const [jobId, setJobId] = useState(null)
   const [jobProgress, setJobProgress] = useState(0)
   const [jobStage, setJobStage] = useState('')
@@ -201,9 +202,9 @@ function ResearchConfig() {
       current.map((condition) =>
         condition.id === id
           ? {
-              ...condition,
-              [field]: value,
-            }
+            ...condition,
+            [field]: value,
+          }
           : condition
       )
     )
@@ -246,13 +247,13 @@ function ResearchConfig() {
       current.map((condition) =>
         condition.id === id
           ? {
-              ...condition,
-              feature: featureId,
-              period:
-                parameter?.default ??
-                undefined,
-              value: defaultValue,
-            }
+            ...condition,
+            feature: featureId,
+            period:
+              parameter?.default ??
+              undefined,
+            value: defaultValue,
+          }
           : condition
       )
     )
@@ -284,199 +285,129 @@ function ResearchConfig() {
       const alreadyExists =
         configuredFeatures.some(
           (feature) =>
-            feature.type ===
-              condition.feature &&
-            feature.period ===
-              condition.period
+            feature.type === condition.feature &&
+            feature.period === condition.period
         )
 
       if (!alreadyExists) {
         configuredFeatures.push({
           type: condition.feature,
           ...(condition.period !== undefined &&
-          condition.period !== null &&
-          condition.period !== ''
+            condition.period !== null &&
+            condition.period !== ''
             ? {
-                period:
-                  Number(
-                    condition.period
-                  ),
-              }
+              period: Number(condition.period),
+            }
             : {}),
         })
       }
     })
 
+    let activeStart = developmentStart
+    let activeEnd = developmentEnd
+
+    if (researchStage === 'validation') {
+      activeStart = validationStart
+      activeEnd = validationEnd
+    }
+
+    if (researchStage === 'testing') {
+      activeStart = holdoutStart
+      activeEnd = holdoutEnd
+    }
+
     return {
-      development_start:
-        developmentStart,
+      development_start: activeStart,
+      development_end: activeEnd,
 
-      development_end:
-        developmentEnd,
+      validation_start: null,
+      validation_end: null,
 
-      validation_start:
-        validationStart || null,
-
-      validation_end:
-        validationEnd || null,
-
-      holdout_start:
-        holdoutStart || null,
-
-      holdout_end:
-        holdoutEnd || null,
+      holdout_start: null,
+      holdout_end: null,
 
       universe,
 
-      features:
-        configuredFeatures,
+      features: configuredFeatures,
 
-      entry_conditions:
-        conditions.map((condition) => {
-          const numericValue =
-            Number(condition.value)
+      entry_conditions: conditions.map((condition) => {
+        const numericValue = Number(condition.value)
 
-          return {
-            feature:
-              condition.feature,
+        return {
+          feature: condition.feature,
 
-            ...(condition.period !== undefined &&
+          ...(condition.period !== undefined &&
             condition.period !== null &&
             condition.period !== ''
-              ? {
-                  period:
-                    Number(
-                      condition.period
-                    ),
-                }
-              : {}),
+            ? {
+              period: Number(condition.period),
+            }
+            : {}),
 
-            operator:
-              condition.operator,
+          operator: condition.operator,
 
-            value:
-              condition.value !== '' &&
-              !Number.isNaN(
-                numericValue
-              )
-                ? numericValue
-                : condition.value,
-          }
-        }),
+          value:
+            condition.value !== '' &&
+              !Number.isNaN(numericValue)
+              ? numericValue
+              : condition.value,
+        }
+      }),
 
-      evaluation_horizons:
-        evaluationHorizons,
+      evaluation_horizons: evaluationHorizons,
 
       signal_timing: {
-        observation:
-          'signal_date_close',
-        entry:
-          'next_available_symbol_session_close',
+        observation: 'signal_date_close',
+        entry: 'next_available_symbol_session_close',
         price_basis: 'CLOSE',
       },
 
       outcome_definition: {
         anchor: 'entry_date',
         price_basis: 'CLOSE',
-        horizons:
-          evaluationHorizons,
+        horizons: evaluationHorizons,
       },
     }
   }
 
   const validateResearch = () => {
-    if (
-      !developmentStart ||
-      !developmentEnd
-    ) {
-      return 'Please select the development period.'
+    let startDate = developmentStart
+    let endDate = developmentEnd
+
+    if (researchStage === 'validation') {
+      startDate = validationStart
+      endDate = validationEnd
     }
 
-    if (
-      developmentStart >=
-      developmentEnd
-    ) {
-      return (
-        'Development start date must be before ' +
-        'the development end date.'
-      )
+    if (researchStage === 'testing') {
+      startDate = holdoutStart
+      endDate = holdoutEnd
     }
 
-    if (
-      !validationStart ||
-      !validationEnd
-    ) {
-      return 'Please select the validation period.'
+    if (!startDate || !endDate) {
+      return 'Please select the research period.'
     }
 
-    if (
-      validationStart >=
-      validationEnd
-    ) {
-      return (
-        'Validation start date must be before ' +
-        'validation end date.'
-      )
-    }
-
-    if (
-      !holdoutStart ||
-      !holdoutEnd
-    ) {
-      return 'Please select the holdout period.'
-    }
-
-    if (
-      holdoutStart >=
-      holdoutEnd
-    ) {
-      return (
-        'Holdout start date must be before ' +
-        'holdout end date.'
-      )
-    }
-
-    if (
-      developmentEnd >=
-      validationStart
-    ) {
-      return (
-        'Development must finish before validation begins.'
-      )
-    }
-
-    if (
-      validationEnd >=
-      holdoutStart
-    ) {
-      return (
-        'Validation must finish before holdout begins.'
-      )
+    if (startDate >= endDate) {
+      return 'Research start date must be before the end date.'
     }
 
     if (conditions.length === 0) {
-      return (
-        'Add at least one research condition.'
-      )
+      return 'Add at least one research condition.'
     }
 
-    if (
-      evaluationHorizons.length === 0
-    ) {
-      return (
-        'Select at least one evaluation horizon.'
-      )
+    if (evaluationHorizons.length === 0) {
+      return 'Select at least one evaluation horizon.'
     }
 
     if (features.length === 0) {
-      return (
-        'Research indicators are still loading.'
-      )
+      return 'Research indicators are still loading.'
     }
 
     if (
       universe.type !== 'all_stocks' &&
       universe.type !== 'symbols' &&
+      universe.type !== 'major_stocks' &&
       !universe.value
     ) {
       return (
@@ -489,46 +420,32 @@ function ResearchConfig() {
       (!universe.symbols ||
         universe.symbols.length === 0)
     ) {
-      return (
-        'Please enter at least one symbol.'
-      )
+      return 'Please enter at least one symbol.'
     }
 
     for (const condition of conditions) {
       if (!condition.feature) {
-        return (
-          'Every condition must have an indicator.'
-        )
+        return 'Every condition must have an indicator.'
       }
 
       if (!condition.operator) {
-        return (
-          'Every condition must have an operator.'
-        )
+        return 'Every condition must have an operator.'
       }
 
       if (
         condition.value === '' ||
         condition.value === null ||
         condition.value === undefined ||
-        !Number.isFinite(
-          Number(condition.value)
-        )
+        !Number.isFinite(Number(condition.value))
       ) {
-        return (
-          'Every condition must have a valid numeric value.'
-        )
+        return 'Every condition must have a valid numeric value.'
       }
 
       const featureDefinition =
-        getFeatureDefinition(
-          condition.feature
-        )
+        getFeatureDefinition(condition.feature)
 
       if (!featureDefinition) {
-        return (
-          'Every condition must use a valid research indicator.'
-        )
+        return 'Every condition must use a valid research indicator.'
       }
 
       const parameter =
@@ -539,31 +456,24 @@ function ResearchConfig() {
         condition.period !== '' &&
         condition.period != null
       ) {
-        const period =
-          Number(condition.period)
+        const period = Number(condition.period)
 
         if (!Number.isInteger(period)) {
-          return (
-            `${featureDefinition.name} period must be a whole number.`
-          )
+          return `${featureDefinition.name} period must be a whole number.`
         }
 
         if (
           parameter.minimum != null &&
           period < parameter.minimum
         ) {
-          return (
-            `${featureDefinition.name} period must be at least ${parameter.minimum}.`
-          )
+          return `${featureDefinition.name} period must be at least ${parameter.minimum}.`
         }
 
         if (
           parameter.maximum != null &&
           period > parameter.maximum
         ) {
-          return (
-            `${featureDefinition.name} period must be at most ${parameter.maximum}.`
-          )
+          return `${featureDefinition.name} period must be at most ${parameter.maximum}.`
         }
       }
     }
@@ -619,7 +529,7 @@ function ResearchConfig() {
       if (!response.ok) {
         throw new Error(
           data.detail ||
-            'Failed to start research.'
+          'Failed to start research.'
         )
       }
 
@@ -698,7 +608,7 @@ function ResearchConfig() {
                 ) {
                   throw new Error(
                     resultData.detail ||
-                      'Failed to retrieve research result.'
+                    'Failed to retrieve research result.'
                   )
                 }
 
@@ -708,7 +618,7 @@ function ResearchConfig() {
               } catch (error) {
                 setRunError(
                   error.message ||
-                    'Failed to retrieve research result.'
+                  'Failed to retrieve research result.'
                 )
               } finally {
                 setIsRunning(false)
@@ -731,7 +641,7 @@ function ResearchConfig() {
 
               setRunError(
                 job.error ||
-                  'Research execution failed.'
+                'Research execution failed.'
               )
 
               setIsRunning(false)
@@ -777,7 +687,7 @@ function ResearchConfig() {
     } catch (error) {
       setRunError(
         error.message ||
-          'Failed to start research.'
+        'Failed to start research.'
       )
 
       setIsRunning(false)
@@ -812,7 +722,7 @@ function ResearchConfig() {
                   .map((condition) =>
                     String(
                       condition.feature ||
-                        ''
+                      ''
                     ).toUpperCase()
                   )
                   .filter(Boolean)
@@ -828,7 +738,7 @@ function ResearchConfig() {
     if (!response.ok) {
       throw new Error(
         data.detail ||
-          'Failed to save experiment.'
+        'Failed to save experiment.'
       )
     }
 
@@ -850,8 +760,7 @@ function ResearchConfig() {
           <p>
             Select a universe, time periods,
             indicators, conditions and
-            evaluation horizons to test
-            a market hypothesis.
+            evaluation horizons for historical research.
           </p>
 
           {loadingFeatures && (
@@ -891,6 +800,9 @@ function ResearchConfig() {
         />
 
         <DateRangeConfig
+          researchStage={
+            researchStage
+          }
           developmentStart={
             developmentStart
           }
@@ -969,20 +881,49 @@ function ResearchConfig() {
       />
 
       <ResearchExecution
+        researchStage={researchStage}
         isRunning={isRunning}
         runError={runError}
-        onRunResearch={
-          runResearch
-        }
-        jobProgress={
-          jobProgress
-        }
-        jobStage={
-          jobStage
-        }
-        jobStatus={
-          jobStatus
-        }
+        onRunResearch={runResearch}
+        onCancel={() => {
+          setResearchResult(null)
+          setJobStatus(null)
+          setJobProgress(0)
+          setJobStage('')
+        }}
+        onModify={() => {
+          setResearchResult(null)
+          setJobStatus(null)
+          setJobProgress(0)
+          setJobStage('')
+        }}
+        onProceed={() => {
+          if (researchStage === 'development') {
+            setResearchStage('validation')
+            setResearchResult(null)
+            setJobStatus(null)
+            setJobProgress(0)
+            setJobStage('')
+            return
+          }
+
+          if (researchStage === 'validation') {
+            setResearchStage('testing')
+            setResearchResult(null)
+            setJobStatus(null)
+            setJobProgress(0)
+            setJobStage('')
+            return
+          }
+
+          if (researchStage === 'testing') {
+            // Final result remains available for saving.
+            return
+          }
+        }}
+        jobProgress={jobProgress}
+        jobStage={jobStage}
+        jobStatus={jobStatus}
       />
 
       <ResearchResults

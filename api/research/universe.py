@@ -1,3 +1,6 @@
+
+from __future__ import annotations
+
 # -*- coding: utf-8 -*-
 """
 Created on Sun Aug 30 13:25:46 2026
@@ -8,33 +11,42 @@ Created on Sun Aug 30 13:25:46 2026
 """
 Research Universe API
 
-Purpose:
-    Provide research-universe membership for the Research Cockpit.
+Supported research universes:
 
-Supported membership modes:
+    all_stocks
+    macro_sector
+    sector
+    industry
+    basic_industry
+    major_stocks
+    symbols
 
-    current_snapshot
-        Uses research_universe.csv.
+Major Stocks
+------------
 
-    point_in_time
-        Uses research_universe_history.csv.
+Major Stocks is represented by the current Nifty 500
+constituent universe.
 
-Important:
-    The current snapshot is NOT historical membership.
-    Point-in-time research must use dated membership records.
+The Nifty 500 constituent list is stored separately from
+research_universe.csv so that the universe definition is explicit
+and reproducible.
 """
-
-from __future__ import annotations
 
 import pandas as pd
 
 from api.data.github_data import ResearchDataRepository
 
 
-RESEARCH_UNIVERSE_PATH = "research_universe.csv"
+RESEARCH_UNIVERSE_PATH = (
+    "research_universe.csv"
+)
 
 POINT_IN_TIME_UNIVERSE_PATH = (
     "research_universe_history.csv"
+)
+
+MAJOR_STOCKS_UNIVERSE_PATH = (
+    "nifty_500_universe.csv"
 )
 
 
@@ -43,6 +55,7 @@ def _normalise_symbols(
 ) -> pd.DataFrame:
 
     if "SYMBOL" not in dataframe.columns:
+
         raise ValueError(
             "Research universe data must contain a SYMBOL column."
         )
@@ -82,6 +95,31 @@ def load_research_universe_dataframe() -> pd.DataFrame:
     return dataframe
 
 
+def load_major_stocks_universe_dataframe() -> pd.DataFrame:
+
+    repository = ResearchDataRepository()
+
+    dataframe = repository.load_csv(
+        MAJOR_STOCKS_UNIVERSE_PATH
+    )
+
+    dataframe = _normalise_symbols(
+        dataframe
+    )
+
+    dataframe = dataframe.drop_duplicates(
+        subset=["SYMBOL"]
+    ).reset_index(drop=True)
+
+    if dataframe.empty:
+
+        raise ValueError(
+            "Nifty 500 universe is empty."
+        )
+
+    return dataframe
+
+
 def load_point_in_time_universe_dataframe() -> pd.DataFrame:
 
     repository = ResearchDataRepository()
@@ -105,6 +143,7 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if missing_columns:
+
         raise ValueError(
             "Point-in-time universe is missing required "
             f"columns: {sorted(missing_columns)}"
@@ -135,10 +174,10 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if invalid_ranges.any():
+
         raise ValueError(
             "Point-in-time universe contains membership "
-            "ranges where EFFECTIVE_FROM is after "
-            "EFFECTIVE_TO."
+            "ranges where EFFECTIVE_FROM is after EFFECTIVE_TO."
         )
 
     duplicate_membership = dataframe.duplicated(
@@ -151,14 +190,11 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if duplicate_membership.any():
+
         raise ValueError(
             "Point-in-time universe contains duplicate "
             "membership intervals."
         )
-
-    # ----------------------------------------------------------
-    # Reject overlapping membership intervals
-    # ----------------------------------------------------------
 
     ordered = dataframe.sort_values(
         [
@@ -169,7 +205,8 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     ).copy()
 
     ordered["PREVIOUS_EFFECTIVE_TO"] = (
-        ordered.groupby("SYMBOL")["EFFECTIVE_TO"]
+        ordered
+        .groupby("SYMBOL")["EFFECTIVE_TO"]
         .shift(1)
     )
 
@@ -182,6 +219,7 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if overlapping.any():
+
         raise ValueError(
             "Point-in-time universe contains overlapping "
             "membership intervals for at least one symbol."
@@ -196,7 +234,9 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
 
 def get_research_universe_symbols() -> set[str]:
 
-    dataframe = load_research_universe_dataframe()
+    dataframe = (
+        load_research_universe_dataframe()
+    )
 
     return set(
         dataframe["SYMBOL"].tolist()
@@ -205,7 +245,9 @@ def get_research_universe_symbols() -> set[str]:
 
 def load_research_universe() -> list[dict]:
 
-    dataframe = load_research_universe_dataframe()
+    dataframe = (
+        load_research_universe_dataframe()
+    )
 
     dataframe = dataframe.fillna("")
 
@@ -218,9 +260,16 @@ def get_research_universe() -> dict:
 
     rows = load_research_universe()
 
+    major_stocks = (
+        load_major_stocks_universe_dataframe()
+    )
+
     return {
         "universe": rows,
         "total_stocks": len(rows),
+        "major_stocks_total": len(
+            major_stocks
+        ),
         "membership_basis": (
             "current_snapshot_not_point_in_time"
         ),
@@ -231,7 +280,26 @@ def apply_current_snapshot_universe(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    universe = load_research_universe_dataframe()
+    universe = (
+        load_research_universe_dataframe()
+    )
+
+    symbols = set(
+        universe["SYMBOL"].tolist()
+    )
+
+    return dataframe[
+        dataframe["SYMBOL"].isin(symbols)
+    ].copy()
+
+
+def apply_major_stocks_universe(
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+
+    universe = (
+        load_major_stocks_universe_dataframe()
+    )
 
     symbols = set(
         universe["SYMBOL"].tolist()

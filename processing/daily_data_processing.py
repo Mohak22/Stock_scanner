@@ -33,6 +33,10 @@ It does NOT:
 
 
 from datetime import date, timedelta
+import io
+
+import pandas as pd
+import requests
 
 
 # ======================================================================
@@ -273,7 +277,15 @@ class Daily_Data_Preparation:
 
         self._update_research_universe()
 
+        # ==============================================================
+        # STEP 7
+        # NIFTY 500 UNIVERSE
+        # ==============================================================
 
+        self._update_nifty_500_universe(
+            data_as_of=data_as_of
+        )
+        
         # ==============================================================
         # COMPLETE
         # ==============================================================
@@ -697,7 +709,176 @@ class Daily_Data_Preparation:
 
         collector.collect_and_validate()
 
+    # ==================================================================
+    # STEP 7
+    # NIFTY 500 UNIVERSE
+    # ==================================================================
 
+    def _update_nifty_500_universe(
+        self,
+        data_as_of: date
+    ):
+        """
+        Download the current Nifty 500 constituent list from NSE
+        and save it into STOCK_SCANNER_DATA.
+
+        The research layer consumes this prepared file and does not
+        fetch Nifty 500 constituents itself.
+        """
+
+        print(
+            "\n"
+            + "-" * 70
+        )
+
+        print(
+            "STEP 7 : NIFTY 500 UNIVERSE"
+        )
+
+        print(
+            "-" * 70
+        )
+
+        url = (
+            "https://nsearchives.nseindia.com/"
+            "content/indices/ind_nifty500list.csv"
+        )
+
+        output_path = (
+            STOCK_SCANNER_DATA_DIRECTORY
+            / "nifty_500_universe.csv"
+        )
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/153.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/csv,text/plain,*/*",
+        }
+
+        print(
+            "Fetching current Nifty 500 constituents from NSE..."
+        )
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+        dataframe = pd.read_csv(
+            io.StringIO(response.text)
+        )
+
+        dataframe.columns = [
+            str(column).strip()
+            for column in dataframe.columns
+        ]
+
+        # --------------------------------------------------------------
+        # NORMALIZE COLUMN NAMES
+        # --------------------------------------------------------------
+
+        symbol_column = next(
+            (
+                column
+                for column in dataframe.columns
+                if column.strip().lower() == "symbol"
+            ),
+            None
+        )
+
+        company_column = next(
+            (
+                column
+                for column in dataframe.columns
+                if column.strip().lower()
+                in {
+                    "company name",
+                    "company_name",
+                    "company"
+                }
+            ),
+            None
+        )
+
+        if symbol_column is None:
+            raise RuntimeError(
+                "NSE Nifty 500 CSV does not contain a Symbol column."
+            )
+
+        # --------------------------------------------------------------
+        # BUILD CLEAN RESEARCH UNIVERSE FILE
+        # --------------------------------------------------------------
+
+        output = pd.DataFrame()
+
+        output["SYMBOL"] = (
+            dataframe[symbol_column]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        if company_column is not None:
+            output["COMPANY_NAME"] = (
+                dataframe[company_column]
+                .astype(str)
+                .str.strip()
+            )
+
+        output = (
+            output[
+                output["SYMBOL"].notna()
+                & output["SYMBOL"].ne("")
+                & output["SYMBOL"].ne("NAN")
+            ]
+            .drop_duplicates(
+                subset=["SYMBOL"]
+            )
+            .sort_values(
+                "SYMBOL"
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        if output.empty:
+            raise RuntimeError(
+                "NSE Nifty 500 download returned no valid symbols."
+            )
+
+        # --------------------------------------------------------------
+        # SAVE
+        # --------------------------------------------------------------
+
+        output.to_csv(
+            output_path,
+            index=False
+        )
+
+        print(
+            f"Nifty 500 universe saved: "
+            f"{output_path}"
+        )
+
+        print(
+            f"Constituents saved: "
+            f"{len(output)}"
+        )
+
+        print(
+            f"As-of preparation date: "
+            f"{data_as_of.strftime('%d-%m-%Y')}"
+        )
+        
 # ======================================================================
 # STANDALONE TEST
 # ======================================================================

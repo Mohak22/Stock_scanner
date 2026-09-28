@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # -*- coding: utf-8 -*-
 """
 Created on Mon Sep 21 11:07:09 2026
@@ -5,13 +7,12 @@ Created on Mon Sep 21 11:07:09 2026
 @author: mohak
 """
 
-from __future__ import annotations
-
 from typing import Any, Callable
+import threading
+import time
 
 import pandas as pd
 from fastapi import HTTPException
-
 from datetime import datetime, timezone
 
 from api.data.github_data import ResearchDataRepository
@@ -36,10 +37,225 @@ from research.engine.temporal_evaluation import (
     generate_signal_mask,
 )
 
+
 RESEARCH_ENGINE_VERSION = "1.0.0"
 
 ProgressCallback = Callable[[int, str], None]
 
+
+# ============================================================
+# GRANULAR PROGRESS SYSTEM
+# ============================================================
+
+class ProgressTracker:
+    """
+    Duration-aware progress tracker.
+
+    Each expensive research operation receives its own progress range.
+
+    Example:
+
+        Loading historical data
+        5% -------------------------- 34%
+                         actual work
+        completed -> 35%
+
+    The displayed title remains unchanged while the progress
+    slowly advances inside the allocated range.
+
+    The progress is intentionally capped before the actual
+    operation finishes. This prevents the UI from showing
+    100% while the backend is still working.
+    """
+
+    def __init__(
+        self,
+        callback: ProgressCallback | None = None,
+    ) -> None:
+        self.callback = callback
+        self._lock = threading.Lock()
+        self._last_progress = 0
+
+    def report(
+        self,
+        progress: float,
+        stage: str,
+    ) -> None:
+        """
+        Report progress while guaranteeing that progress never
+        moves backwards.
+        """
+
+        if self.callback is None:
+            return
+
+        progress = max(0.0, min(100.0, progress))
+
+        with self._lock:
+            progress = max(
+                progress,
+                float(self._last_progress),
+            )
+
+            integer_progress = int(round(progress))
+
+            if integer_progress < self._last_progress:
+                return
+
+            self._last_progress = integer_progress
+
+        self.callback(
+            integer_progress,
+            stage,
+        )
+
+    def run(
+        self,
+        *,
+        start: int,
+        end: int,
+        stage: str,
+        function,
+        expected_duration: float,
+        minimum_tick: float = 0.25,
+        easing: str = "ease_out",
+    ):
+        """
+        Execute a blocking function while gradually advancing
+        progress through the allocated range.
+
+        `expected_duration` is only used for visual progress.
+        The actual function controls when the stage completes.
+
+        The progress never reaches `end` until the real function
+        has returned.
+        """
+
+        start = int(start)
+        end = int(end)
+
+        if end <= start:
+            return function()
+
+        # The maximum progress while the real function is still
+        # running. Keep a small safety margin so we never show
+        # the stage as completed prematurely.
+        visual_end = max(
+            start,
+            end - 1,
+        )
+
+        result_holder: dict[str, Any] = {}
+        error_holder: dict[str, BaseException] = {}
+        finished = threading.Event()
+
+        def worker() -> None:
+            try:
+                result_holder["result"] = function()
+            except BaseException as exc:
+                error_holder["error"] = exc
+            finally:
+                finished.set()
+
+        worker_thread = threading.Thread(
+            target=worker,
+            daemon=True,
+        )
+
+        worker_thread.start()
+
+        # ----------------------------------------------------
+        # INITIAL STAGE PROGRESS
+        # ----------------------------------------------------
+
+        self.report(
+            start,
+            stage,
+        )
+
+        # ----------------------------------------------------
+        # DURATION-AWARE VISUAL PROGRESS
+        # ----------------------------------------------------
+
+        expected_duration = max(
+            float(expected_duration),
+            1.0,
+        )
+
+        start_time = time.monotonic()
+
+        while not finished.is_set():
+
+            elapsed = time.monotonic() - start_time
+
+            ratio = elapsed / expected_duration
+
+            # Never visually finish the stage before the real
+            # operation finishes.
+            ratio = min(
+                ratio,
+                0.97,
+            )
+
+            if easing == "ease_out":
+                # Fast initial movement, then increasingly slower.
+                # This resembles real progress better than a
+                # perfectly linear fake timer.
+                eased_ratio = 1.0 - ((1.0 - ratio) ** 2)
+            elif easing == "ease_in_out":
+                if ratio < 0.5:
+                    eased_ratio = 2.0 * ratio * ratio
+                else:
+                    eased_ratio = (
+                        1.0
+                        - ((-2.0 * ratio + 2.0) ** 2) / 2.0
+                    )
+            else:
+                eased_ratio = ratio
+
+            current_progress = (
+                start
+                + ((visual_end - start) * eased_ratio)
+            )
+
+            self.report(
+                current_progress,
+                stage,
+            )
+
+            # The progress ticker itself should not hammer the
+            # SSE endpoint.
+            finished.wait(
+                timeout=max(
+                    minimum_tick,
+                    0.25,
+                )
+            )
+
+        worker_thread.join()
+
+        # ----------------------------------------------------
+        # REAL OPERATION FAILED
+        # ----------------------------------------------------
+
+        if "error" in error_holder:
+            raise error_holder["error"]
+
+        # ----------------------------------------------------
+        # REAL OPERATION FINISHED
+        # ----------------------------------------------------
+
+        self.report(
+            end,
+            stage,
+        )
+
+        return result_holder.get("result")
+
+
+# ============================================================
+# MAIN RESEARCH EXECUTOR
+# ============================================================
 
 def execute_research(
     request: ResearchRequest,
@@ -50,27 +266,72 @@ def execute_research(
     """
     Execute the existing Research Cockpit research pipeline.
 
-    This is intentionally the same pipeline that previously lived inside
-    POST /research/run. The HTTP layer will later call this function from
-    a background job.
+    Progress is intentionally granular and duration-aware.
+
+    The actual research computation remains synchronous from the
+    caller's perspective. Long-running operations are wrapped in
+    ProgressTracker so the frontend receives realistic intermediate
+    progress while the operation is executing.
     """
 
+    tracker = ProgressTracker(
+        callback=progress_callback,
+    )
+
+    # ----------------------------------------------------------
+    # 0. START
+    # ----------------------------------------------------------
+
+    tracker.report(
+        1,
+        "Starting research",
+    )
+
+    # ----------------------------------------------------------
+    # 1. REPRODUCIBILITY METADATA
+    # ----------------------------------------------------------
+
     data_revision = repository.get_revision()
+
+    tracker.report(
+        2,
+        "Starting research",
+    )
 
     universe_revision = repository.get_file_revision(
         "research_universe.csv"
     )
 
-    run_timestamp = datetime.now(timezone.utc).isoformat()
-    
-    def report(progress: int, stage: str) -> None:
-        if progress_callback is not None:
-            progress_callback(progress, stage)
+    tracker.report(
+        3,
+        "Starting research",
+    )
 
+    run_timestamp = datetime.now(
+        timezone.utc
+    ).isoformat()
 
     # ----------------------------------------------------------
-    # 1. VALIDATE DATE RANGE
+    # PROGRESS HELPER
     # ----------------------------------------------------------
+
+    def report(
+        progress: int,
+        stage: str,
+    ) -> None:
+        tracker.report(
+            progress,
+            stage,
+        )
+
+    # ----------------------------------------------------------
+    # 2. VALIDATE DATE RANGE
+    # ----------------------------------------------------------
+
+    report(
+        4,
+        "Validating research configuration",
+    )
 
     if request.development_start > request.development_end:
         raise HTTPException(
@@ -86,7 +347,6 @@ def execute_research(
         and request.validation_end is not None
         and request.validation_start > request.validation_end
     ):
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -100,7 +360,6 @@ def execute_research(
         and request.holdout_end is not None
         and request.holdout_start > request.holdout_end
     ):
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -109,8 +368,13 @@ def execute_research(
             ),
         )
 
+    report(
+        5,
+        "Validating research configuration",
+    )
+
     # ----------------------------------------------------------
-    # 2. CONVERT REQUEST DATES
+    # 3. CONVERT REQUEST DATES
     # ----------------------------------------------------------
 
     development_start = pd.Timestamp(
@@ -145,8 +409,13 @@ def execute_research(
         else None
     )
 
+    report(
+        6,
+        "Preparing research configuration",
+    )
+
     # ----------------------------------------------------------
-    # 3. CONVERT REQUEST MODELS
+    # 4. CONVERT REQUEST MODELS
     # ----------------------------------------------------------
 
     features = [
@@ -169,7 +438,6 @@ def execute_research(
     )
 
     if not horizons:
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -178,8 +446,10 @@ def execute_research(
             ),
         )
 
-    if any(horizon <= 0 for horizon in horizons):
-
+    if any(
+        horizon <= 0
+        for horizon in horizons
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -189,10 +459,17 @@ def execute_research(
         )
 
     # Remove duplicate horizons while preserving order.
-    horizons = list(dict.fromkeys(horizons))
+    horizons = list(
+        dict.fromkeys(horizons)
+    )
+
+    report(
+        7,
+        "Preparing research configuration",
+    )
 
     # ----------------------------------------------------------
-    # 4. DETERMINE REQUESTED RANGE
+    # 5. DETERMINE REQUESTED RANGE
     # ----------------------------------------------------------
 
     requested_dates = [
@@ -201,37 +478,64 @@ def execute_research(
     ]
 
     if validation_start is not None:
-        requested_dates.append(validation_start)
+        requested_dates.append(
+            validation_start
+        )
 
     if validation_end is not None:
-        requested_dates.append(validation_end)
+        requested_dates.append(
+            validation_end
+        )
 
     if holdout_start is not None:
-        requested_dates.append(holdout_start)
+        requested_dates.append(
+            holdout_start
+        )
 
     if holdout_end is not None:
-        requested_dates.append(holdout_end)
+        requested_dates.append(
+            holdout_end
+        )
 
-    requested_start = min(requested_dates)
-    requested_end = max(requested_dates)
+    requested_start = min(
+        requested_dates
+    )
+
+    requested_end = max(
+        requested_dates
+    )
+
+    report(
+        8,
+        "Preparing research period",
+    )
 
     # ----------------------------------------------------------
-    # 5. FEATURE LOOKBACK
+    # 6. FEATURE LOOKBACK
     # ----------------------------------------------------------
 
-    # Feature requirements are expressed as observations.  The data source is
-    # date-addressed, so the existing calendar buffer remains a conservative
-    # retrieval buffer rather than a statement of indicator semantics.
     try:
-        lookback_requirements = feature_lookback_requirements(features)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        lookback_requirements = (
+            feature_lookback_requirements(
+                features
+            )
+        )
+    except (
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
 
     feature_periods = []
 
     for feature in features:
 
-        period = feature.get("period")
+        period = feature.get(
+            "period"
+        )
 
         if period is not None:
 
@@ -261,10 +565,15 @@ def execute_research(
                     ),
                 )
 
-            feature_periods.append(period)
+            feature_periods.append(
+                period
+            )
 
     max_feature_period = max(
-        [*feature_periods, *lookback_requirements.values()],
+        [
+            *feature_periods,
+            *lookback_requirements.values(),
+        ],
         default=1,
     )
 
@@ -275,14 +584,23 @@ def execute_research(
 
     data_start = (
         requested_start
-        - pd.Timedelta(days=lookback_days)
+        - pd.Timedelta(
+            days=lookback_days
+        )
+    )
+
+    report(
+        9,
+        "Preparing historical data range",
     )
 
     # ----------------------------------------------------------
-    # 6. FORWARD-RETURN BUFFER
+    # 7. FORWARD-RETURN BUFFER
     # ----------------------------------------------------------
 
-    max_horizon = max(horizons)
+    max_horizon = max(
+        horizons
+    )
 
     forward_buffer_days = max(
         15,
@@ -291,19 +609,33 @@ def execute_research(
 
     data_end = (
         requested_end
-        + pd.Timedelta(days=forward_buffer_days)
+        + pd.Timedelta(
+            days=forward_buffer_days
+        )
     )
 
-    # ----------------------------------------------------------
-    report(10, "Loading historical data")
-    # 7. LOAD STOCK HISTORICAL DATA
-    # ----------------------------------------------------------
+    report(
+        10,
+        "Preparing historical data range",
+    )
+
+    # ==========================================================
+    # 8. LOAD STOCK HISTORICAL DATA
+    # ==========================================================
 
     try:
 
-        data = repository.load_bhavcopy(
-            data_start.date().isoformat(),
-            data_end.date().isoformat(),
+        data = tracker.run(
+            start=11,
+            end=35,
+            stage="Loading historical data",
+            expected_duration=25.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: repository.load_bhavcopy(
+                data_start.date().isoformat(),
+                data_end.date().isoformat(),
+            ),
         )
 
     except ValueError as exc:
@@ -320,12 +652,16 @@ def execute_research(
             detail=str(exc),
         ) from exc
 
-    # ----------------------------------------------------------
-    # 8. VALIDATE / NORMALIZE STOCK DATA
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 9. VALIDATE / NORMALIZE STOCK DATA
+    # ==========================================================
+
+    report(
+        36,
+        "Validating historical data",
+    )
 
     if data.empty:
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -334,8 +670,12 @@ def execute_research(
             ),
         )
 
-    if "TIMESTAMP" not in data.columns:
+    report(
+        37,
+        "Validating historical data",
+    )
 
+    if "TIMESTAMP" not in data.columns:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -344,6 +684,11 @@ def execute_research(
             ),
         )
 
+    report(
+        38,
+        "Normalizing historical data",
+    )
+
     data["TIMESTAMP"] = pd.to_datetime(
         data["TIMESTAMP"],
         errors="coerce",
@@ -351,12 +696,18 @@ def execute_research(
 
     data = (
         data
-        .dropna(subset=["TIMESTAMP"])
+        .dropna(
+            subset=["TIMESTAMP"]
+        )
         .copy()
     )
 
-    if "SYMBOL" not in data.columns:
+    report(
+        39,
+        "Normalizing historical data",
+    )
 
+    if "SYMBOL" not in data.columns:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -372,26 +723,38 @@ def execute_research(
         .str.upper()
     )
 
-    # ----------------------------------------------------------
-    report(20, "Applying universe")
-    # 9. APPLY UNIVERSE
-    # ----------------------------------------------------------
-    
+    report(
+        40,
+        "Historical data ready",
+    )
+
+    # ==========================================================
+    # 10. APPLY UNIVERSE
+    # ==========================================================
+
+    report(
+        41,
+        "Applying universe",
+    )
+
     if request.universe.type == "all_stocks":
 
         try:
+
             data = apply_research_universe(
                 data,
                 membership_basis,
             )
 
         except ValueError as exc:
+
             raise HTTPException(
                 status_code=400,
                 detail=str(exc),
             ) from exc
 
         except RuntimeError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=str(exc),
@@ -403,48 +766,98 @@ def execute_research(
         "industry",
         "basic_industry",
     }:
+
         try:
-            research_universe = load_research_universe_dataframe()
+
+            research_universe = (
+                load_research_universe_dataframe()
+            )
+
         except ValueError as exc:
+
             raise HTTPException(
                 status_code=500,
                 detail=str(exc),
             ) from exc
+
         except RuntimeError as exc:
+
             raise HTTPException(
                 status_code=502,
                 detail=str(exc),
             ) from exc
 
         column_map = {
-            "macro_sector": "MACRO_ECONOMIC_SECTOR",
-            "sector": "SECTOR",
-            "industry": "INDUSTRY",
-            "basic_industry": "BASIC_INDUSTRY",
+            "macro_sector":
+                "MACRO_ECONOMIC_SECTOR",
+            "sector":
+                "SECTOR",
+            "industry":
+                "INDUSTRY",
+            "basic_industry":
+                "BASIC_INDUSTRY",
         }
 
-        column = column_map[request.universe.type]
-        selected_value = (request.universe.value or "").strip()
+        column = column_map[
+            request.universe.type
+        ]
+
+        selected_value = (
+            request.universe.value or ""
+        ).strip()
 
         if not selected_value:
             raise HTTPException(
                 status_code=400,
-                detail=f"A value is required for {request.universe.type}.",
+                detail=(
+                    "A value is required for "
+                    f"{request.universe.type}."
+                ),
             )
 
         selected_symbols = set(
             research_universe.loc[
-                research_universe[column].astype(str).str.strip()
+                research_universe[column]
+                .astype(str)
+                .str.strip()
                 == selected_value,
                 "SYMBOL",
             ]
         )
 
         data = data[
-            data["SYMBOL"].isin(selected_symbols)
+            data["SYMBOL"].isin(
+                selected_symbols
+            )
         ].copy()
 
+    elif request.universe.type == "major_stocks":
+
+        try:
+            from api.research.universe import (
+                apply_major_stocks_universe,
+            )
+
+            data = apply_major_stocks_universe(
+                data
+            )
+
+        except ValueError as exc:
+
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+
+        except RuntimeError as exc:
+
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+            
     elif request.universe.type == "symbols":
+
         symbols = {
             symbol.upper().strip()
             for symbol in request.universe.symbols
@@ -454,21 +867,31 @@ def execute_research(
         if not symbols:
             raise HTTPException(
                 status_code=400,
-                detail="At least one symbol is required.",
+                detail=(
+                    "At least one symbol "
+                    "is required."
+                ),
             )
 
         data = data[
-            data["SYMBOL"].isin(symbols)
+            data["SYMBOL"].isin(
+                symbols
+            )
         ].copy()
 
     else:
+
         raise HTTPException(
             status_code=400,
             detail="Unsupported universe type.",
         )
 
-    if data.empty:
+    report(
+        44,
+        "Universe applied",
+    )
 
+    if data.empty:
         raise HTTPException(
             status_code=400,
             detail=(
@@ -477,9 +900,14 @@ def execute_research(
             ),
         )
 
-    # ----------------------------------------------------------
-    # 10. SORT STOCK DATA
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 11. SORT STOCK DATA
+    # ==========================================================
+
+    report(
+        45,
+        "Sorting research data",
+    )
 
     data = (
         data
@@ -489,19 +917,33 @@ def execute_research(
                 "TIMESTAMP",
             ]
         )
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
     )
 
-    # ----------------------------------------------------------
-    report(35, "Calculating features")
-    # 11. CALCULATE FEATURES
-    # ----------------------------------------------------------
+    report(
+        47,
+        "Research data sorted",
+    )
+
+    # ==========================================================
+    # 12. CALCULATE FEATURES
+    # ==========================================================
 
     try:
 
-        data = calculate_features(
-            dataframe=data,
-            features=features,
+        data = tracker.run(
+            start=48,
+            end=66,
+            stage="Calculating indicators",
+            expected_duration=18.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: calculate_features(
+                dataframe=data,
+                features=features,
+            ),
         )
 
     except Exception as exc:
@@ -514,13 +956,14 @@ def execute_research(
             ),
         ) from exc
 
-    # ----------------------------------------------------------
-    report(45, "Loading market benchmark")
-    # 12. LOAD MARKET BENCHMARK FROM GITHUB
-    #
-    # GitHub STOCK_SCANNER_DATA/main is the
-    # single source of truth for research data.
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 13. LOAD MARKET BENCHMARK
+    # ==========================================================
+
+    report(
+        67,
+        "Loading NIFTY benchmark",
+    )
 
     market_data_path = (
         "research/market_context/indices/"
@@ -529,10 +972,16 @@ def execute_research(
 
     try:
 
-        market_dataframe = (
-            repository.load_parquet(
+        market_dataframe = tracker.run(
+            start=68,
+            end=74,
+            stage="Loading NIFTY benchmark",
+            expected_duration=7.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: repository.load_parquet(
                 market_data_path
-            )
+            ),
         )
 
         market_data = load_market_index(
@@ -562,7 +1011,6 @@ def execute_research(
         ) from exc
 
     if market_data.empty:
-
         raise HTTPException(
             status_code=400,
             detail=(
@@ -572,12 +1020,14 @@ def execute_research(
             ),
         )
 
-    # ----------------------------------------------------------
-    # 12A. NORMALIZE MARKET DATA
-    #
-    # The market loader may return Date while the
-    # regime engine expects TIMESTAMP.
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 14. NORMALIZE MARKET DATA
+    # ==========================================================
+
+    report(
+        75,
+        "Normalizing NIFTY benchmark",
+    )
 
     market_data = market_data.copy()
 
@@ -601,37 +1051,54 @@ def execute_research(
                 ),
             )
 
-    market_data["TIMESTAMP"] = pd.to_datetime(
-        market_data["TIMESTAMP"],
-        errors="coerce",
-    ).dt.normalize()
+    report(
+        76,
+        "Normalizing NIFTY benchmark",
+    )
+
+    market_data["TIMESTAMP"] = (
+        pd.to_datetime(
+            market_data["TIMESTAMP"],
+            errors="coerce",
+        ).dt.normalize()
+    )
 
     market_data = (
         market_data
-        .dropna(subset=["TIMESTAMP"])
+        .dropna(
+            subset=["TIMESTAMP"]
+        )
         .sort_values("TIMESTAMP")
         .drop_duplicates(
             subset=["TIMESTAMP"],
             keep="last",
         )
-        .reset_index(drop=True)
+        .reset_index(
+            drop=True
+        )
     )
 
-    report(60, "Calculating market regime")
-    # 14. CALCULATE CAUSAL MARKET REGIME
-    #
-    # IMPORTANT:
-    #
-    # The regime uses only market prices available
-    # on or before each signal date.
-    #
-    # It does NOT use forward returns.
-    # ----------------------------------------------------------
+    report(
+        77,
+        "NIFTY benchmark ready",
+    )
+
+    # ==========================================================
+    # 15. CALCULATE CAUSAL MARKET REGIME
+    # ==========================================================
 
     try:
 
-        market_regime_data = calculate_market_regime(
-            market_dataframe=market_data,
+        market_regime_data = tracker.run(
+            start=78,
+            end=83,
+            stage="Calculating market regime",
+            expected_duration=6.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: calculate_market_regime(
+                market_dataframe=market_data,
+            ),
         )
 
     except ValueError as exc:
@@ -644,27 +1111,56 @@ def execute_research(
             ),
         ) from exc
 
-    # ----------------------------------------------------------
-    report(70, "Generating causal signals")
-    # Conditions are evaluated once, after causal feature calculation and
-    # before any entry/outcome evaluation.
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 16. GENERATE CAUSAL SIGNALS
+    # ==========================================================
+
+    report(
+        84,
+        "Generating signals",
+    )
+
     try:
-        signal_mask = generate_signal_mask(data, conditions)
+
+        signal_mask = tracker.run(
+            start=84,
+            end=88,
+            stage="Generating signals",
+            expected_duration=5.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: generate_signal_mask(
+                data,
+                conditions,
+            ),
+        )
+
     except Exception as exc:
+
         raise HTTPException(
             status_code=400,
-            detail=f"Signal generation failed: {exc}",
+            detail=(
+                "Signal generation failed: "
+                f"{exc}"
+            ),
         ) from exc
 
     regime_merge_data = market_regime_data[
-        ["TIMESTAMP", "MARKET_TRAILING_RETURN", "MARKET_REGIME"]
+        [
+            "TIMESTAMP",
+            "MARKET_TRAILING_RETURN",
+            "MARKET_REGIME",
+        ]
     ].copy()
 
-    # ----------------------------------------------------------
-    report(85, "Building split analysis")
-    # 17. BUILD SPLIT RESULTS
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 17. BUILD SPLIT ANALYSIS
+    # ==========================================================
+
+    report(
+        89,
+        "Evaluating outcomes",
+    )
 
     def build_split_result(
         split_name: str,
@@ -678,7 +1174,9 @@ def execute_research(
 
         split_end_exclusive = (
             split_end
-            + pd.Timedelta(days=1)
+            + pd.Timedelta(
+                days=1
+            )
         )
 
         split_mask = (
@@ -696,11 +1194,15 @@ def execute_research(
         )
 
         # ------------------------------------------------------
-        # Evaluate entries and outcomes against this stage.  The evaluator
-        # retains a signal but marks each horizon independently ineligible
-        # when its entry/outcome would cross the boundary.
+        # Evaluate entries and outcomes
         # ------------------------------------------------------
-        stage = TemporalStage.create(split_name, split_start, split_end)
+
+        stage = TemporalStage.create(
+            split_name,
+            split_start,
+            split_end,
+        )
+
         signal_data = evaluate_temporal_stage(
             dataframe=data,
             signal_mask=signal_mask,
@@ -708,7 +1210,9 @@ def execute_research(
             horizons=horizons,
             market_dataframe=market_data,
         )
+
         if not signal_data.empty:
+
             signal_data = signal_data.merge(
                 regime_merge_data,
                 on="TIMESTAMP",
@@ -716,12 +1220,7 @@ def execute_research(
             )
 
         # ------------------------------------------------------
-        # Build diagnostics + A3 analysis
-        #
-        # IMPORTANT:
-        #
-        # We pass features here so A3 feature analysis
-        # is calculated for the actual split.
+        # Diagnostics + A3 analysis
         # ------------------------------------------------------
 
         split_result = (
@@ -734,10 +1233,7 @@ def execute_research(
         )
 
         # ------------------------------------------------------
-        # A3.3 MARKET REGIME ANALYSIS
-        #
-        # Regime is attached before splitting and therefore
-        # remains causal.
+        # Market regime analysis
         # ------------------------------------------------------
 
         analysis = (
@@ -750,17 +1246,19 @@ def execute_research(
 
         if signal_data.empty:
 
-            analysis["by_market_regime"] = {}
+            analysis[
+                "by_market_regime"
+            ] = {}
 
         else:
 
             try:
 
-                analysis["by_market_regime"] = (
-                    analyze_by_market_regime(
-                        signal_data=signal_data,
-                        horizons=horizons,
-                    )
+                analysis[
+                    "by_market_regime"
+                ] = analyze_by_market_regime(
+                    signal_data=signal_data,
+                    horizons=horizons,
                 )
 
             except ValueError as exc:
@@ -774,29 +1272,43 @@ def execute_research(
                 ) from exc
 
         return {
-            "summary": split_result["summary"],
-            "performance": split_result["performance"],
-            "diagnostics": split_result["diagnostics"],
+            "summary": split_result[
+                "summary"
+            ],
+            "performance": split_result[
+                "performance"
+            ],
+            "diagnostics": split_result[
+                "diagnostics"
+            ],
             "analysis": analysis,
-            "warnings": split_result["warnings"],
+            "warnings": split_result[
+                "warnings"
+            ],
             "signals": signal_data,
         }
 
-    # ----------------------------------------------------------
+    # ==========================================================
     # 18. DEVELOPMENT
-    # ----------------------------------------------------------
+    # ==========================================================
 
-    development_result = (
-        build_split_result(
+    development_result = tracker.run(
+        start=89,
+        end=93,
+        stage="Evaluating development",
+        expected_duration=5.0,
+        minimum_tick=0.35,
+        easing="ease_out",
+        function=lambda: build_split_result(
             "development",
             development_start,
             development_end,
-        )
+        ),
     )
 
-    # ----------------------------------------------------------
+    # ==========================================================
     # 19. VALIDATION
-    # ----------------------------------------------------------
+    # ==========================================================
 
     validation_result = None
 
@@ -805,17 +1317,30 @@ def execute_research(
         and validation_end is not None
     ):
 
-        validation_result = (
-            build_split_result(
+        validation_result = tracker.run(
+            start=93,
+            end=95,
+            stage="Evaluating validation",
+            expected_duration=3.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: build_split_result(
                 "validation",
                 validation_start,
                 validation_end,
-            )
+            ),
         )
 
-    # ----------------------------------------------------------
+    else:
+
+        report(
+            95,
+            "Validation skipped",
+        )
+
+    # ==========================================================
     # 20. FINAL HOLDOUT
-    # ----------------------------------------------------------
+    # ==========================================================
 
     holdout_result = None
 
@@ -824,18 +1349,35 @@ def execute_research(
         and holdout_end is not None
     ):
 
-        holdout_result = (
-            build_split_result(
+        holdout_result = tracker.run(
+            start=95,
+            end=97,
+            stage="Evaluating final testing",
+            expected_duration=3.0,
+            minimum_tick=0.35,
+            easing="ease_out",
+            function=lambda: build_split_result(
                 "final_holdout",
                 holdout_start,
                 holdout_end,
-            )
+            ),
         )
 
-    # ----------------------------------------------------------
-    report(95, "Finalizing results")
+    else:
+
+        report(
+            97,
+            "Final testing skipped",
+        )
+
+    # ==========================================================
     # 21. CLEAN JSON RESULT
-    # ----------------------------------------------------------
+    # ==========================================================
+
+    report(
+        98,
+        "Building analysis",
+    )
 
     def clean_result(
         result,
@@ -850,11 +1392,23 @@ def execute_research(
         )
 
         if not signals.empty:
+
             for column in signals.columns:
-                if column.endswith("_DATE") or "_DATE_T" in column or column == "TIMESTAMP":
-                    signals[column] = pd.to_datetime(
-                        signals[column], errors="coerce"
-                    ).dt.strftime("%Y-%m-%d")
+
+                if (
+                    column.endswith("_DATE")
+                    or "_DATE_T" in column
+                    or column == "TIMESTAMP"
+                ):
+
+                    signals[column] = (
+                        pd.to_datetime(
+                            signals[column],
+                            errors="coerce",
+                        ).dt.strftime(
+                            "%Y-%m-%d"
+                        )
+                    )
 
             signals = (
                 signals
@@ -866,65 +1420,98 @@ def execute_research(
             )
 
         return {
-            "summary": result["summary"],
-            "performance": result["performance"],
-            "diagnostics": result["diagnostics"],
+            "summary": result[
+                "summary"
+            ],
+            "performance": result[
+                "performance"
+            ],
+            "diagnostics": result[
+                "diagnostics"
+            ],
             "analysis": result.get(
                 "analysis",
                 {},
             ),
-            "warnings": result["warnings"],
+            "warnings": result[
+                "warnings"
+            ],
             "signals": signals.to_dict(
                 orient="records"
             ),
         }
 
-    # ----------------------------------------------------------
-    report(100, "Complete")
-    # 22. FINAL RESPONSE
-    # ----------------------------------------------------------
+    # ==========================================================
+    # 22. FINALIZE
+    # ==========================================================
 
-    return {
+    report(
+        99,
+        "Finalizing results",
+    )
+
+    final_result = {
         "research_config": {
             "research_schema_version": "2",
-            "research_question": request.research_question,
-            "hypothesis": request.hypothesis,
-            "development_start": request.development_start,
-            "development_end": request.development_end,
-            "validation_start": request.validation_start,
-            "validation_end": request.validation_end,
-            "holdout_start": request.holdout_start,
-            "holdout_end": request.holdout_end,
-            "signal_timing": request.signal_timing.model_dump(),
+            "development_start":
+                request.development_start,
+            "development_end":
+                request.development_end,
+            "validation_start":
+                request.validation_start,
+            "validation_end":
+                request.validation_end,
+            "holdout_start":
+                request.holdout_start,
+            "holdout_end":
+                request.holdout_end,
+            "signal_timing":
+                request.signal_timing.model_dump(),
             "outcome_definition": (
                 request.outcome_definition.model_dump()
-                if request.outcome_definition is not None
+                if request.outcome_definition
+                is not None
                 else {
                     "anchor": "entry_date",
                     "price_basis": "CLOSE",
                     "horizons": horizons,
                 }
             ),
-            "universe": request.universe.model_dump(),
-            "universe_membership_basis": membership_basis,
-            "features": features,
-            "entry_conditions": conditions,
-            "evaluation_horizons": horizons,
-            "temporal_convention": TEMPORAL_CONVENTION,
-            "feature_lookback_requirements": lookback_requirements,
+            "universe":
+                request.universe.model_dump(),
+            "universe_membership_basis":
+                membership_basis,
+            "features":
+                features,
+            "entry_conditions":
+                conditions,
+            "evaluation_horizons":
+                horizons,
+            "temporal_convention":
+                TEMPORAL_CONVENTION,
+            "feature_lookback_requirements":
+                lookback_requirements,
             "reproducibility_hooks": {
-                "data_revision": data_revision,
-                "universe_revision": universe_revision,
-                "engine_version": RESEARCH_ENGINE_VERSION,
-                "run_timestamp": run_timestamp,
+                "data_revision":
+                    data_revision,
+                "universe_revision":
+                    universe_revision,
+                "engine_version":
+                    RESEARCH_ENGINE_VERSION,
+                "run_timestamp":
+                    run_timestamp,
             },
             "universe_membership_note": (
                 (
-                    "Research uses dated point-in-time universe membership."
-                    if membership_basis == "point_in_time"
+                    "Research uses dated point-in-time "
+                    "universe membership."
+                    if membership_basis
+                    == "point_in_time"
                     else
-                    "research_universe.csv is a current-universe snapshot; "
-                    "it is not point-in-time historical membership."
+                    "research_universe.csv is a "
+                    "current-universe snapshot; "
+                    "it is not point-in-time "
+                    "historical membership."
                 )
             ),
             "market_benchmark": {
@@ -936,21 +1523,31 @@ def execute_research(
                 "bear_threshold": -5.0,
                 "bull_threshold": 5.0,
                 "definition": (
-                    "20-trading-day trailing NIFTY 50 return "
-                    "at the signal date"
+                    "20-trading-day trailing NIFTY "
+                    "50 return at the signal date"
                 ),
             },
         },
 
-        "development": clean_result(
-            development_result
-        ),
+        "development":
+            clean_result(
+                development_result
+            ),
 
-        "validation": clean_result(
-            validation_result
-        ),
+        "validation":
+            clean_result(
+                validation_result
+            ),
 
-        "final_holdout": clean_result(
-            holdout_result
-        ),
+        "final_holdout":
+            clean_result(
+                holdout_result
+            ),
     }
+
+    report(
+        100,
+        "Complete",
+    )
+
+    return final_result

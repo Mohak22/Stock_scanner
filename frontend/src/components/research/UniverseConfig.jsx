@@ -68,6 +68,7 @@ function UniverseConfig({ value, onChange }) {
         onChange={(event) => updateType(event.target.value)}
       >
         <option value="all_stocks">All Stocks</option>
+        <option value="major_stocks">Major Stocks</option>
         <option value="macro_sector">Macro Sector</option>
         <option value="sector">Sector</option>
         <option value="industry">Industry</option>
@@ -87,22 +88,25 @@ function UniverseConfig({ value, onChange }) {
         </span>
       )}
 
-      {type !== 'all_stocks' && type !== 'symbols' && !loading && (
-        <select
-          value={selectedValue}
-          onChange={(event) => updateValue(event.target.value)}
-        >
-          <option value="">
-            Select {type.replace('_', ' ')}
-          </option>
-
-          {filterOptions[type].map((option) => (
-            <option key={option} value={option}>
-              {option}
+      {type !== 'all_stocks' &&
+        type !== 'symbols' &&
+        type !== 'major_stocks' &&
+        !loading && (
+          <select
+            value={selectedValue}
+            onChange={(event) => updateValue(event.target.value)}
+          >
+            <option value="">
+              Select {type.replace('_', ' ')}
             </option>
-          ))}
-        </select>
-      )}
+
+            {filterOptions[type].map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        )}
 
       {type === 'symbols' && (
         <input
@@ -127,7 +131,9 @@ function UniverseConfig({ value, onChange }) {
       <span className="field-help">
         {type === 'all_stocks'
           ? `${universeData?.total_stocks || 0} stocks in current research universe`
-          : 'Filter the current research universe.'}
+          : type === 'major_stocks'
+            ? `${universeData?.major_stocks_total || 0} Nifty 500 stocks`
+            : 'Filter the current research universe.'}
       </span>
     </div>
   )
