@@ -323,25 +323,54 @@ function ResearchConfig() {
   const buildResearchRequest = () => {
     const configuredFeatures = []
 
-    conditions.forEach((condition) => {
+    const addConfiguredFeature = (
+      featureType,
+      period
+    ) => {
+      if (!featureType) {
+        return
+      }
+
+      const normalizedPeriod =
+        period !== undefined &&
+        period !== null &&
+        period !== ''
+          ? Number(period)
+          : undefined
+
       const alreadyExists =
         configuredFeatures.some(
           (feature) =>
-            feature.type === condition.feature &&
-            feature.period === condition.period
+            feature.type === featureType &&
+            feature.period === normalizedPeriod
         )
 
       if (!alreadyExists) {
         configuredFeatures.push({
-          type: condition.feature,
-          ...(condition.period !== undefined &&
-            condition.period !== null &&
-            condition.period !== ''
+          type: featureType,
+          ...(normalizedPeriod !== undefined
             ? {
-              period: Number(condition.period),
+              period: normalizedPeriod,
             }
             : {}),
         })
+      }
+    }
+
+    conditions.forEach((condition) => {
+      addConfiguredFeature(
+        condition.feature,
+        condition.period
+      )
+
+      if (
+        condition.rightType ===
+        'feature'
+      ) {
+        addConfiguredFeature(
+          condition.rightFeature,
+          condition.rightPeriod
+        )
       }
     })
 
@@ -374,8 +403,12 @@ function ResearchConfig() {
 
       entry_conditions: conditions.map(
         (condition) => {
-          const numericValue =
-            Number(condition.value)
+          const multiplier =
+            condition.rightMultiplier === '' ||
+            condition.rightMultiplier === null ||
+            condition.rightMultiplier === undefined
+              ? 1
+              : Number(condition.rightMultiplier)
 
           let rightValue
 
@@ -389,8 +422,8 @@ function ResearchConfig() {
 
               ...(condition.rightPeriod !==
                 undefined &&
-                condition.rightPeriod !== null &&
-                condition.rightPeriod !== ''
+              condition.rightPeriod !== null &&
+              condition.rightPeriod !== ''
                 ? {
                   period: Number(
                     condition.rightPeriod
@@ -398,38 +431,25 @@ function ResearchConfig() {
                 }
                 : {}),
 
-              multiplier:
-                condition.rightMultiplier ??
-                1,
+              ...(multiplier !== 1
+                ? {
+                  multiplier,
+                }
+                : {}),
             }
           } else {
-            rightValue =
-              condition.rightMultiplier !==
-                undefined &&
-                condition.rightMultiplier !==
-                null &&
-                condition.rightMultiplier !==
-                1
-                ? {
-                  value:
-                    condition.value !==
-                      '' &&
-                      !Number.isNaN(
-                        numericValue
-                      )
-                      ? numericValue
-                      : condition.value,
+            const numericValue =
+              Number(condition.value)
 
-                  multiplier:
-                    condition.rightMultiplier,
-                }
-                : condition.value !==
-                  '' &&
-                  !Number.isNaN(
-                    numericValue
-                  )
-                  ? numericValue
-                  : condition.value
+            if (multiplier !== 1) {
+              rightValue = {
+                value: numericValue,
+                multiplier,
+              }
+            } else {
+              rightValue =
+                numericValue
+            }
           }
 
           return {
@@ -438,8 +458,8 @@ function ResearchConfig() {
 
             ...(condition.period !==
               undefined &&
-              condition.period !== null &&
-              condition.period !== ''
+            condition.period !== null &&
+            condition.period !== ''
               ? {
                 period: Number(
                   condition.period
@@ -455,18 +475,24 @@ function ResearchConfig() {
         }
       ),
 
-      evaluation_horizons: evaluationHorizons,
+      evaluation_horizons:
+        evaluationHorizons,
 
       signal_timing: {
-        observation: 'signal_date_close',
-        entry: 'next_available_symbol_session_close',
+        observation:
+          'signal_date_close',
+        entry:
+          'next_available_symbol_session_close',
         price_basis: 'CLOSE',
       },
 
       outcome_definition: {
-        anchor: 'entry_date',
-        price_basis: 'CLOSE',
-        horizons: evaluationHorizons,
+        anchor:
+          'entry_date',
+        price_basis:
+          'CLOSE',
+        horizons:
+          evaluationHorizons,
       },
     }
   }
@@ -511,9 +537,7 @@ function ResearchConfig() {
       universe.type !== 'major_stocks' &&
       !universe.value
     ) {
-      return (
-        'Please select a universe filter value.'
-      )
+      return 'Please select a universe filter value.'
     }
 
     if (
@@ -533,48 +557,140 @@ function ResearchConfig() {
         return 'Every condition must have an operator.'
       }
 
-      if (
-        condition.value === '' ||
-        condition.value === null ||
-        condition.value === undefined ||
-        !Number.isFinite(Number(condition.value))
-      ) {
-        return 'Every condition must have a valid numeric value.'
-      }
+      const leftFeatureDefinition =
+        getFeatureDefinition(
+          condition.feature
+        )
 
-      const featureDefinition =
-        getFeatureDefinition(condition.feature)
-
-      if (!featureDefinition) {
+      if (!leftFeatureDefinition) {
         return 'Every condition must use a valid research indicator.'
       }
 
-      const parameter =
-        featureDefinition.parameters?.[0]
+      const leftParameter =
+        leftFeatureDefinition.parameters?.[0]
 
       if (
-        parameter &&
+        leftParameter &&
         condition.period !== '' &&
         condition.period != null
       ) {
-        const period = Number(condition.period)
+        const period =
+          Number(condition.period)
 
         if (!Number.isInteger(period)) {
-          return `${featureDefinition.name} period must be a whole number.`
+          return leftFeatureDefinition.name +
+            ' period must be a whole number.'
         }
 
         if (
-          parameter.minimum != null &&
-          period < parameter.minimum
+          leftParameter.minimum != null &&
+          period < leftParameter.minimum
         ) {
-          return `${featureDefinition.name} period must be at least ${parameter.minimum}.`
+          return leftFeatureDefinition.name +
+            ' period must be at least ' +
+            leftParameter.minimum +
+            '.'
         }
 
         if (
-          parameter.maximum != null &&
-          period > parameter.maximum
+          leftParameter.maximum != null &&
+          period > leftParameter.maximum
         ) {
-          return `${featureDefinition.name} period must be at most ${parameter.maximum}.`
+          return leftFeatureDefinition.name +
+            ' period must be at most ' +
+            leftParameter.maximum +
+            '.'
+        }
+      }
+
+      const rightType =
+        condition.rightType ||
+        'value'
+
+      const multiplier =
+        condition.rightMultiplier === '' ||
+        condition.rightMultiplier === null ||
+        condition.rightMultiplier === undefined
+          ? 1
+          : Number(
+            condition.rightMultiplier
+          )
+
+      if (
+        !Number.isFinite(multiplier) ||
+        multiplier < 0
+      ) {
+        return 'Every condition must have a valid non-negative multiplier.'
+      }
+
+      if (
+        rightType === 'feature'
+      ) {
+        if (!condition.rightFeature) {
+          return 'Select an indicator for the right side of every feature comparison.'
+        }
+
+        const rightFeatureDefinition =
+          getFeatureDefinition(
+            condition.rightFeature
+          )
+
+        if (!rightFeatureDefinition) {
+          return 'Every right-side indicator must be valid.'
+        }
+
+        const rightParameter =
+          rightFeatureDefinition.parameters?.[0]
+
+        if (
+          rightParameter &&
+          condition.rightPeriod !== '' &&
+          condition.rightPeriod != null
+        ) {
+          const rightPeriod =
+            Number(
+              condition.rightPeriod
+            )
+
+          if (
+            !Number.isInteger(
+              rightPeriod
+            )
+          ) {
+            return rightFeatureDefinition.name +
+              ' period must be a whole number.'
+          }
+
+          if (
+            rightParameter.minimum != null &&
+            rightPeriod < rightParameter.minimum
+          ) {
+            return rightFeatureDefinition.name +
+              ' period must be at least ' +
+              rightParameter.minimum +
+              '.'
+          }
+
+          if (
+            rightParameter.maximum != null &&
+            rightPeriod > rightParameter.maximum
+          ) {
+            return rightFeatureDefinition.name +
+              ' period must be at most ' +
+              rightParameter.maximum +
+              '.'
+          }
+        }
+      } else {
+        if (
+          condition.value === '' ||
+          condition.value === null ||
+          condition.value === undefined ||
+          !Number.isFinite(
+            Number(condition.value)
+          )
+        ) {
+          return 'Every fixed-value condition must have a valid numeric value.'
         }
       }
     }

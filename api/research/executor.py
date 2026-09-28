@@ -901,11 +901,119 @@ def execute_research(
         )
 
     # ==========================================================
-    # 11. SORT STOCK DATA
+    # 11. LOAD DELIVERY DATA WHEN REQUIRED
     # ==========================================================
 
+    delivery_requested = any(
+        feature.get("type", "").lower()
+        in {
+            "delivery_percentage",
+            "average_delivery_percentage",
+        }
+        for feature in features
+    )
+
+    if delivery_requested:
+        try:
+            mto_data = tracker.run(
+                start=45,
+                end=48,
+                stage="Loading delivery data",
+                expected_duration=15.0,
+                minimum_tick=0.35,
+                easing="ease_out",
+                function=lambda: repository.load_mto(
+                    data_start.date().isoformat(),
+                    data_end.date().isoformat(),
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+
+        if mto_data.empty:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Delivery data was requested, but no "
+                    "NSE MTO data was found for the research range."
+                ),
+            )
+
+        mto_data = mto_data.copy()
+
+        mto_data["SYMBOL"] = (
+            mto_data["SYMBOL"]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        mto_data["TIMESTAMP"] = (
+            pd.to_datetime(
+                mto_data["TIMESTAMP"],
+                errors="coerce",
+            )
+            .dt.normalize()
+        )
+
+        selected_symbols = set(
+            data["SYMBOL"].unique()
+        )
+
+        mto_data = mto_data[
+            mto_data["SYMBOL"].isin(
+                selected_symbols
+            )
+        ].copy()
+
+        for column in [
+            "MTO_QTY_TRADED",
+            "DELIV_QTY",
+            "DELIV_PER",
+        ]:
+            if column in data.columns:
+                data = data.drop(
+                    columns=[column]
+                )
+
+        data = data.merge(
+            mto_data[
+                [
+                    "SYMBOL",
+                    "TIMESTAMP",
+                    "MTO_QTY_TRADED",
+                    "DELIV_QTY",
+                    "DELIV_PER",
+                ]
+            ],
+            on=[
+                "SYMBOL",
+                "TIMESTAMP",
+            ],
+            how="left",
+        )
+
+    else:
+        report(
+            48,
+            "Delivery data not required",
+        )
+
+    # ==========================================================
+    # 12. SORT STOCK DATA
+    # ==========================================================
+
+
     report(
-        45,
+        49,
         "Sorting research data",
     )
 
@@ -923,7 +1031,7 @@ def execute_research(
     )
 
     report(
-        47,
+        50,
         "Research data sorted",
     )
 
@@ -934,7 +1042,7 @@ def execute_research(
     try:
 
         data = tracker.run(
-            start=48,
+            start=51,
             end=66,
             stage="Calculating indicators",
             expected_duration=18.0,

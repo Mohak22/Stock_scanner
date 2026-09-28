@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -35,7 +36,7 @@ class ConditionConfig(BaseModel):
     feature: str
     period: int | None = None
     operator: str
-    value: int | float | str
+    value: int | float | str | dict[str, Any]
 
 
 class SignalTimingConfig(BaseModel):

@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep  4 11:58:23 2026
-
-@author: mohak
-"""
-# -*- coding: utf-8 -*-
-
-"""
 Research Condition Engine
 
 Purpose:
@@ -15,66 +8,28 @@ Purpose:
 Supports:
     - Numeric comparisons
     - Feature-to-feature comparisons
-    - Parameterized features such as:
-        RSI(9)
-        RSI(14)
-        EMA(20)
-        SMA(50)
-        Return(5)
-        Average Volume(20)
-        Average Delivery %(20)
-
-The feature period is resolved dynamically to the actual
-calculated dataframe column.
+    - Parameterized features
+    - Arithmetic multiplier expressions
 """
+
+from __future__ import annotations
 
 import pandas as pd
 
-
-# ======================================================================
-# FEATURE COLUMN RESOLUTION
-# ======================================================================
 
 def _resolve_feature_column(
     dataframe: pd.DataFrame,
     feature: str,
     period=None,
 ) -> str:
-    """
-    Resolve a logical feature name to the actual dataframe column.
-
-    Examples:
-
-        rsi + 14
-            -> RSI_14
-
-        rsi + 9
-            -> RSI_9
-
-        ema + 20
-            -> EMA_20
-
-        return + 5
-            -> RETURN_5
-
-    Non-parameterized features such as CLOSE or VOLUME are also
-    resolved case-insensitively.
-    """
-
     feature = str(feature).strip()
 
     candidates = []
 
-    # ----------------------------------------------------------
-    # Parameterized feature
-    # ----------------------------------------------------------
-
     if period is not None:
-
         try:
             period = int(period)
         except (TypeError, ValueError):
-
             raise ValueError(
                 f"Invalid period '{period}' for feature '{feature}'."
             )
@@ -93,10 +48,6 @@ def _resolve_feature_column(
             ]
         )
 
-    # ----------------------------------------------------------
-    # Non-parameterized feature
-    # ----------------------------------------------------------
-
     candidates.extend(
         [
             feature,
@@ -105,18 +56,9 @@ def _resolve_feature_column(
         ]
     )
 
-    # ----------------------------------------------------------
-    # Direct match
-    # ----------------------------------------------------------
-
     for candidate in candidates:
-
         if candidate in dataframe.columns:
             return candidate
-
-    # ----------------------------------------------------------
-    # Case-insensitive fallback
-    # ----------------------------------------------------------
 
     lookup = {
         str(column).upper(): column
@@ -124,9 +66,7 @@ def _resolve_feature_column(
     }
 
     for candidate in candidates:
-
         key = str(candidate).upper()
-
         if key in lookup:
             return lookup[key]
 
@@ -141,142 +81,119 @@ def _resolve_feature_column(
     )
 
 
-# ======================================================================
-# CONDITION ENGINE
-# ======================================================================
+def _resolve_right_expression(
+    dataframe: pd.DataFrame,
+    right_value,
+):
+    """
+    Resolve the right-hand side of a condition.
+
+    Supported forms:
+        30
+        {"feature": "ema", "period": 50}
+        {"feature": "average_volume", "period": 20, "multiplier": 2}
+        {"value": 30, "multiplier": 2}
+    """
+
+    if isinstance(right_value, dict):
+        if "feature" in right_value:
+            right_column = _resolve_feature_column(
+                dataframe=dataframe,
+                feature=right_value["feature"],
+                period=right_value.get("period"),
+            )
+            base_value = dataframe[right_column]
+
+        elif "value" in right_value:
+            base_value = right_value["value"]
+
+        else:
+            raise ValueError(
+                "Right-hand expression must contain either "
+                "'feature' or 'value'."
+            )
+
+        multiplier = right_value.get(
+            "multiplier",
+            1,
+        )
+
+        try:
+            multiplier = float(multiplier)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Invalid arithmetic multiplier: {multiplier}"
+            )
+
+        if multiplier < 0:
+            raise ValueError(
+                "Arithmetic multiplier must be non-negative."
+            )
+
+        return base_value * multiplier
+
+    if isinstance(right_value, str):
+        return dataframe[
+            _resolve_feature_column(
+                dataframe=dataframe,
+                feature=right_value,
+            )
+        ]
+
+    return right_value
+
 
 def apply_conditions(
     dataframe: pd.DataFrame,
-    conditions: list[dict]
+    conditions: list[dict],
 ) -> pd.Series:
 
     if not conditions:
-
         return pd.Series(
             True,
-            index=dataframe.index
+            index=dataframe.index,
         )
 
     signal = pd.Series(
         True,
-        index=dataframe.index
+        index=dataframe.index,
     )
 
     for condition in conditions:
-
-        # ----------------------------------------------------------
-        # Read condition
-        # ----------------------------------------------------------
-
         left_feature = condition["feature"]
         operator = condition["operator"]
         right_value = condition["value"]
 
-        # ----------------------------------------------------------
-        # Optional period for LEFT feature
-        # ----------------------------------------------------------
-
-        left_period = condition.get("period")
-
         left_column = _resolve_feature_column(
             dataframe=dataframe,
             feature=left_feature,
-            period=left_period,
+            period=condition.get("period"),
         )
 
         left_series = dataframe[left_column]
 
-        # ----------------------------------------------------------
-        # RIGHT SIDE
-        #
-        # Can be:
-        #
-        # 1. Numeric value
-        # 2. Another feature
-        # 3. Parameterized feature
-        # ----------------------------------------------------------
-
-        if isinstance(right_value, dict):
-
-            right_feature = right_value["feature"]
-            right_period = right_value.get("period")
-
-            right_column = _resolve_feature_column(
-                dataframe=dataframe,
-                feature=right_feature,
-                period=right_period,
-            )
-
-            right_series = dataframe[right_column]
-
-        elif isinstance(right_value, str):
-
-            # Existing format where a dataframe column name
-            # is supplied directly.
-            #
-            # This also supports plain feature names.
-
-            right_series = dataframe[
-                _resolve_feature_column(
-                    dataframe=dataframe,
-                    feature=right_value,
-                )
-            ]
-
-        else:
-
-            right_series = right_value
-
-        # ----------------------------------------------------------
-        # COMPARISON
-        # ----------------------------------------------------------
+        right_series = _resolve_right_expression(
+            dataframe=dataframe,
+            right_value=right_value,
+        )
 
         if operator == "<":
-
-            current_condition = (
-                left_series < right_series
-            )
-
+            current_condition = left_series < right_series
         elif operator == "<=":
-
-            current_condition = (
-                left_series <= right_series
-            )
-
+            current_condition = left_series <= right_series
         elif operator == ">":
-
-            current_condition = (
-                left_series > right_series
-            )
-
+            current_condition = left_series > right_series
         elif operator == ">=":
-
-            current_condition = (
-                left_series >= right_series
-            )
-
+            current_condition = left_series >= right_series
         elif operator == "==":
-
-            current_condition = (
-                left_series == right_series
-            )
-
+            current_condition = left_series == right_series
         elif operator == "!=":
-
-            current_condition = (
-                left_series != right_series
-            )
-
+            current_condition = left_series != right_series
         else:
-
             raise ValueError(
                 f"Unsupported operator: {operator}"
             )
 
-        # ----------------------------------------------------------
-        # MULTIPLE CONDITIONS = AND
-        # ----------------------------------------------------------
-
-        signal = signal & current_condition
+        signal = signal & current_condition.fillna(False)
 
     return signal
