@@ -407,4 +407,9 @@ jobs:
             -m "Update daily research data" \
             || echo "No changes to commit"
 
+          # Another daily run or manual data update may have pushed to main
+          # while this run was processing. Rebase the generated commit onto
+          # the latest remote state before pushing.
+          git pull --rebase origin main
+
           git push
