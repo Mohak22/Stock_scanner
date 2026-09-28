@@ -746,7 +746,6 @@ class Daily_Data_Preparation:
 
         output_path = (
             STOCK_SCANNER_DATA_DIRECTORY
-            / "raw"
             / "nifty_500_universe.csv"
         )
 
