@@ -46,7 +46,7 @@ POINT_IN_TIME_UNIVERSE_PATH = (
 )
 
 MAJOR_STOCKS_UNIVERSE_PATH = (
-    "raw/nifty_500_universe.csv"
+    "nifty_500_universe.csv"
 )
 
 
