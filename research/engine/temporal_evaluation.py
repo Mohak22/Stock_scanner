@@ -120,7 +120,35 @@ def feature_lookback_requirements(
             feature.get("type", "")
         ).lower()
 
-        period = feature.get("period")
+        # ------------------------------------------------------
+        # Canonical feature schema:
+        #
+        # {
+        #     "type": "return",
+        #     "parameters": {
+        #         "period": 5
+        #     }
+        # }
+        #
+        # Legacy schema:
+        #
+        # {
+        #     "type": "return",
+        #     "period": 5
+        # }
+        #
+        # Read canonical parameters first while retaining
+        # backward compatibility with the old schema.
+        # ------------------------------------------------------
+
+        parameters = dict(
+            feature.get("parameters") or {}
+        )
+
+        period = parameters.get(
+            "period",
+            feature.get("period")
+        )
 
         if period is not None:
 
@@ -138,6 +166,10 @@ def feature_lookback_requirements(
                     f"Feature period must be positive: {feature}"
                 )
 
+        # ------------------------------------------------------
+        # Features requiring only the signal observation itself
+        # ------------------------------------------------------
+
         if feature_type in {
             "open",
             "high",
@@ -150,9 +182,22 @@ def feature_lookback_requirements(
 
             required = 1
 
+        # ------------------------------------------------------
+        # EMA
+        # ------------------------------------------------------
+
         elif feature_type == "ema":
 
-            required = 1
+            if period is None:
+                raise ValueError(
+                    "ema requires a period."
+                )
+
+            required = period + 1
+
+        # ------------------------------------------------------
+        # Rolling features
+        # ------------------------------------------------------
 
         elif feature_type in {
             "sma",
@@ -169,6 +214,10 @@ def feature_lookback_requirements(
 
             required = period
 
+        # ------------------------------------------------------
+        # Return
+        # ------------------------------------------------------
+
         elif feature_type == "return":
 
             if period is None:
@@ -177,6 +226,10 @@ def feature_lookback_requirements(
                 )
 
             required = period + 1
+
+        # ------------------------------------------------------
+        # RSI
+        # ------------------------------------------------------
 
         elif feature_type == "rsi":
 
@@ -200,7 +253,6 @@ def feature_lookback_requirements(
         requirements[key] = required
 
     return requirements
-
 
 def generate_signal_mask(
     dataframe: pd.DataFrame,

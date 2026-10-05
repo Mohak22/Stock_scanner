@@ -34,6 +34,7 @@ from api.research.job import (
     job_store,
 )
 from api.execution.router import router as execution_router
+from api.research_agent.router import router as research_agent_router
 
 # ======================================================================
 # APPLICATION
@@ -64,6 +65,8 @@ app.include_router(experiment_router)
 app.include_router(workflow_router)
 
 app.include_router(execution_router)
+
+app.include_router(research_agent_router)
 
 repository = ResearchDataRepository()
 

@@ -280,18 +280,18 @@ function ResearchConfig() {
     const expression = (item) =>
       item?.feature
         ? {
-            feature: item.feature,
-            parameters: { ...(item.parameters || {}) },
-            ...(item.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
-              ? { multiplier: Number(item.multiplier) }
-              : {}),
-          }
+          feature: item.feature,
+          parameters: { ...(item.parameters || {}) },
+          ...(item.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
+            ? { multiplier: Number(item.multiplier) }
+            : {}),
+        }
         : {
-            value: Number(item?.value),
-            ...(item?.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
-              ? { multiplier: Number(item.multiplier) }
-              : {}),
-          }
+          value: Number(item?.value),
+          ...(item?.multiplier != null && item.multiplier !== '' && Number(item.multiplier) !== 1
+            ? { multiplier: Number(item.multiplier) }
+            : {}),
+        }
 
     return {
       development_start: activeStart,
@@ -373,150 +373,294 @@ function ResearchConfig() {
       return 'Please enter at least one symbol.'
     }
 
-    for (const condition of conditions) {
-      if (!condition.feature) {
-        return 'Every condition must have an indicator.'
+    const validateMultiplier = (
+      expression,
+      label
+    ) => {
+      const multiplier =
+        expression?.multiplier ?? 1
+
+      if (
+        multiplier === '' ||
+        multiplier === null ||
+        multiplier === undefined ||
+        !Number.isFinite(
+          Number(multiplier)
+        ) ||
+        Number(multiplier) < 0
+      ) {
+        return (
+          `${label} must have a valid non-negative multiplier.`
+        )
       }
 
-      if (!condition.operator) {
-        return 'Every condition must have an operator.'
+      return null
+    }
+
+    const validateExpression = (
+      expression,
+      label,
+      allowValue
+    ) => {
+      if (!expression) {
+        return `${label} is required.`
       }
 
-      const leftFeatureDefinition =
+      /*
+       * Canonical expression is either:
+       *
+       * {
+       *   feature: 'rsi',
+       *   parameters: { period: 14 },
+       *   multiplier: 1
+       * }
+       *
+       * OR
+       *
+       * {
+       *   value: 30,
+       *   multiplier: 1
+       * }
+       */
+
+      if (!expression.feature) {
+        if (!allowValue) {
+          return `${label} must use a valid research indicator.`
+        }
+
+        const value = expression.value
+
+        if (
+          value === '' ||
+          value === null ||
+          value === undefined ||
+          !Number.isFinite(
+            Number(value)
+          )
+        ) {
+          return (
+            `${label} must have a valid numeric value.`
+          )
+        }
+
+        return validateMultiplier(
+          expression,
+          label
+        )
+      }
+
+      const definition =
         getFeatureDefinition(
-          condition.feature
+          expression.feature
         )
 
-      if (!leftFeatureDefinition) {
-        return 'Every condition must use a valid research indicator.'
+      if (!definition) {
+        return (
+          `${label} must use a valid research indicator.`
+        )
       }
 
-      const leftParameter =
-        leftFeatureDefinition.parameters?.[0]
+      const parameters =
+        expression.parameters || {}
 
-      if (
-        leftParameter &&
-        condition.period !== '' &&
-        condition.period != null
-      ) {
-        const period =
-          Number(condition.period)
+      const parameterDefinitions =
+        definition.parameters || []
 
-        if (!Number.isInteger(period)) {
-          return leftFeatureDefinition.name +
-            ' period must be a whole number.'
-        }
-
-        if (
-          leftParameter.minimum != null &&
-          period < leftParameter.minimum
-        ) {
-          return leftFeatureDefinition.name +
-            ' period must be at least ' +
-            leftParameter.minimum +
-            '.'
-        }
-
-        if (
-          leftParameter.maximum != null &&
-          period > leftParameter.maximum
-        ) {
-          return leftFeatureDefinition.name +
-            ' period must be at most ' +
-            leftParameter.maximum +
-            '.'
-        }
-      }
-
-      const rightType =
-        condition.rightType ||
-        'value'
-
-      const multiplier =
-        condition.rightMultiplier === '' ||
-        condition.rightMultiplier === null ||
-        condition.rightMultiplier === undefined
-          ? 1
-          : Number(
-            condition.rightMultiplier
-          )
-
-      if (
-        !Number.isFinite(multiplier) ||
-        multiplier < 0
-      ) {
-        return 'Every condition must have a valid non-negative multiplier.'
-      }
-
-      if (
-        rightType === 'feature'
-      ) {
-        if (!condition.rightFeature) {
-          return 'Select an indicator for the right side of every feature comparison.'
-        }
-
-        const rightFeatureDefinition =
-          getFeatureDefinition(
-            condition.rightFeature
-          )
-
-        if (!rightFeatureDefinition) {
-          return 'Every right-side indicator must be valid.'
-        }
-
-        const rightParameter =
-          rightFeatureDefinition.parameters?.[0]
-
-        if (
-          rightParameter &&
-          condition.rightPeriod !== '' &&
-          condition.rightPeriod != null
-        ) {
-          const rightPeriod =
-            Number(
-              condition.rightPeriod
+      /*
+       * Make sure the expression does not
+       * contain parameters that the registry
+       * does not understand.
+       */
+      const unknownParameters =
+        Object.keys(
+          parameters
+        ).filter(
+          (parameterId) =>
+            !parameterDefinitions.some(
+              (parameter) =>
+                parameter.id ===
+                parameterId
             )
+        )
 
+      if (
+        unknownParameters.length > 0
+      ) {
+        return (
+          `${label} contains unsupported parameter(s): ` +
+          unknownParameters.join(', ')
+        )
+      }
+
+      /*
+       * Validate every parameter generically.
+       *
+       * This is intentionally NOT hardcoded
+       * to "period".
+       */
+      for (
+        const parameter of
+        parameterDefinitions
+      ) {
+        const parameterId =
+          parameter.id
+
+        const value =
+          parameters[
+          parameterId
+          ] ??
+          parameter.default
+
+        if (
+          value === undefined ||
+          value === null ||
+          value === ''
+        ) {
+          if (
+            parameter.required !==
+            false
+          ) {
+            return (
+              `${label} requires ${parameter.name}.`
+            )
+          }
+
+          continue
+        }
+
+        const type =
+          String(
+            parameter.type || ''
+          ).toLowerCase()
+
+        if (
+          type === 'integer'
+        ) {
           if (
             !Number.isInteger(
-              rightPeriod
+              Number(value)
             )
           ) {
-            return rightFeatureDefinition.name +
-              ' period must be a whole number.'
-          }
-
-          if (
-            rightParameter.minimum != null &&
-            rightPeriod < rightParameter.minimum
-          ) {
-            return rightFeatureDefinition.name +
-              ' period must be at least ' +
-              rightParameter.minimum +
-              '.'
-          }
-
-          if (
-            rightParameter.maximum != null &&
-            rightPeriod > rightParameter.maximum
-          ) {
-            return rightFeatureDefinition.name +
-              ' period must be at most ' +
-              rightParameter.maximum +
-              '.'
+            return (
+              `${label} ${parameter.name} must be a whole number.`
+            )
           }
         }
-      } else {
+
         if (
-          condition.value === '' ||
-          condition.value === null ||
-          condition.value === undefined ||
-          !Number.isFinite(
-            Number(condition.value)
+          type === 'number' ||
+          type === 'float'
+        ) {
+          if (
+            !Number.isFinite(
+              Number(value)
+            )
+          ) {
+            return (
+              `${label} ${parameter.name} must be numeric.`
+            )
+          }
+        }
+
+        if (
+          parameter.minimum != null &&
+          Number(value) <
+          Number(
+            parameter.minimum
           )
         ) {
-          return 'Every fixed-value condition must have a valid numeric value.'
+          return (
+            `${label} ${parameter.name} must be at least ${parameter.minimum}.`
+          )
         }
+
+        if (
+          parameter.maximum != null &&
+          Number(value) >
+          Number(
+            parameter.maximum
+          )
+        ) {
+          return (
+            `${label} ${parameter.name} must be at most ${parameter.maximum}.`
+          )
+        }
+
+        if (
+          parameter.options &&
+          !parameter.options.includes(
+            value
+          )
+        ) {
+          return (
+            `${label} ${parameter.name} must be a supported option.`
+          )
+        }
+      }
+
+      return validateMultiplier(
+        expression,
+        label
+      )
+    }
+
+    /*
+     * Validate every canonical condition:
+     *
+     * LEFT EXPRESSION
+     *       ↓
+     *   OPERATOR
+     *       ↓
+     * RIGHT EXPRESSION
+     */
+    for (
+      const condition of
+      conditions
+    ) {
+      if (
+        !condition.left
+      ) {
+        return (
+          'Every condition must have a left expression.'
+        )
+      }
+
+      if (
+        !condition.operator
+      ) {
+        return (
+          'Every condition must have an operator.'
+        )
+      }
+
+      if (
+        !condition.right
+      ) {
+        return (
+          'Every condition must have a right expression.'
+        )
+      }
+
+      const leftError =
+        validateExpression(
+          condition.left,
+          'Left expression',
+          false
+        )
+
+      if (leftError) {
+        return leftError
+      }
+
+      const rightError =
+        validateExpression(
+          condition.right,
+          'Right expression',
+          true
+        )
+
+      if (rightError) {
+        return rightError
       }
     }
 

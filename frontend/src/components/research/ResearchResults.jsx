@@ -4,6 +4,10 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
   const [activeAnalysisTab, setActiveAnalysisTab] = useState('stock')
   const [activeStage, setActiveStage] = useState('development')
 
+  const [isAskingAgent2, setIsAskingAgent2] = useState(false)
+  const [agent2Proposal, setAgent2Proposal] = useState(null)
+  const [agent2Error, setAgent2Error] = useState('')
+
   const [sortConfig, setSortConfig] = useState({
     key: 'TIMESTAMP',
     direction: 'desc',
@@ -236,6 +240,114 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
     }
   }
 
+  const handleAskAgent2 = async () => {
+    if (!researchResult || isAskingAgent2) {
+      return
+    }
+
+    const config =
+      researchResult?.research_config || {}
+
+    const researchQuestion =
+      config.research_question ||
+      'Continue investigating the observed research pattern.'
+
+    const hypothesis =
+      config.hypothesis ||
+      'The observed research relationship may be robust enough to justify a controlled follow-up experiment.'
+
+    const baseResearchRequest = {
+      development_start:
+        config.development_start,
+
+      development_end:
+        config.development_end,
+
+      validation_start:
+        config.validation_start ?? null,
+
+      validation_end:
+        config.validation_end ?? null,
+
+      holdout_start:
+        config.holdout_start ?? null,
+
+      holdout_end:
+        config.holdout_end ?? null,
+
+      universe:
+        config.universe,
+
+      features:
+        config.features || [],
+
+      entry_conditions:
+        config.entry_conditions || [],
+
+      evaluation_horizons:
+        config.evaluation_horizons || [],
+
+      signal_timing:
+        config.signal_timing,
+
+      outcome_definition:
+        config.outcome_definition,
+    }
+
+    setIsAskingAgent2(true)
+    setAgent2Error('')
+    setAgent2Proposal(null)
+
+    try {
+      const response = await fetch(
+        'http://127.0.0.1:8000/agent/research/suggest',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            research_question:
+              researchQuestion,
+
+            hypothesis:
+              hypothesis,
+
+            base_research_request:
+              baseResearchRequest,
+
+            latest_result:
+              researchResult,
+
+            experiment_history:
+              [],
+          }),
+        }
+      )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail ||
+          'Agent 2 could not generate a proposal.'
+        )
+      }
+
+      setAgent2Proposal(
+        data.proposal
+      )
+    } catch (error) {
+      setAgent2Error(
+        error.message ||
+        'Agent 2 request failed.'
+      )
+    } finally {
+      setIsAskingAgent2(false)
+    }
+  }
+
   /*
    * ----------------------------------------------------------
    * NO RESULT YET
@@ -278,6 +390,16 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
 
           <button
             className="save-experiment-button"
+            onClick={handleAskAgent2}
+            disabled={isAskingAgent2}
+          >
+            {isAskingAgent2
+              ? 'ASKING AGENT 2...'
+              : 'ASK AGENT 2'}
+          </button>
+
+          <button
+            className="save-experiment-button"
             onClick={handleSaveExperiment}
             disabled={isSavingExperiment}
           >
@@ -306,7 +428,7 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
           {saveMessage}
         </div>
       )}
-      
+
       <div className="analysis-tabs research-stage-tabs">
         {[
           ['development', 'DEVELOPMENT', 'Iterate and inspect the hypothesis'],
@@ -330,7 +452,7 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
         ))}
       </div>
 
-            {/* =====================================================
+      {/* =====================================================
           SUMMARY
           ===================================================== */}
 
@@ -1374,6 +1496,157 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
 
       )}
 
+      {/* =====================================================
+          AGENT 2
+          ===================================================== */}
+
+      {(agent2Error || agent2Proposal) && (
+
+        <div className="analysis-section">
+
+          <div className="analysis-header">
+
+            <div>
+
+              <span className="section-kicker">
+                RESEARCH AGENT 2
+              </span>
+
+              <h3>
+                Next Research Experiment
+              </h3>
+
+              <p>
+                Agent 2 interprets the current evidence and
+                proposes one controlled follow-up experiment.
+              </p>
+
+            </div>
+
+          </div>
+
+          {agent2Error && (
+
+            <div className="warnings-card">
+
+              <div className="card-title">
+                Agent 2 Proposal Rejected
+              </div>
+
+              <div className="warning-row">
+                ⚠ {agent2Error}
+              </div>
+
+            </div>
+
+          )}
+
+          {agent2Proposal && (
+
+            <div className="analysis-panel">
+
+              <div className="analysis-panel-top">
+
+                <div>
+
+                  <span className="panel-kicker">
+                    PROPOSED EXPERIMENT
+                  </span>
+
+                  <h4>
+                    {agent2Proposal.research_question}
+                  </h4>
+
+                  <p>
+                    {agent2Proposal.hypothesis}
+                  </p>
+
+                </div>
+
+                <div className="research-status">
+                  {String(
+                    agent2Proposal.confidence || 'medium'
+                  ).toUpperCase()}{' '}
+                  CONFIDENCE
+                </div>
+
+              </div>
+
+              <div className="results-grid">
+
+                <div className="result-card">
+
+                  <span>
+                    Experiment Type
+                  </span>
+
+                  <strong>
+                    {String(
+                      agent2Proposal.experiment_type ||
+                      '—'
+                    ).replaceAll('_', ' ')}
+                  </strong>
+
+                </div>
+
+                <div className="result-card">
+
+                  <span>
+                    Confidence
+                  </span>
+
+                  <strong>
+                    {agent2Proposal.confidence ||
+                      '—'}
+                  </strong>
+
+                </div>
+
+              </div>
+
+              <div className="result-section">
+
+                <div className="section-heading">
+
+                  <div>
+
+                    <span className="section-kicker">
+                      WHY THIS EXPERIMENT
+                    </span>
+
+                    <p>
+                      {agent2Proposal.rationale}
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <div className="section-heading">
+
+                  <div>
+
+                    <span className="section-kicker">
+                      EXPECTED LEARNING
+                    </span>
+
+                    <p>
+                      {agent2Proposal.expected_learning}
+                    </p>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          )}
+
+        </div>
+
+      )}
 
       {/* =====================================================
           RAW RESPONSE
