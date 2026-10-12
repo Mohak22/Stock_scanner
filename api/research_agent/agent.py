@@ -207,39 +207,160 @@ def _apply_threshold_sensitivity(
             "at least one existing entry condition."
         )
 
-    target_condition = None
+    target_feature = (
+        semantic.target_feature
+    )
+
+    if not target_feature:
+        raise ValueError(
+            "Threshold sensitivity requires "
+            "target_feature."
+        )
+
+    target_period = (
+        semantic.target_period
+    )
+
+    matching_conditions = []
 
     for condition in conditions:
 
+        if not isinstance(condition, dict):
+            continue
+
+        left = condition.get(
+            "left",
+            {},
+        )
+
+        if not isinstance(left, dict):
+            continue
+
+        left_feature = left.get(
+            "feature"
+        )
+
+        if left_feature != target_feature:
+            continue
+
+        parameters = left.get(
+            "parameters",
+            {},
+        )
+
+        if not isinstance(
+            parameters,
+            dict,
+        ):
+            parameters = {}
+
+        # If the Agent specified a period,
+        # the existing feature must have exactly
+        # that period.
+        if target_period is not None:
+
+            existing_period = parameters.get(
+                "period"
+            )
+
+            if existing_period != target_period:
+                continue
+
         right = condition.get(
             "right",
-            {}
+            {},
         )
 
-        if (
-            isinstance(right, dict)
-            and isinstance(
-                right.get("value"),
-                (int, float),
-            )
+        if not isinstance(
+            right,
+            dict,
         ):
-            target_condition = condition
-            break
+            continue
 
-    if target_condition is None:
-        raise ValueError(
-            "Could not find a numeric threshold "
-            "in the existing entry conditions."
+        right_value = right.get(
+            "value"
         )
 
-    target_condition["operator"] = (
-        semantic.threshold_operator
+        if not isinstance(
+            right_value,
+            (int, float),
+        ):
+            continue
+
+        matching_conditions.append(
+            condition
+        )
+
+    if not matching_conditions:
+
+        period_text = (
+            f" with period {target_period}"
+            if target_period is not None
+            else ""
+        )
+
+        raise ValueError(
+            "Could not find an existing numeric entry "
+            "condition matching target feature "
+            f"'{target_feature}'{period_text}."
+        )
+
+    if len(matching_conditions) > 1:
+
+        period_text = (
+            f" with period {target_period}"
+            if target_period is not None
+            else ""
+        )
+
+        raise ValueError(
+            "Threshold target is ambiguous. Multiple "
+            "entry conditions match "
+            f"'{target_feature}'{period_text}."
+        )
+
+    target_condition = (
+        matching_conditions[0]
     )
+
+    # IMPORTANT:
+    #
+    # The comparison operator itself is not allowed
+    # to change here. The guardrail also enforces this.
+    #
+    # Example:
+    #
+    #     RSI(14) < 30
+    #
+    # becomes:
+    #
+    #     RSI(14) < 25
+    #
+    # NOT:
+    #
+    #     RSI(14) <= 25
+    #
+    existing_operator = (
+        target_condition.get(
+            "operator"
+        )
+    )
+
+    if (
+        semantic.threshold_operator
+        != existing_operator
+    ):
+        raise ValueError(
+            "Threshold sensitivity cannot change "
+            "the existing comparison operator. "
+            f"Existing operator: '{existing_operator}', "
+            f"proposed operator: "
+            f"'{semantic.threshold_operator}'."
+        )
 
     target_condition["right"]["value"] = (
         semantic.threshold_value
     )
-
 
 def _apply_horizon_change(
     proposed: dict[str, Any],
@@ -393,12 +514,12 @@ def _call_ollama(
         "model": model,
 
         "messages": [
-            {
-                "role": "system",
-                "content":
-                    AGENT_2_SYSTEM_PROMPT
-                    + """
-
+{
+    "role": "system",
+    "content":
+        AGENT_2_SYSTEM_PROMPT
+        + """
+    
 IMPORTANT OUTPUT RULE:
 
 Do NOT construct a ResearchRequest.
@@ -426,7 +547,7 @@ Never invent feature names.
 Use only capabilities explicitly
 described in the research context.
 """,
-            },
+},
             {
                 "role": "user",
                 "content": user_prompt,

@@ -4,40 +4,26 @@ Explicit, causal temporal evaluation for rule-based research.
 Temporal convention
 -------------------
 
-Signal is observed at the close of signal_date.
+Signal:
+    Generated using information available for the signal date.
 
-The position is considered entered on the SAME DAY at the
-signal-day closing price.
+Entry:
+    Same-day CLOSE price proxy.
 
 T+1 / BTST:
-    Uses the next available trading session's HIGH multiplied
-    by 0.985.
-
-    This represents a theoretical BTST target 1.5% below the
-    next trading day's high.
+    Next available trading session's CLOSE.
 
 T+N for N > 1:
-    Uses the close of the N-th subsequent available trading
-    session after the signal date.
+    Close of the N-th subsequent available trading session.
 
-Example:
+Trading sessions are based on the observations available for each
+symbol. Weekends and exchange holidays do not count as horizons.
 
-    Signal: 28 Sep
-    Entry:  28 Sep CLOSE
+Stage boundaries are strict:
+    Both the signal date and outcome date must lie within the stage.
 
-    T+1: 29 Sep HIGH × 0.985
-    T+3: third subsequent session CLOSE
-    T+5: fifth subsequent session CLOSE
-    T+10: tenth subsequent session CLOSE
-
-Trading sessions are determined from the actual observations
-available for each symbol. Weekends and exchange holidays
-therefore do not count as horizons.
-
-This is a research convention, not an executable-order claim.
-The BTST T+1 value is a target-return measure because daily OHLC
-data cannot prove that an intraday target order was actually
-filled.
+This module evaluates historical research outcomes. It does not
+guarantee real-world order execution or returns.
 """
 
 from __future__ import annotations
@@ -50,23 +36,15 @@ import pandas as pd
 from research.engine.condition_engine import apply_conditions
 
 
-BTST_TARGET_FACTOR = 0.985
-
-
 TEMPORAL_CONVENTION = {
-    "signal_observation": "signal_date close",
-    "entry": "same signal_date close",
+    "signal_observation": "signal_date",
+    "entry": "same signal_date close proxy",
     "entry_price_basis": "CLOSE",
-    "t1_outcome": (
-        "next available symbol session HIGH multiplied by 0.985"
-    ),
-    "t1_outcome_price_basis": (
-        "NEXT_SESSION_HIGH_MINUS_1_5_PERCENT"
-    ),
-    "t1_outcome_type": "theoretical_target_return",
+    "t1_outcome": "next available symbol session CLOSE",
+    "t1_outcome_price_basis": "NEXT_SESSION_CLOSE",
+    "t1_outcome_type": "close_to_close_return",
     "outcome": (
-        "N subsequent available symbol sessions after signal "
-        "at close for N > 1"
+        "N-th subsequent available symbol session CLOSE"
     ),
     "outcome_price_basis": "CLOSE",
     "horizon_anchor": "signal_date",
@@ -120,34 +98,13 @@ def feature_lookback_requirements(
             feature.get("type", "")
         ).lower()
 
-        # ------------------------------------------------------
-        # Canonical feature schema:
-        #
-        # {
-        #     "type": "return",
-        #     "parameters": {
-        #         "period": 5
-        #     }
-        # }
-        #
-        # Legacy schema:
-        #
-        # {
-        #     "type": "return",
-        #     "period": 5
-        # }
-        #
-        # Read canonical parameters first while retaining
-        # backward compatibility with the old schema.
-        # ------------------------------------------------------
-
         parameters = dict(
             feature.get("parameters") or {}
         )
 
         period = parameters.get(
             "period",
-            feature.get("period")
+            feature.get("period"),
         )
 
         if period is not None:
@@ -156,7 +113,6 @@ def feature_lookback_requirements(
                 period = int(period)
 
             except (TypeError, ValueError) as exc:
-
                 raise ValueError(
                     f"Invalid feature period: {feature}"
                 ) from exc
@@ -165,10 +121,6 @@ def feature_lookback_requirements(
                 raise ValueError(
                     f"Feature period must be positive: {feature}"
                 )
-
-        # ------------------------------------------------------
-        # Features requiring only the signal observation itself
-        # ------------------------------------------------------
 
         if feature_type in {
             "open",
@@ -179,25 +131,14 @@ def feature_lookback_requirements(
             "delivery_percentage",
             "delivery_quantity",
         }:
-
             required = 1
-
-        # ------------------------------------------------------
-        # EMA
-        # ------------------------------------------------------
 
         elif feature_type == "ema":
 
             if period is None:
-                raise ValueError(
-                    "ema requires a period."
-                )
+                raise ValueError("ema requires a period.")
 
             required = period + 1
-
-        # ------------------------------------------------------
-        # Rolling features
-        # ------------------------------------------------------
 
         elif feature_type in {
             "sma",
@@ -214,34 +155,16 @@ def feature_lookback_requirements(
 
             required = period
 
-        # ------------------------------------------------------
-        # Return
-        # ------------------------------------------------------
-
-        elif feature_type == "return":
+        elif feature_type in {"return", "rsi"}:
 
             if period is None:
                 raise ValueError(
-                    "return requires a period."
-                )
-
-            required = period + 1
-
-        # ------------------------------------------------------
-        # RSI
-        # ------------------------------------------------------
-
-        elif feature_type == "rsi":
-
-            if period is None:
-                raise ValueError(
-                    "rsi requires a period."
+                    f"{feature_type} requires a period."
                 )
 
             required = period + 1
 
         else:
-
             continue
 
         key = (
@@ -254,11 +177,12 @@ def feature_lookback_requirements(
 
     return requirements
 
+
 def generate_signal_mask(
     dataframe: pd.DataFrame,
     conditions: list[dict],
 ) -> pd.Series:
-    """Generate causal signals from a feature-enriched dataframe."""
+    """Generate a Boolean signal mask from a feature-enriched dataframe."""
 
     signal_mask = apply_conditions(
         dataframe,
@@ -275,12 +199,12 @@ def generate_signal_mask(
 def _normalise_stock_data(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
+    """Validate and standardise stock observations."""
 
     required = {
         "SYMBOL",
         "TIMESTAMP",
         "CLOSE",
-        "HIGH",
     }
 
     missing = required - set(dataframe.columns)
@@ -292,9 +216,7 @@ def _normalise_stock_data(
 
     data = dataframe.copy()
 
-    data["_TEMPORAL_ROW_ID"] = range(
-        len(data)
-    )
+    data["_TEMPORAL_ROW_ID"] = range(len(data))
 
     data["TIMESTAMP"] = (
         pd.to_datetime(
@@ -309,14 +231,9 @@ def _normalise_stock_data(
         errors="coerce",
     )
 
-    data["HIGH"] = pd.to_numeric(
-        data["HIGH"],
-        errors="coerce",
-    )
-
     data["SYMBOL"] = (
         data["SYMBOL"]
-        .astype(str)
+        .astype("string")
         .str.strip()
         .str.upper()
     )
@@ -328,6 +245,9 @@ def _normalise_stock_data(
             "CLOSE",
         ]
     )
+
+    # Invalid prices must not produce misleading returns.
+    data = data[data["CLOSE"] > 0].copy()
 
     data = (
         data
@@ -354,6 +274,7 @@ def _normalise_stock_data(
 def _normalise_market_data(
     market_dataframe: pd.DataFrame | None,
 ) -> pd.DataFrame | None:
+    """Validate and standardise benchmark observations."""
 
     if market_dataframe is None:
         return None
@@ -363,9 +284,7 @@ def _normalise_market_data(
         "MARKET_CLOSE",
     }
 
-    missing = required - set(
-        market_dataframe.columns
-    )
+    missing = required - set(market_dataframe.columns)
 
     if missing:
         raise ValueError(
@@ -387,14 +306,19 @@ def _normalise_market_data(
         errors="coerce",
     )
 
+    market = market.dropna(
+        subset=[
+            "TIMESTAMP",
+            "MARKET_CLOSE",
+        ]
+    )
+
+    market = market[
+        market["MARKET_CLOSE"] > 0
+    ].copy()
+
     return (
         market
-        .dropna(
-            subset=[
-                "TIMESTAMP",
-                "MARKET_CLOSE",
-            ]
-        )
         .sort_values("TIMESTAMP")
         .drop_duplicates(
             subset=["TIMESTAMP"],
@@ -410,6 +334,7 @@ def _market_outcome(
     horizon: int,
     stage: TemporalStage,
 ) -> dict:
+    """Calculate a close-to-close benchmark return."""
 
     if market is None:
         return {
@@ -427,11 +352,13 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    signal_positions = market.index[
-        market["TIMESTAMP"] >= signal_date
+    # Require the benchmark observation on the actual signal date.
+    # Do not silently substitute a later market session.
+    matching_positions = market.index[
+        market["TIMESTAMP"] == signal_date
     ]
 
-    if len(signal_positions) == 0:
+    if len(matching_positions) == 0:
         return {
             "entry_date": None,
             "outcome_date": None,
@@ -439,53 +366,50 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    signal_position = int(
-        signal_positions[0]
-    )
+    entry_position = int(matching_positions[0])
+    entry_row = market.iloc[entry_position]
 
-    signal_row = market.iloc[
-        signal_position
-    ]
-
-    outcome_position = (
-        signal_position + horizon
-    )
+    outcome_position = entry_position + horizon
 
     if outcome_position >= len(market):
         return {
-            "entry_date": signal_row["TIMESTAMP"],
+            "entry_date": entry_row["TIMESTAMP"],
             "outcome_date": None,
             "return": None,
             "status": "MARKET_OUTCOME_UNAVAILABLE",
         }
 
-    outcome = market.iloc[
-        outcome_position
-    ]
+    outcome_row = market.iloc[outcome_position]
+    outcome_date = outcome_row["TIMESTAMP"]
 
     if not (
-        stage.start
-        <= outcome["TIMESTAMP"]
-        <= stage.end
+        stage.start <= outcome_date <= stage.end
     ):
-
         return {
-            "entry_date": signal_row["TIMESTAMP"],
-            "outcome_date": outcome["TIMESTAMP"],
+            "entry_date": entry_row["TIMESTAMP"],
+            "outcome_date": outcome_date,
             "return": None,
             "status": "MARKET_OUTCOME_OUTSIDE_STAGE",
         }
 
+    entry_price = float(entry_row["MARKET_CLOSE"])
+    outcome_price = float(outcome_row["MARKET_CLOSE"])
+
+    if entry_price <= 0 or outcome_price <= 0:
+        return {
+            "entry_date": entry_row["TIMESTAMP"],
+            "outcome_date": outcome_date,
+            "return": None,
+            "status": "MARKET_PRICE_INVALID",
+        }
+
     market_return = (
-        (
-            outcome["MARKET_CLOSE"]
-            / signal_row["MARKET_CLOSE"]
-        ) - 1
+        (outcome_price / entry_price) - 1
     ) * 100
 
     return {
-        "entry_date": signal_row["TIMESTAMP"],
-        "outcome_date": outcome["TIMESTAMP"],
+        "entry_date": entry_row["TIMESTAMP"],
+        "outcome_date": outcome_date,
         "return": market_return,
         "status": "COMPLETE",
     }
@@ -499,33 +423,32 @@ def evaluate_temporal_stage(
     market_dataframe: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
-    Evaluate one stage using signal-day entry.
+    Evaluate signals and forward returns within a temporal stage.
+
+    Entry:
+        Signal-date CLOSE proxy.
 
     T+1:
-        next available symbol session HIGH × 0.985.
+        Next available symbol session CLOSE.
 
     T+N for N > 1:
         N-th subsequent available symbol session CLOSE.
 
-    Each horizon is independently eligible.
-
-    Stage boundaries are strict:
-        - signal must be inside stage
-        - outcome must be inside stage
-
-    The entry is the signal-day close, so there is no separate
-    next-day entry row.
+    Each horizon is independently eligible. Signals must be inside
+    the stage, and their outcome dates must also be inside the stage.
     """
 
     if (
         not horizons
         or any(
-            int(horizon) <= 0
+            isinstance(horizon, bool)
+            or not isinstance(horizon, int)
+            or horizon <= 0
             for horizon in horizons
         )
     ):
         raise ValueError(
-            "At least one positive horizon is required."
+            "Horizons must contain positive integers."
         )
 
     if len(signal_mask) != len(dataframe):
@@ -535,9 +458,7 @@ def evaluate_temporal_stage(
 
     original = dataframe.copy()
 
-    original["_TEMPORAL_ROW_ID"] = range(
-        len(original)
-    )
+    original["_TEMPORAL_ROW_ID"] = range(len(original))
 
     original["_SIGNAL"] = (
         signal_mask
@@ -546,9 +467,7 @@ def evaluate_temporal_stage(
         .to_numpy()
     )
 
-    data = _normalise_stock_data(
-        original
-    )
+    data = _normalise_stock_data(original)
 
     signal_lookup = (
         original[
@@ -557,12 +476,7 @@ def evaluate_temporal_stage(
                 "_SIGNAL",
             ]
         ]
-        .drop_duplicates(
-            subset=["_TEMPORAL_ROW_ID"]
-        )
-        .set_index(
-            "_TEMPORAL_ROW_ID"
-        )["_SIGNAL"]
+        .set_index("_TEMPORAL_ROW_ID")["_SIGNAL"]
     )
 
     data["_SIGNAL"] = (
@@ -572,27 +486,18 @@ def evaluate_temporal_stage(
         .astype(bool)
     )
 
-    market = _normalise_market_data(
-        market_dataframe
-    )
+    market = _normalise_market_data(market_dataframe)
 
     groups = {
         symbol: group.reset_index(drop=True)
-        for symbol, group
-        in data.groupby(
+        for symbol, group in data.groupby(
             "SYMBOL",
             sort=False,
         )
     }
 
     records: list[dict] = []
-
-    unique_horizons = sorted(
-        set(
-            int(value)
-            for value in horizons
-        )
-    )
+    unique_horizons = sorted(set(horizons))
 
     for symbol, group in groups.items():
 
@@ -604,15 +509,11 @@ def evaluate_temporal_stage(
                 continue
 
             if not (
-                stage.start
-                <= signal_date
-                <= stage.end
+                stage.start <= signal_date <= stage.end
             ):
                 continue
 
-            signal_price = float(
-                row["CLOSE"]
-            )
+            entry_price = float(row["CLOSE"])
 
             record = row.drop(
                 labels=[
@@ -621,17 +522,13 @@ def evaluate_temporal_stage(
                 ]
             ).to_dict()
 
-            # --------------------------------------------------
-            # ENTRY = SIGNAL-DAY CLOSE
-            # --------------------------------------------------
-
             record.update(
                 {
                     "STAGE": stage.name,
                     "SIGNAL_DATE": signal_date,
                     "ENTRY_DATE": signal_date,
                     "ENTRY_PRICE_BASIS": "CLOSE",
-                    "ENTRY_PRICE": signal_price,
+                    "ENTRY_PRICE": entry_price,
                     "ENTRY_STATUS": "COMPLETE",
                 }
             )
@@ -641,189 +538,68 @@ def evaluate_temporal_stage(
                 suffix = f"T{horizon}"
 
                 outcome = None
+                outcome_date = None
                 outcome_price = None
                 outcome_price_basis = None
                 status = "COMPLETE"
 
-                # --------------------------------------------------
-                # T+1 / BTST
-                # --------------------------------------------------
+                # Find the future session for this horizon.
+                outcome_position = position + horizon
 
-                if horizon == 1:
+                if outcome_position >= len(group):
 
-                    outcome_position = (
-                        position + 1
-                    )
-
-                    if (
-                        outcome_position
-                        >= len(group)
-                    ):
-
-                        status = (
-                            "OUTCOME_UNAVAILABLE"
-                        )
-
-                    else:
-
-                        outcome = group.iloc[
-                            outcome_position
-                        ]
-
-                        outcome_date = (
-                            outcome["TIMESTAMP"]
-                        )
-
-                        if not (
-                            stage.start
-                            <= outcome_date
-                            <= stage.end
-                        ):
-
-                            status = (
-                                "OUTCOME_OUTSIDE_STAGE"
-                            )
-
-                        elif pd.isna(
-                            outcome["HIGH"]
-                        ):
-
-                            status = (
-                                "OUTCOME_HIGH_UNAVAILABLE"
-                            )
-
-                        else:
-
-                            next_day_high = float(
-                                outcome["HIGH"]
-                            )
-
-                            outcome_price = (
-                                next_day_high
-                                * BTST_TARGET_FACTOR
-                            )
-
-                            outcome_price_basis = (
-                                "NEXT_SESSION_HIGH_MINUS_1_5_PERCENT"
-                            )
-
-                # --------------------------------------------------
-                # T+3 / T+5 / T+10 / any N > 1
-                # --------------------------------------------------
+                    status = "OUTCOME_UNAVAILABLE"
 
                 else:
 
-                    outcome_position = (
-                        position + horizon
-                    )
+                    outcome = group.iloc[outcome_position]
+                    outcome_date = outcome["TIMESTAMP"]
 
-                    if (
-                        outcome_position
-                        >= len(group)
+                    if not (
+                        stage.start <= outcome_date <= stage.end
                     ):
-
-                        status = (
-                            "OUTCOME_UNAVAILABLE"
-                        )
+                        status = "OUTCOME_OUTSIDE_STAGE"
 
                     else:
-
-                        outcome = group.iloc[
-                            outcome_position
-                        ]
-
-                        outcome_date = (
-                            outcome["TIMESTAMP"]
+                        outcome_price = float(
+                            outcome["CLOSE"]
                         )
-
-                        if not (
-                            stage.start
-                            <= outcome_date
-                            <= stage.end
-                        ):
-
-                            status = (
-                                "OUTCOME_OUTSIDE_STAGE"
-                            )
-
-                        else:
-
-                            outcome_price = float(
-                                outcome["CLOSE"]
-                            )
-
-                            outcome_price_basis = (
-                                "CLOSE"
-                            )
+                        outcome_price_basis = (
+                            "NEXT_SESSION_CLOSE"
+                            if horizon == 1
+                            else "CLOSE"
+                        )
 
                 eligible = (
                     status == "COMPLETE"
                     and outcome_price is not None
-                    and signal_price != 0
+                    and entry_price > 0
+                    and outcome_price > 0
                 )
 
                 if eligible:
-
                     stock_return = (
-                        (
-                            outcome_price
-                            / signal_price
-                        ) - 1
+                        (outcome_price / entry_price) - 1
                     ) * 100
-
                 else:
-
                     stock_return = None
-
-                outcome_date = (
-                    outcome["TIMESTAMP"]
-                    if outcome is not None
-                    and status == "COMPLETE"
-                    else (
-                        outcome["TIMESTAMP"]
-                        if outcome is not None
-                        else None
-                    )
-                )
 
                 record.update(
                     {
                         f"HORIZON_{suffix}": horizon,
-
-                        f"OUTCOME_DATE_{suffix}": (
-                            outcome_date
-                        ),
-
+                        f"OUTCOME_DATE_{suffix}": outcome_date,
                         f"OUTCOME_PRICE_BASIS_{suffix}": (
                             outcome_price_basis
                         ),
-
-                        f"OUTCOME_PRICE_{suffix}": (
-                            outcome_price
-                        ),
-
-                        f"OUTCOME_ELIGIBLE_{suffix}": (
-                            eligible
-                        ),
-
-                        f"OUTCOME_STATUS_{suffix}": (
-                            status
-                        ),
-
-                        f"RETURN_{suffix}": (
-                            stock_return
-                        ),
+                        f"OUTCOME_PRICE_{suffix}": outcome_price,
+                        f"OUTCOME_ELIGIBLE_{suffix}": eligible,
+                        f"OUTCOME_STATUS_{suffix}": status,
+                        f"RETURN_{suffix}": stock_return,
                     }
                 )
 
-                # --------------------------------------------------
-                # MARKET BENCHMARK
-                #
-                # Market benchmark remains close-based from the
-                # signal date because NIFTY does not participate
-                # in the stock-specific BTST target convention.
-                # --------------------------------------------------
-
+                # Benchmark returns use the same signal-date anchor
+                # and close-to-close horizon.
                 market_outcome = _market_outcome(
                     market=market,
                     signal_date=signal_date,
@@ -834,40 +610,24 @@ def evaluate_temporal_stage(
                 record.update(
                     {
                         f"MARKET_ENTRY_DATE_{suffix}": (
-                            market_outcome[
-                                "entry_date"
-                            ]
+                            market_outcome["entry_date"]
                         ),
-
                         f"MARKET_OUTCOME_DATE_{suffix}": (
-                            market_outcome[
-                                "outcome_date"
-                            ]
+                            market_outcome["outcome_date"]
                         ),
-
                         f"MARKET_RETURN_{suffix}": (
-                            market_outcome[
-                                "return"
-                            ]
+                            market_outcome["return"]
                         ),
-
                         f"MARKET_OUTCOME_STATUS_{suffix}": (
-                            market_outcome[
-                                "status"
-                            ]
+                            market_outcome["status"]
                         ),
                     }
                 )
 
-                market_return = (
-                    market_outcome["return"]
-                )
+                market_return = market_outcome["return"]
 
-                record[
-                    f"EXCESS_RETURN_{suffix}"
-                ] = (
-                    stock_return
-                    - market_return
+                record[f"EXCESS_RETURN_{suffix}"] = (
+                    stock_return - market_return
                     if (
                         stock_return is not None
                         and market_return is not None
@@ -902,9 +662,6 @@ def evaluate_temporal_stage(
             f"MARKET_RETURN_{suffix}",
             f"EXCESS_RETURN_{suffix}",
         ):
-
-            empty[column] = pd.Series(
-                dtype="float64"
-            )
+            empty[column] = pd.Series(dtype="float64")
 
     return empty

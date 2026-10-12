@@ -48,13 +48,12 @@ class Agent2Request(BaseModel):
 
 class Agent2SemanticProposal(BaseModel):
     """
-    Small proposal schema given to the LLM.
+    Small semantic proposal produced by the LLM.
 
-    IMPORTANT:
-    The LLM does NOT construct ResearchRequest directly.
+    The LLM does NOT construct a ResearchRequest.
 
-    Python converts this semantic proposal into a
-    deterministic ResearchRequest afterwards.
+    Python deterministically converts this proposal into
+    a ResearchRequest afterwards.
     """
 
     research_question: str = Field(min_length=1)
@@ -70,10 +69,30 @@ class Agent2SemanticProposal(BaseModel):
         "high",
     ] = "medium"
 
-    # Used for threshold_sensitivity.
+    # ==============================================================
+    # THRESHOLD SENSITIVITY
+    # ==============================================================
+
+    # Exact feature whose threshold should be changed.
+    #
+    # Example:
+    #     RSI(14) < 30
+    #
+    # target_feature = "rsi"
+    target_feature: str | None = None
+
+    # Optional period used to identify the exact feature instance.
+    #
+    # Example:
+    #     RSI(14)
+    #
+    # target_period = 14
+    target_period: int | None = None
+
+    # New threshold value.
     threshold_value: float | None = None
 
-    # Used for threshold_sensitivity.
+    # Comparison operator for the proposed condition.
     threshold_operator: Literal[
         ">",
         ">=",
@@ -81,15 +100,18 @@ class Agent2SemanticProposal(BaseModel):
         "<=",
     ] | None = None
 
-    # Used for horizon experiments.
+    # ==============================================================
+    # HORIZON
+    # ==============================================================
+
     horizons: list[int] | None = None
 
-    # Used for confirmation_variable /
-    # delivery_confirmation.
+    # ==============================================================
+    # CONFIRMATION VARIABLES
+    # ==============================================================
+
     confirmation_feature: str | None = None
 
-    # Used when the confirmation feature requires
-    # a period, e.g. average_volume(20).
     confirmation_period: int | None = None
 
     @model_validator(mode="after")
@@ -117,10 +139,18 @@ class Agent2SemanticProposal(BaseModel):
                 "expected_learning cannot be empty."
             )
 
-        if (
-            self.experiment_type
-            == "threshold_sensitivity"
-        ):
+        # ----------------------------------------------------------
+        # Threshold sensitivity
+        # ----------------------------------------------------------
+
+        if self.experiment_type == "threshold_sensitivity":
+
+            if not self.target_feature:
+                raise ValueError(
+                    "threshold_sensitivity requires "
+                    "target_feature."
+                )
+
             if self.threshold_value is None:
                 raise ValueError(
                     "threshold_sensitivity requires "
@@ -133,7 +163,18 @@ class Agent2SemanticProposal(BaseModel):
                     "threshold_operator."
                 )
 
+            if self.target_period is not None:
+                if self.target_period <= 0:
+                    raise ValueError(
+                        "target_period must be positive."
+                    )
+
+        # ----------------------------------------------------------
+        # Horizon
+        # ----------------------------------------------------------
+
         if self.experiment_type == "horizon":
+
             if not self.horizons:
                 raise ValueError(
                     "horizon experiment requires "
@@ -148,10 +189,15 @@ class Agent2SemanticProposal(BaseModel):
                     "All horizons must be positive."
                 )
 
+        # ----------------------------------------------------------
+        # Confirmation
+        # ----------------------------------------------------------
+
         if self.experiment_type in {
             "confirmation_variable",
             "delivery_confirmation",
         }:
+
             if not self.confirmation_feature:
                 raise ValueError(
                     "Confirmation experiments require "
