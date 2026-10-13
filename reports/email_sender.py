@@ -30,8 +30,9 @@ EMAIL_PASSWORD = os.getenv(
 )
 
 RECEIVER_EMAILS = [
-    "mohak.wagle@gmail.com",
-    "prasadwagle08@gmail.com"
+    email.strip()
+    for email in os.getenv("RECEIVER_EMAILS", "").split(",")
+    if email.strip()
 ]
 
 
@@ -48,6 +49,11 @@ def send_email(
     attachment_path: Path | None = None
 
 ) -> None:
+
+    if not RECEIVER_EMAILS:
+        raise RuntimeError(
+            "RECEIVER_EMAILS environment variable is not configured."
+        )
 
     try:
 
@@ -277,9 +283,9 @@ def send_stock_report_email(
 
         "The attached workbook contains:\n\n"
 
-        "• Sheet 1 : FINAL_RECOMMENDATIONS\n"
+        "â€¢ Sheet 1 : FINAL_RECOMMENDATIONS\n"
 
-        "• Remaining sheets : Individual "
+        "â€¢ Remaining sheets : Individual "
         "strategy outputs generated today.\n\n"
 
         "The strategy sheets are attached "
@@ -373,10 +379,10 @@ def send_strategy_output_email(
 
         "The attached workbook contains:\n\n"
 
-        "• Sheet 1 : FINAL_RECOMMENDATIONS "
+        "â€¢ Sheet 1 : FINAL_RECOMMENDATIONS "
         "(No recommendations today)\n"
 
-        "• Remaining sheets : Individual "
+        "â€¢ Remaining sheets : Individual "
         "strategy outputs generated today.\n\n"
 
         "These strategy outputs are shared "
@@ -439,9 +445,9 @@ def send_no_stock_email() -> None:
 
         "Therefore:\n"
 
-        "• No FINAL RECOMMENDATIONS were generated.\n"
+        "â€¢ No FINAL RECOMMENDATIONS were generated.\n"
 
-        "• No strategy output workbook has been attached."
+        "â€¢ No strategy output workbook has been attached."
 
     )
 

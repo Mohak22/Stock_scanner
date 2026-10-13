@@ -310,11 +310,11 @@ function ResearchConfig() {
       evaluation_horizons: evaluationHorizons,
       signal_timing: {
         observation: 'signal_date_close',
-        entry: 'next_available_symbol_session_close',
+        entry: 'same_signal_date_close_proxy',
         price_basis: 'CLOSE',
       },
       outcome_definition: {
-        anchor: 'entry_date',
+        anchor: 'signal_date',
         price_basis: 'CLOSE',
         horizons: evaluationHorizons,
       },

@@ -6,22 +6,32 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import time
+from collections import defaultdict, deque
 from datetime import date
+
 from dotenv import load_dotenv
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 
 load_dotenv()
 
-from fastapi.responses import StreamingResponse
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-
-from api.data.github_data import ResearchDataRepository
-
-from api.schemas import (
-    DateRangeResponse,
-    HealthResponse,
+# Safe by default. Set DEMO_MODE=false explicitly for local development.
+DEMO_MODE = (
+    os.getenv("DEMO_MODE", "true").strip().lower()
+    in {"1", "true", "yes", "on"}
 )
 
+from api.data.github_data import ResearchDataRepository
+from api.schemas import DateRangeResponse, HealthResponse
 from api.research.experiment_api import router as experiment_router
 from api.research.workflow_api import router as workflow_router
 from api.research.features import get_feature_registry
@@ -29,10 +39,7 @@ from api.research.universe import get_research_universe
 from api.research.dataset import get_dataset_info
 from api.research.models import ResearchRequest
 from api.research.executor import execute_research
-from api.research.job import (
-    JobStatus,
-    job_store,
-)
+from api.research.job import JobStatus, job_store
 from api.execution.router import router as execution_router
 from api.research_agent.router import router as research_agent_router
 
@@ -44,8 +51,13 @@ app = FastAPI(
     title="Stock Scanner Research Cockpit API",
     version="0.1.0",
     description=(
-        "Read-only research API backed by the "
-        "STOCK_SCANNER_DATA GitHub repository."
+        "Research API backed by the STOCK_SCANNER_DATA GitHub repository. "
+        + (
+            "Demo Mode: research runs and AI suggestions are enabled; "
+            "persistent writes and broker execution are disabled."
+            if DEMO_MODE
+            else "Development Mode: additional integrations may be enabled."
+        )
     ),
 )
 
@@ -60,13 +72,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Research history and workflow routes are registered in both modes.
+# The middleware below limits Demo Mode to read operations plus the
+# explicitly permitted research-run, compare, and AI-suggestion POSTs.
 app.include_router(experiment_router)
-
 app.include_router(workflow_router)
-
-app.include_router(execution_router)
-
 app.include_router(research_agent_router)
+
+# Broker/execution routes are not registered in Demo Mode.
+if not DEMO_MODE:
+    app.include_router(execution_router)
 
 repository = ResearchDataRepository()
 
@@ -74,6 +89,86 @@ data_revision = repository.get_revision()
 universe_revision = repository.get_file_revision(
     "research_universe.csv"
 )
+
+# Demo Mode: allow safe research operations, block writes.
+DEMO_ALLOWED_POST_PATHS = {
+    "/research/run",
+    "/research/experiments/compare",
+    "/agent/research/suggest",
+}
+
+# Simple per-client in-memory rate limit for AI suggestions.
+_agent_request_times = defaultdict(deque)
+
+DEMO_AGENT_REQUEST_LIMIT = 5
+DEMO_AGENT_WINDOW_SECONDS = 60
+
+
+@app.middleware("http")
+async def enforce_demo_safety(
+    request: Request,
+    call_next,
+):
+    if not DEMO_MODE:
+        return await call_next(request)
+
+    method = request.method.upper()
+    path = request.url.path.rstrip("/") or "/"
+
+    # No modifying HTTP methods in the demo.
+    if method in {"PUT", "PATCH", "DELETE"}:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Demo Mode is read-only: "
+                    "modifying operations are disabled."
+                )
+            },
+        )
+
+    # POST is allowed only for specific research operations.
+    if method == "POST" and path not in DEMO_ALLOWED_POST_PATHS:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "This operation is disabled in Demo Mode."
+                )
+            },
+        )
+
+    # Limit AI suggestions to 5 requests per client per minute.
+    if method == "POST" and path == "/agent/research/suggest":
+        client_ip = (
+            request.client.host
+            if request.client is not None
+            else "unknown"
+        )
+
+        now = time.monotonic()
+        timestamps = _agent_request_times[client_ip]
+
+        while (
+            timestamps
+            and now - timestamps[0] >= DEMO_AGENT_WINDOW_SECONDS
+        ):
+            timestamps.popleft()
+
+        if len(timestamps) >= DEMO_AGENT_REQUEST_LIMIT:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": (
+                        "Demo AI request limit reached. "
+                        "Please wait before trying again."
+                    )
+                },
+            )
+
+        timestamps.append(now)
+
+    return await call_next(request)
 
 # ======================================================================
 # SYSTEM
@@ -87,7 +182,7 @@ def root() -> dict[str, str]:
     return {
         "name": "Stock Scanner Research Cockpit API",
         "version": "0.1.0",
-        "mode": "research-only",
+        "mode": "demo" if DEMO_MODE else "development",
     }
 
 

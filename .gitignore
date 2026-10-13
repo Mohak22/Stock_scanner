@@ -1,13 +1,41 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu May 14 21:59:41 2026
-
-@author: mohak
-"""
-
-venv/
+# Python
 __pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+build/
+dist/
+venv/
+.venv/
+env/
+
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+
+# Notebooks and local development
 .ipynb_checkpoints/
+.spyderproject/
+.spyproject/
+.vscode/
+
+# Frontend dependencies and build output
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Local data and generated outputs
 STOCK_SCANNER_DATA/temp/
 .research_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/

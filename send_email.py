@@ -12,9 +12,11 @@ import os
 sender_email = os.getenv("SENDER_EMAIL")
 
 # Multiple receivers
+# Recipients are configured through environment variables.
 receiver_emails = [
-    "mohak.wagle@gmail.com",
-    "prasadwagle08@gmail.com"
+    email.strip()
+    for email in os.getenv("RECEIVER_EMAILS", "").split(",")
+    if email.strip()
 ]
 
 # Gmail app password

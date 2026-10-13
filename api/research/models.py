@@ -70,15 +70,26 @@ class ConditionConfig(BaseModel):
             right["parameters"]={"period":right.pop("period")}
         return {"left":{"feature":p.get("feature"),"parameters":lp},"operator":p.get("operator"),"right":right}
 
+
 class SignalTimingConfig(BaseModel):
-    observation: str = "signal_date_close"
-    entry: str = "next_available_symbol_session_close"
-    price_basis: str = "CLOSE"
+    """Fixed temporal convention used by the research evaluator."""
+
+    observation: Literal["signal_date_close"] = "signal_date_close"
+    entry: Literal["same_signal_date_close_proxy"] = (
+        "same_signal_date_close_proxy"
+    )
+    price_basis: Literal["CLOSE"] = "CLOSE"
+
 
 class OutcomeDefinition(BaseModel):
-    anchor: str = "entry_date"
-    price_basis: str = "CLOSE"
-    horizons: list[int] = Field(default_factory=lambda:[1,3,5,10])
+    """Forward outcomes are measured from the signal-date close proxy."""
+
+    anchor: Literal["signal_date"] = "signal_date"
+    price_basis: Literal["CLOSE"] = "CLOSE"
+    horizons: list[int] = Field(
+        default_factory=lambda: [1, 3, 5, 10]
+    )
+
 
 class ResearchRequest(BaseModel):
     development_start: date

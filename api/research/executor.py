@@ -1582,7 +1582,7 @@ def execute_research(
                 if request.outcome_definition
                 is not None
                 else {
-                    "anchor": "entry_date",
+                    "anchor": "signal_date",
                     "price_basis": "CLOSE",
                     "horizons": horizons,
                 }

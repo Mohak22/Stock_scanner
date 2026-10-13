@@ -23,19 +23,13 @@ import pandas as pd
 # EMAIL CONFIGURATION
 # =========================================================
 
-SENDER_EMAIL = os.getenv(
-    "SENDER_EMAIL"
-)
-# SENDER_EMAIL = "mohak.wagle@gmail.com"
-
-
-EMAIL_PASSWORD = os.getenv(
-    "EMAIL_PASSWORD"
-)
-# EMAIL_PASSWORD = "qeuk bfni brne glib"
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 RECEIVER_EMAILS = [
-    "mohak.wagle@gmail.com"
+    email.strip()
+    for email in os.getenv("RECEIVER_EMAILS", "").split(",")
+    if email.strip()
 ]
 
 
@@ -43,6 +37,11 @@ def send_analysis_report(
     report_path: Path,
     strategy_names: list[str]
 ) -> None:
+
+    if not RECEIVER_EMAILS:
+        raise RuntimeError(
+            "RECEIVER_EMAILS environment variable is not configured."
+        )
 
     body = (
         "Stock Scanner Analysis Report\n\n"
@@ -120,10 +119,15 @@ def send_analysis_report(
     print(
         "\nAnalysis report sent successfully."
     )
-    
-    
-    
+
+
+
 def send_no_analysis_report() -> None:
+
+    if not RECEIVER_EMAILS:
+        raise RuntimeError(
+            "RECEIVER_EMAILS environment variable is not configured."
+        )
 
     body = (
         "No recommendation files "
