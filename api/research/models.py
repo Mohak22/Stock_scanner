@@ -14,7 +14,8 @@ class UniverseConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_membership_basis(self):
-        # Select a safe default based on the requested universe type.
+        # Make the safer choice the default for broad historical
+        # research, while retaining explicit snapshot mode.
         if self.membership_basis is None:
             self.membership_basis = (
                 "point_in_time"
@@ -31,17 +32,15 @@ class UniverseConfig(BaseModel):
                 "'current_snapshot' or 'point_in_time'."
             )
 
-        # We only have a defensible point-in-time construction for
-        # all_stocks using the dated bhavcopy records.
         if (
             self.membership_basis == "point_in_time"
             and self.type != "all_stocks"
         ):
             raise ValueError(
-                "Point-in-time membership is currently supported only "
-                "for the 'all_stocks' universe. Historical sector "
-                "classifications and historical index constituents "
-                "are not yet available."
+                "Point-in-time membership is currently supported "
+                "only for the 'all_stocks' universe. Historical "
+                "sector classifications and historical index "
+                "constituents are not yet available."
             )
 
         return self

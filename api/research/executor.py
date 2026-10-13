@@ -20,6 +20,7 @@ from api.research.models import ResearchRequest
 from api.research.universe import (
     apply_research_universe,
     load_research_universe_dataframe,
+    validate_bhavcopy_session_coverage,
 )
 
 from research.engine.feature_engine import calculate_features
@@ -732,6 +733,15 @@ def execute_research(
         "Historical data ready",
     )
 
+    # Preserve dates from the full historical dataset before any
+    # universe filter can remove rows.
+    observed_bhavcopy_sessions = set(
+        data["TIMESTAMP"]
+        .dropna()
+        .dt.normalize()
+        .unique()
+    )
+
     # ==========================================================
     # 10. APPLY UNIVERSE
     # ==========================================================
@@ -1195,6 +1205,23 @@ def execute_research(
         "NIFTY benchmark ready",
     )
 
+    # A missing bhavcopy session can silently bias historical research.
+    # Use the benchmark's available trading sessions as a reference.
+    if membership_basis == "point_in_time":
+        try:
+            validate_bhavcopy_session_coverage(
+                observed_dates=observed_bhavcopy_sessions,
+                expected_dates=market_data["TIMESTAMP"],
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Historical bhavcopy coverage validation failed: "
+                    f"{exc}"
+                ),
+            ) from exc
+        
     # ==========================================================
     # 15. CALCULATE CAUSAL MARKET REGIME
     # ==========================================================

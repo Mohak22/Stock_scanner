@@ -310,25 +310,24 @@ def apply_major_stocks_universe(
     ].copy()
 
 
-
 def apply_point_in_time_universe(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Build the historical all-stocks universe from dated bhavcopy rows.
+    Construct the historical all-stocks universe from dated NSE
+    equity bhavcopy records.
 
-    Each symbol is eligible only on dates for which it has a record
-    in the historical bhavcopy data supplied to this function.
+    A symbol is eligible on dates for which its EQ record exists
+    in the historical data. The current research universe is never
+    used to filter historical membership.
 
-    Important:
-    - Does not filter against today's research_universe.csv.
-    - Does not require research_universe_history.csv.
-    - Depends on historical bhavcopy coverage being sufficiently complete.
-    - Does not infer historical sector classifications or index membership.
+    This is a historical-tradability proxy, not an official
+    listing/delisting master.
     """
 
     required_columns = {
         "SYMBOL",
+        "SERIES",
         "TIMESTAMP",
     }
 
@@ -342,17 +341,11 @@ def apply_point_in_time_universe(
 
     result = dataframe.copy()
 
-    # Normalize dates so universe eligibility is evaluated by trading day.
-    result["TIMESTAMP"] = (
-        pd.to_datetime(
-            result["TIMESTAMP"],
-            errors="coerce",
-        )
-        .dt.normalize()
-    )
+    result["TIMESTAMP"] = pd.to_datetime(
+        result["TIMESTAMP"],
+        errors="coerce",
+    ).dt.normalize()
 
-    # Normalize symbols without turning missing values into the literal
-    # string "NAN".
     result["SYMBOL"] = (
         result["SYMBOL"]
         .where(result["SYMBOL"].notna(), "")
@@ -361,22 +354,75 @@ def apply_point_in_time_universe(
         .str.upper()
     )
 
+    result["SERIES"] = (
+        result["SERIES"]
+        .where(result["SERIES"].notna(), "")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
     valid_rows = (
         result["TIMESTAMP"].notna()
         & result["SYMBOL"].ne("")
+        & result["SERIES"].eq("EQ")
     )
 
     result = result.loc[valid_rows].copy()
 
     if result.empty:
         raise ValueError(
-            "No valid symbol/date records remain in historical bhavcopy "
-            "data. Point-in-time universe construction cannot continue."
+            "No valid historical EQ-bhavcopy symbol/date records "
+            "remain. Point-in-time research cannot continue."
         )
 
-    # Deliberately do not intersect with the current research universe.
-    # The dated bhavcopy rows are the source of historical eligibility.
     return result.reset_index(drop=True)
+
+
+def validate_bhavcopy_session_coverage(
+    observed_dates,
+    expected_dates,
+) -> None:
+    """
+    Fail closed when historical bhavcopy lacks a session represented
+    in the NIFTY 50 benchmark.
+
+    This detects missing whole sessions. It cannot independently
+    prove that every individual stock record is present.
+    """
+
+    observed = pd.DatetimeIndex(
+        pd.to_datetime(
+            list(observed_dates),
+            errors="coerce",
+        )
+    ).dropna().normalize()
+
+    expected = pd.DatetimeIndex(
+        pd.to_datetime(
+            list(expected_dates),
+            errors="coerce",
+        )
+    ).dropna().normalize()
+
+    observed_set = set(observed)
+    expected_set = set(expected)
+
+    missing_dates = sorted(expected_set - observed_set)
+
+    if missing_dates:
+        examples = [
+            date.strftime("%Y-%m-%d")
+            for date in missing_dates[:10]
+        ]
+
+        raise ValueError(
+            f"Historical bhavcopy is missing {len(missing_dates)} "
+            "benchmark trading session(s). "
+            f"First missing dates: {examples}. "
+            "Repair or verify the archive before trusting this "
+            "point-in-time research result."
+        )
 
 
 def apply_research_universe(
