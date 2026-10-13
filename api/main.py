@@ -32,16 +32,19 @@ DEMO_MODE = (
 
 from api.data.github_data import ResearchDataRepository
 from api.schemas import DateRangeResponse, HealthResponse
-from api.research.experiment_api import router as experiment_router
-from api.research.workflow_api import router as workflow_router
 from api.research.features import get_feature_registry
 from api.research.universe import get_research_universe
 from api.research.dataset import get_dataset_info
 from api.research.models import ResearchRequest
 from api.research.executor import execute_research
 from api.research.job import JobStatus, job_store
-from api.execution.router import router as execution_router
-from api.research_agent.router import router as research_agent_router
+
+# Routes with write, broker, or LLM capabilities are not imported in Demo Mode.
+if not DEMO_MODE:
+    from api.research.experiment_api import router as experiment_router
+    from api.research.workflow_api import router as workflow_router
+    from api.execution.router import router as execution_router
+    from api.research_agent.router import router as research_agent_router
 
 # ======================================================================
 # APPLICATION
@@ -53,34 +56,36 @@ app = FastAPI(
     description=(
         "Research API backed by the STOCK_SCANNER_DATA GitHub repository. "
         + (
-            "Demo Mode: research runs and AI suggestions are enabled; "
-            "persistent writes and broker execution are disabled."
+            "Demo Mode: read-only data access; research runs, LLM calls, "
+            "persistent writes, and broker execution are disabled."
             if DEMO_MODE
-            else "Development Mode: additional integrations may be enabled."
+            else "Development Mode: research and integrations are enabled "
+            "subject to explicit execution safeguards."
         )
+
     ),
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
+        origin.strip().rstrip("/")
+        for origin in os.getenv(
+            "FRONTEND_ORIGINS",
+            "http://localhost:5173",
+        ).split(",")
+        if origin.strip()
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Research history and workflow routes are registered in both modes.
-# The middleware below limits Demo Mode to read operations plus the
-# explicitly permitted research-run, compare, and AI-suggestion POSTs.
-app.include_router(experiment_router)
-app.include_router(workflow_router)
-app.include_router(research_agent_router)
-
-# Broker/execution routes are not registered in Demo Mode.
+# Demo Mode is read-only. Sensitive routers are absent from its route table.
 if not DEMO_MODE:
+    app.include_router(experiment_router)
+    app.include_router(workflow_router)
+    app.include_router(research_agent_router)
     app.include_router(execution_router)
 
 repository = ResearchDataRepository()
@@ -90,83 +95,46 @@ universe_revision = repository.get_file_revision(
     "research_universe.csv"
 )
 
-# Demo Mode: allow safe research operations, block writes.
-DEMO_ALLOWED_POST_PATHS = {
-    "/research/run",
-    "/research/experiments/compare",
-    "/agent/research/suggest",
-}
-
-# Simple per-client in-memory rate limit for AI suggestions.
+# Simple per-client in-memory rate limit for LLM-backed suggestions.
 _agent_request_times = defaultdict(deque)
-
-DEMO_AGENT_REQUEST_LIMIT = 5
-DEMO_AGENT_WINDOW_SECONDS = 60
+AGENT_REQUEST_LIMIT = 5
+AGENT_WINDOW_SECONDS = 60
 
 
 @app.middleware("http")
-async def enforce_demo_safety(
-    request: Request,
-    call_next,
-):
-    if not DEMO_MODE:
-        return await call_next(request)
-
+async def enforce_demo_safety(request: Request, call_next):
     method = request.method.upper()
     path = request.url.path.rstrip("/") or "/"
 
-    # No modifying HTTP methods in the demo.
-    if method in {"PUT", "PATCH", "DELETE"}:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "detail": (
-                    "Demo Mode is read-only: "
-                    "modifying operations are disabled."
-                )
-            },
-        )
-
-    # POST is allowed only for specific research operations.
-    if method == "POST" and path not in DEMO_ALLOWED_POST_PATHS:
-        return JSONResponse(
-            status_code=403,
-            content={
-                "detail": (
-                    "This operation is disabled in Demo Mode."
-                )
-            },
-        )
-
-    # Limit AI suggestions to 5 requests per client per minute.
-    if method == "POST" and path == "/agent/research/suggest":
+    # In Development Mode, limit the LLM-backed endpoint to 5 calls/minute.
+    if not DEMO_MODE and method == "POST" and path == "/agent/research/suggest":
         client_ip = (
             request.client.host
             if request.client is not None
             else "unknown"
         )
-
         now = time.monotonic()
         timestamps = _agent_request_times[client_ip]
 
-        while (
-            timestamps
-            and now - timestamps[0] >= DEMO_AGENT_WINDOW_SECONDS
-        ):
+        while timestamps and now - timestamps[0] >= AGENT_WINDOW_SECONDS:
             timestamps.popleft()
 
-        if len(timestamps) >= DEMO_AGENT_REQUEST_LIMIT:
+        if len(timestamps) >= AGENT_REQUEST_LIMIT:
             return JSONResponse(
                 status_code=429,
-                content={
-                    "detail": (
-                        "Demo AI request limit reached. "
-                        "Please wait before trying again."
-                    )
-                },
+                content={"detail": "AI request limit reached; retry later."},
             )
-
         timestamps.append(now)
+
+    if DEMO_MODE and method not in {"GET", "HEAD", "OPTIONS"}:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Demo Mode is read-only. This operation is disabled."
+                )
+            },
+        )
 
     return await call_next(request)
 
@@ -428,9 +396,6 @@ def run_research_background(
 # RESEARCH RUN
 # ======================================================================
 
-@app.post(
-    "/research/run",
-)
 def run_research_api(
     request: ResearchRequest,
     background_tasks: BackgroundTasks,
@@ -450,6 +415,11 @@ def run_research_api(
         "progress": job.progress,
         "stage": job.stage,
     }
+
+
+# The route is registered only in Development Mode.
+if not DEMO_MODE:
+    app.post("/research/run")(run_research_api)
 
 
 # ======================================================================

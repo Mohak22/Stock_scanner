@@ -283,9 +283,9 @@ def send_stock_report_email(
 
         "The attached workbook contains:\n\n"
 
-        "â€¢ Sheet 1 : FINAL_RECOMMENDATIONS\n"
+        "• Sheet 1 : FINAL_RECOMMENDATIONS\n"
 
-        "â€¢ Remaining sheets : Individual "
+        "• Remaining sheets : Individual "
         "strategy outputs generated today.\n\n"
 
         "The strategy sheets are attached "
@@ -379,10 +379,10 @@ def send_strategy_output_email(
 
         "The attached workbook contains:\n\n"
 
-        "â€¢ Sheet 1 : FINAL_RECOMMENDATIONS "
+        "• Sheet 1 : FINAL_RECOMMENDATIONS "
         "(No recommendations today)\n"
 
-        "â€¢ Remaining sheets : Individual "
+        "• Remaining sheets : Individual "
         "strategy outputs generated today.\n\n"
 
         "These strategy outputs are shared "
@@ -445,9 +445,9 @@ def send_no_stock_email() -> None:
 
         "Therefore:\n"
 
-        "â€¢ No FINAL RECOMMENDATIONS were generated.\n"
+        "• No FINAL RECOMMENDATIONS were generated.\n"
 
-        "â€¢ No strategy output workbook has been attached."
+        "• No strategy output workbook has been attached."
 
     )
 

@@ -35,6 +35,13 @@ def now() -> str:
     ).isoformat()
 
 
+def live_trading_enabled() -> bool:
+    return os.getenv(
+        "ENABLE_LIVE_TRADING",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def execution_mode() -> str:
     mode = os.getenv(
         "TRADING_EXECUTION_MODE",
@@ -45,6 +52,15 @@ def execution_mode() -> str:
         raise RuntimeError(
             "TRADING_EXECUTION_MODE must be "
             "'paper' or 'live'."
+        )
+
+    if mode == "live" and not live_trading_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Live trading is disabled by default. Set "
+                "ENABLE_LIVE_TRADING=true explicitly to enable it."
+            ),
         )
 
     return mode

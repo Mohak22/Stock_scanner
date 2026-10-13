@@ -22,6 +22,11 @@ receiver_emails = [
 # Gmail app password
 app_password = os.getenv("EMAIL_PASSWORD")
 
+if not sender_email or not app_password:
+    raise RuntimeError("SENDER_EMAIL and EMAIL_PASSWORD must be configured.")
+if not receiver_emails:
+    raise RuntimeError("RECEIVER_EMAILS environment variable is not configured.")
+
 # Email content
 subject = "Test Mail"
 body = "SMTP email system is working successfully."

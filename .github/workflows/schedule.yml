@@ -25,9 +25,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install pinned dependencies
         run: |
-          pip install yfinance pandas pydantic numpy openpyxl pyarrow
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run Stock Scanner
         env:
