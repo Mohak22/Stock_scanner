@@ -331,10 +331,10 @@ def _normalise_market_data(
 def _market_outcome(
     market: pd.DataFrame | None,
     signal_date: pd.Timestamp | None,
-    horizon: int,
+    outcome_date: pd.Timestamp | None,
     stage: TemporalStage,
 ) -> dict:
-    """Calculate a close-to-close benchmark return."""
+    """Calculate benchmark return over the stock's exact outcome window."""
 
     if market is None:
         return {
@@ -352,13 +352,11 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    # Require the benchmark observation on the actual signal date.
-    # Do not silently substitute a later market session.
-    matching_positions = market.index[
+    entry_positions = market.index[
         market["TIMESTAMP"] == signal_date
     ]
 
-    if len(matching_positions) == 0:
+    if len(entry_positions) == 0:
         return {
             "entry_date": None,
             "outcome_date": None,
@@ -366,49 +364,53 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    entry_position = int(matching_positions[0])
-    entry_row = market.iloc[entry_position]
+    entry_row = market.loc[entry_positions[0]]
+    entry_date = entry_row["TIMESTAMP"]
 
-    outcome_position = entry_position + horizon
-
-    if outcome_position >= len(market):
+    if outcome_date is None:
         return {
-            "entry_date": entry_row["TIMESTAMP"],
+            "entry_date": entry_date,
             "outcome_date": None,
             "return": None,
             "status": "MARKET_OUTCOME_UNAVAILABLE",
         }
 
-    outcome_row = market.iloc[outcome_position]
-    outcome_date = outcome_row["TIMESTAMP"]
-
-    if not (
-        stage.start <= outcome_date <= stage.end
-    ):
+    if not (stage.start <= outcome_date <= stage.end):
         return {
-            "entry_date": entry_row["TIMESTAMP"],
+            "entry_date": entry_date,
             "outcome_date": outcome_date,
             "return": None,
             "status": "MARKET_OUTCOME_OUTSIDE_STAGE",
         }
 
+    outcome_positions = market.index[
+        market["TIMESTAMP"] == outcome_date
+    ]
+
+    if len(outcome_positions) == 0:
+        return {
+            "entry_date": entry_date,
+            "outcome_date": outcome_date,
+            "return": None,
+            "status": "MARKET_OUTCOME_UNAVAILABLE",
+        }
+
+    outcome_row = market.loc[outcome_positions[0]]
     entry_price = float(entry_row["MARKET_CLOSE"])
     outcome_price = float(outcome_row["MARKET_CLOSE"])
 
     if entry_price <= 0 or outcome_price <= 0:
         return {
-            "entry_date": entry_row["TIMESTAMP"],
+            "entry_date": entry_date,
             "outcome_date": outcome_date,
             "return": None,
             "status": "MARKET_PRICE_INVALID",
         }
 
-    market_return = (
-        (outcome_price / entry_price) - 1
-    ) * 100
+    market_return = (outcome_price / entry_price - 1) * 100
 
     return {
-        "entry_date": entry_row["TIMESTAMP"],
+        "entry_date": entry_date,
         "outcome_date": outcome_date,
         "return": market_return,
         "status": "COMPLETE",
@@ -603,7 +605,7 @@ def evaluate_temporal_stage(
                 market_outcome = _market_outcome(
                     market=market,
                     signal_date=signal_date,
-                    horizon=horizon,
+                    outcome_date=outcome_date,
                     stage=stage,
                 )
 

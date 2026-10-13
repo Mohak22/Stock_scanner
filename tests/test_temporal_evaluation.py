@@ -275,3 +275,41 @@ def test_temporal_evaluation_has_no_hard_coded_2025_cutoff():
 
     assert row["STAGE"] == "final_holdout"
     assert row["OUTCOME_ELIGIBLE_T1"]
+
+
+def test_benchmark_aligns_to_actual_stock_outcome_date():
+    stock_dates = pd.to_datetime(
+        ["2024-05-01", "2024-05-03", "2024-05-06"]
+    )
+    data = stock_data(stock_dates, [100, 110, 120])
+
+    market = pd.DataFrame(
+        {
+            "TIMESTAMP": pd.bdate_range(
+                "2024-05-01", periods=4
+            ),
+            "MARKET_CLOSE": [200, 202, 220, 230],
+        }
+    )
+
+    result = evaluate_temporal_stage(
+        data,
+        all_signals(data),
+        TemporalStage.create(
+            "development", stock_dates[0], stock_dates[-1]
+        ),
+        [1],
+        market,
+    )
+
+    row = record_for(result, stock_dates[0])
+
+    assert row["OUTCOME_DATE_T1"] == pd.Timestamp("2024-05-03")
+    assert row["MARKET_OUTCOME_DATE_T1"] == row["OUTCOME_DATE_T1"]
+    assert row["MARKET_OUTCOME_STATUS_T1"] == "COMPLETE"
+    assert row["MARKET_RETURN_T1"] == pytest.approx(
+        (220 / 200 - 1) * 100
+    )
+    assert row["EXCESS_RETURN_T1"] == pytest.approx(
+        (110 / 100 - 1) * 100 - (220 / 200 - 1) * 100
+    )

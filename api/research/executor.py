@@ -302,7 +302,10 @@ def execute_research(
     universe_revision = (
         None
         if request.universe.membership_basis == "point_in_time"
-        else repository.get_file_revision("research_universe.csv")
+        else repository.get_file_revision(
+            "research_universe.csv",
+            ref=data_revision,
+        )
     )
 
     tracker.report(

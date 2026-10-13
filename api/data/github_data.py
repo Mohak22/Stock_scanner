@@ -197,7 +197,7 @@ class ResearchDataRepository:
     def get_revision(self) -> str:
         """
         Return the Git commit SHA currently pointed to by the
-        research data repository's main branch.
+        research data repository's configured default branch.
 
         This is the primary data revision identifier for
         reproducible research runs.
@@ -226,7 +226,11 @@ class ResearchDataRepository:
 
         return str(sha)
 
-    def get_file_revision(self, path: str) -> str:
+    def get_file_revision(
+        self,
+        path: str,
+        ref: str | None = None,
+    ) -> str:
         """
         Return the Git blob SHA for a specific file in the
         research data repository.
@@ -234,12 +238,14 @@ class ResearchDataRepository:
         This allows individual research artifacts such as
         research_universe.csv to be versioned independently.
         """
-
+        
+        revision = ref or DATA_REPOSITORY_BRANCH
+        
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
             f"/contents/{path}"
-            f"?ref={DATA_REPOSITORY_BRANCH}"
+            f"?ref={revision}"
         )
 
         payload = json.loads(
@@ -261,6 +267,7 @@ class ResearchDataRepository:
         self,
         start_date: str | date,
         end_date: str | date,
+        ref: str | None = None,
     ) -> pd.DataFrame:
         """
         Load NSE MTO delivery data from the raw DAT files stored in
@@ -284,7 +291,8 @@ class ResearchDataRepository:
                 "start_date must be on or before end_date"
             )
 
-        tree = self._tree()
+        revision = ref or DATA_REPOSITORY_BRANCH
+        tree = self._tree(revision)
 
         prefix = "raw/nse/mto/"
         selected_paths = []
@@ -355,7 +363,7 @@ class ResearchDataRepository:
             url = (
                 "https://raw.githubusercontent.com/"
                 f"{self.repository}/"
-                f"{DATA_REPOSITORY_BRANCH}/"
+                f"{revision}/"
                 f"{path}"
             )
 
@@ -535,13 +543,15 @@ class ResearchDataRepository:
     def load_csv(
         self,
         path: str,
+        ref: str | None = None,
     ) -> pd.DataFrame:
 
+        revision = ref or DATA_REPOSITORY_BRANCH
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
             f"/contents/{path}"
-            f"?ref={DATA_REPOSITORY_BRANCH}"
+            f"?ref={revision}"
         )
 
         payload = json.loads(
@@ -573,13 +583,15 @@ class ResearchDataRepository:
     def load_parquet(
         self,
         path: str,
+        ref: str | None = None,
     ) -> pd.DataFrame:
 
+        revision = ref or DATA_REPOSITORY_BRANCH
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
             f"/contents/{path}"
-            f"?ref={DATA_REPOSITORY_BRANCH}"
+            f"?ref={revision}"
         )
 
         content = self._request(
@@ -595,12 +607,16 @@ class ResearchDataRepository:
     # GITHUB TREE
     # ==========================================================
 
-    def _tree(self) -> list[dict]:
+    def _tree(
+        self,
+        ref: str | None = None,
+    ) -> list[dict]:
 
+        revision = ref or DATA_REPOSITORY_BRANCH
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
-            f"/git/trees/{DATA_REPOSITORY_BRANCH}"
+            f"/git/trees/{revision}"
             f"?recursive=1"
         )
 
@@ -620,6 +636,7 @@ class ResearchDataRepository:
 
     def list_bhavcopy_dates(
         self,
+        ref: str | None = None,
     ) -> list[str]:
 
         dates = []
@@ -629,7 +646,7 @@ class ResearchDataRepository:
             "sec_bhavdata_full_"
         )
 
-        for item in self._tree():
+        for item in self._tree(ref):
 
             path = item.get(
                 "path",
@@ -677,22 +694,23 @@ class ResearchDataRepository:
     # ==========================================================
     # DOWNLOAD ONE BHAVCOPY FILE
     #
-    # IMPORTANT:
-    # No local cache.
-    # Every call downloads the current GitHub version.
+    # Downloads the version at the requested Git ref (commit SHA
+    # for reproducible research runs, or main for legacy callers).
     # ==========================================================
 
     def _download_bhavcopy_file(
         self,
         file_date: date,
         path: str,
+        ref: str | None = None,
     ) -> pd.DataFrame:
 
+        revision = ref or DATA_REPOSITORY_BRANCH
         url = (
             f"{GITHUB_API_BASE_URL}"
             f"/repos/{self.repository}"
             f"/contents/{path}"
-            f"?ref={DATA_REPOSITORY_BRANCH}"
+            f"?ref={revision}"
         )
 
         content = self._request(
@@ -707,14 +725,15 @@ class ResearchDataRepository:
     # ==========================================================
     # LOAD BHAVCOPY
     #
-    # GitHub is the source of truth.
-    # No local data dependency.
+    # GitHub is the source of truth. Supplying a commit SHA pins
+    # tree discovery and all file downloads to one snapshot.
     # ==========================================================
 
     def load_bhavcopy(
         self,
         start_date: str | date,
         end_date: str | date,
+        ref: str | None = None,
     ) -> pd.DataFrame:
 
         start = pd.Timestamp(
@@ -732,10 +751,11 @@ class ResearchDataRepository:
             )
 
         # ------------------------------------------------------
-        # GET CURRENT GITHUB TREE
+        # GET TREE AT THE REQUESTED DATA REVISION
         # ------------------------------------------------------
 
-        tree = self._tree()
+        revision = ref or DATA_REPOSITORY_BRANCH
+        tree = self._tree(revision)
 
         prefix = (
             "processed/bhavcopy/"
@@ -814,6 +834,7 @@ class ResearchDataRepository:
                     self._download_bhavcopy_file,
                     file_date,
                     path,
+                    revision,
                 ): file_date
                 for file_date, path
                 in selected_paths
