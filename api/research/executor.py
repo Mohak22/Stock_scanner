@@ -298,8 +298,10 @@ def execute_research(
         "Starting research",
     )
 
-    universe_revision = repository.get_file_revision(
-        "research_universe.csv"
+    universe_revision = (
+        None
+        if request.universe.membership_basis == "point_in_time"
+        else repository.get_file_revision("research_universe.csv")
     )
 
     tracker.report(
@@ -1613,15 +1615,18 @@ def execute_research(
             },
             "universe_membership_note": (
                 (
-                    "Research uses dated point-in-time "
-                    "universe membership."
-                    if membership_basis
-                    == "point_in_time"
-                    else
-                    "research_universe.csv is a "
-                    "current-universe snapshot; "
-                    "it is not point-in-time "
-                    "historical membership."
+                    "Point-in-time all-stocks universe is derived from symbol/date "
+                    "records in the archived historical NSE bhavcopy files. "
+                    "Today's research_universe.csv is not used to filter these "
+                    "historical rows. Validity depends on completeness of the "
+                    "archived bhavcopy files and their historical symbol coverage."
+                )
+                if membership_basis == "point_in_time"
+                else
+                (
+                    "research_universe.csv is a current-universe snapshot; "
+                    "it is not point-in-time historical membership. Results may "
+                    "be affected by survivorship bias."
                 )
             ),
             "market_benchmark": {

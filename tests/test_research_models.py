@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.research.models import ResearchRequest
+from api.research.models import UniverseConfig
 
 
 def base_request(**overrides):
@@ -84,4 +85,22 @@ def test_outcome_definition_horizons_must_match():
                     "horizons": [1, 5],
                 }
             )
+        )
+
+
+def test_all_stocks_defaults_to_point_in_time():
+    config = UniverseConfig(type="all_stocks")
+    assert config.membership_basis == "point_in_time"
+
+
+def test_sector_defaults_to_current_snapshot():
+    config = UniverseConfig(type="sector")
+    assert config.membership_basis == "current_snapshot"
+
+
+def test_point_in_time_rejects_current_constituent_universes():
+    with pytest.raises(ValueError, match="only"):
+        UniverseConfig(
+            type="major_stocks",
+            membership_basis="point_in_time",
         )

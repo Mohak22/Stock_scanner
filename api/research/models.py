@@ -5,15 +5,45 @@ import math
 from pydantic import BaseModel, Field, model_validator
 from api.research.features import normalize_feature_parameters
 
+
 class UniverseConfig(BaseModel):
     type: str = "all_stocks"
     value: str | None = None
     symbols: list[str] = Field(default_factory=list)
-    membership_basis: str = "current_snapshot"
+    membership_basis: str | None = None
+
     @model_validator(mode="after")
     def validate_membership_basis(self):
-        if self.membership_basis not in {"current_snapshot","point_in_time"}:
-            raise ValueError("membership_basis must be either 'current_snapshot' or 'point_in_time'.")
+        # Select a safe default based on the requested universe type.
+        if self.membership_basis is None:
+            self.membership_basis = (
+                "point_in_time"
+                if self.type == "all_stocks"
+                else "current_snapshot"
+            )
+
+        if self.membership_basis not in {
+            "current_snapshot",
+            "point_in_time",
+        }:
+            raise ValueError(
+                "membership_basis must be either "
+                "'current_snapshot' or 'point_in_time'."
+            )
+
+        # We only have a defensible point-in-time construction for
+        # all_stocks using the dated bhavcopy records.
+        if (
+            self.membership_basis == "point_in_time"
+            and self.type != "all_stocks"
+        ):
+            raise ValueError(
+                "Point-in-time membership is currently supported only "
+                "for the 'all_stocks' universe. Historical sector "
+                "classifications and historical index constituents "
+                "are not yet available."
+            )
+
         return self
 
 class FeatureConfig(BaseModel):

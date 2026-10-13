@@ -814,6 +814,127 @@ def build_research_diagnostics(
             "LOW_STOCK_COVERAGE"
         )
 
+
+    # ----------------------------------------------------------
+    # Survivorship sensitivity: exclude top 10% of symbols
+    # ----------------------------------------------------------
+    # This is a descriptive concentration stress test, NOT a
+    # correction for survivorship bias.
+    #
+    # For each horizon:
+    # 1. Calculate each symbol's mean realized forward return.
+    # 2. Rank symbols by that mean return.
+    # 3. Exclude the top ceil(10%) of symbols.
+    # 4. Recalculate aggregate returns on the remaining signals.
+    #
+    # Important limitation:
+    # The ranking uses realized outcomes from the same sample.
+    # Therefore, this is not an unbiased performance estimate,
+    # and the excluded symbols must not be treated as a trading rule.
+
+    survivorship_sensitivity = {
+        "method": (
+            "For each horizon, rank symbols with valid signal "
+            "outcomes by mean realized forward return; exclude "
+            "the top ceil(10%) of symbols and recompute metrics."
+        ),
+        "interpretation": (
+            "Descriptive concentration stress test only. "
+            "The ranking uses realized evaluation outcomes, "
+            "so this is not an unbiased performance estimate "
+            "and must not be used as a tradable rule."
+        ),
+        "top_fraction": 0.10,
+        "by_horizon": {},
+    }
+
+    if (
+        not signal_data.empty
+        and "SYMBOL" in signal_data.columns
+    ):
+        for horizon in horizons:
+            horizon = int(horizon)
+            return_column = f"RETURN_T{horizon}"
+
+            if return_column not in signal_data.columns:
+                continue
+
+            valid = signal_data[
+                ["SYMBOL", return_column]
+            ].copy()
+
+            valid[return_column] = pd.to_numeric(
+                valid[return_column],
+                errors="coerce",
+            )
+
+            valid = valid.dropna(
+                subset=["SYMBOL", return_column]
+            )
+
+            # Deterministic ranking for reproducibility.
+            symbol_means = (
+                valid.groupby("SYMBOL")[return_column]
+                .mean()
+                .sort_values(
+                    ascending=False,
+                    kind="mergesort",
+                )
+            )
+
+            symbol_count = int(len(symbol_means))
+
+            excluded_count = (
+                int(np.ceil(symbol_count * 0.10))
+                if symbol_count >= 2
+                else 0
+            )
+
+            excluded_symbols = (
+                symbol_means.index[:excluded_count].tolist()
+                if excluded_count > 0
+                else []
+            )
+
+            remaining = signal_data[
+                ~signal_data["SYMBOL"].isin(excluded_symbols)
+            ].copy()
+
+            full_metrics = _performance_metrics(
+                dataframe=signal_data,
+                return_column=return_column,
+            )
+
+            remaining_metrics = _performance_metrics(
+                dataframe=remaining,
+                return_column=return_column,
+            )
+
+            survivorship_sensitivity["by_horizon"][
+                f"T+{horizon}"
+            ] = {
+                "symbols_with_valid_outcomes": symbol_count,
+                "excluded_top_symbols_count": excluded_count,
+                "excluded_top_symbols": excluded_symbols,
+                "remaining_symbols_with_signals": (
+                    int(remaining["SYMBOL"].nunique())
+                    if not remaining.empty
+                    else 0
+                ),
+                "all_symbols_average_return": (
+                    full_metrics["average_return"]
+                ),
+                "remaining_average_return": (
+                    remaining_metrics["average_return"]
+                ),
+                "remaining_median_return": (
+                    remaining_metrics["median_return"]
+                ),
+                "remaining_observations": (
+                    remaining_metrics["observations"]
+                ),
+            }
+
     # ----------------------------------------------------------
     # A3 analysis
     # ----------------------------------------------------------
@@ -868,6 +989,8 @@ def build_research_diagnostics(
 
             "outcome_quality": outcome_quality,
         },
+
+        "survivorship_sensitivity": survivorship_sensitivity,
 
         "analysis": analysis,
 

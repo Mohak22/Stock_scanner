@@ -310,65 +310,73 @@ def apply_major_stocks_universe(
     ].copy()
 
 
+
 def apply_point_in_time_universe(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
+    """
+    Build the historical all-stocks universe from dated bhavcopy rows.
 
-    membership = (
-        load_point_in_time_universe_dataframe()
-    )
+    Each symbol is eligible only on dates for which it has a record
+    in the historical bhavcopy data supplied to this function.
+
+    Important:
+    - Does not filter against today's research_universe.csv.
+    - Does not require research_universe_history.csv.
+    - Depends on historical bhavcopy coverage being sufficiently complete.
+    - Does not infer historical sector classifications or index membership.
+    """
+
+    required_columns = {
+        "SYMBOL",
+        "TIMESTAMP",
+    }
+
+    missing_columns = required_columns - set(dataframe.columns)
+
+    if missing_columns:
+        raise ValueError(
+            "Historical bhavcopy data is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
 
     result = dataframe.copy()
 
-    result["TIMESTAMP"] = pd.to_datetime(
-        result["TIMESTAMP"],
-        errors="coerce",
-    ).dt.normalize()
+    # Normalize dates so universe eligibility is evaluated by trading day.
+    result["TIMESTAMP"] = (
+        pd.to_datetime(
+            result["TIMESTAMP"],
+            errors="coerce",
+        )
+        .dt.normalize()
+    )
 
+    # Normalize symbols without turning missing values into the literal
+    # string "NAN".
     result["SYMBOL"] = (
         result["SYMBOL"]
+        .where(result["SYMBOL"].notna(), "")
         .astype(str)
         .str.strip()
         .str.upper()
     )
 
-    membership = membership[
-        [
-            "SYMBOL",
-            "EFFECTIVE_FROM",
-            "EFFECTIVE_TO",
-        ]
-    ].copy()
-
-    merged = result.merge(
-        membership,
-        on="SYMBOL",
-        how="left",
-        validate="many_to_many",
+    valid_rows = (
+        result["TIMESTAMP"].notna()
+        & result["SYMBOL"].ne("")
     )
 
-    eligible = (
-        merged["TIMESTAMP"].notna()
-        & merged["EFFECTIVE_FROM"].notna()
-        & merged["EFFECTIVE_TO"].notna()
-        & (
-            merged["TIMESTAMP"]
-            >= merged["EFFECTIVE_FROM"]
+    result = result.loc[valid_rows].copy()
+
+    if result.empty:
+        raise ValueError(
+            "No valid symbol/date records remain in historical bhavcopy "
+            "data. Point-in-time universe construction cannot continue."
         )
-        & (
-            merged["TIMESTAMP"]
-            <= merged["EFFECTIVE_TO"]
-        )
-    )
 
-    return (
-        merged.loc[
-            eligible,
-            result.columns,
-        ]
-        .copy()
-        .reset_index(drop=True)
-    )
+    # Deliberately do not intersect with the current research universe.
+    # The dated bhavcopy rows are the source of historical eligibility.
+    return result.reset_index(drop=True)
 
 
 def apply_research_universe(

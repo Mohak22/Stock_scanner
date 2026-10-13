@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from 'react'
 import { getResearchUniverse } from '../../api/researchApi'
 
@@ -29,8 +30,8 @@ function UniverseConfig({ value, onChange }) {
       [...new Set(
         rows
           .map((row) => row[key])
-          .filter((value) => value && String(value).trim())
-          .map((value) => String(value).trim())
+          .filter((item) => item && String(item).trim())
+          .map((item) => String(item).trim())
       )].sort()
 
     return {
@@ -44,11 +45,19 @@ function UniverseConfig({ value, onChange }) {
   const type = value?.type || 'all_stocks'
   const selectedValue = value?.value || ''
 
+  const membershipBasis =
+    value?.membership_basis ||
+    (type === 'all_stocks' ? 'point_in_time' : 'current_snapshot')
+
   function updateType(newType) {
     onChange({
       type: newType,
       value: '',
       symbols: [],
+      membership_basis:
+        newType === 'all_stocks'
+          ? 'point_in_time'
+          : 'current_snapshot',
     })
   }
 
@@ -56,6 +65,14 @@ function UniverseConfig({ value, onChange }) {
     onChange({
       ...value,
       value: newValue,
+    })
+  }
+
+  function updateMembershipBasis(newBasis) {
+    onChange({
+      ...value,
+      type: 'all_stocks',
+      membership_basis: newBasis,
     })
   }
 
@@ -75,6 +92,32 @@ function UniverseConfig({ value, onChange }) {
         <option value="basic_industry">Basic Industry</option>
         <option value="symbols">Custom Symbols</option>
       </select>
+
+      {type === 'all_stocks' && (
+        <>
+          <label>Historical membership</label>
+
+          <select
+            value={membershipBasis}
+            onChange={(event) =>
+              updateMembershipBasis(event.target.value)
+            }
+          >
+            <option value="point_in_time">
+              Point-in-time (historical bhavcopy)
+            </option>
+            <option value="current_snapshot">
+              Current universe snapshot
+            </option>
+          </select>
+
+          <span className="field-help">
+            Point-in-time mode uses symbols present in the historical
+            bhavcopy for each date. Current-snapshot mode filters using
+            today's research universe and may introduce survivorship bias.
+          </span>
+        </>
+      )}
 
       {loading && (
         <span className="field-help">
@@ -100,7 +143,7 @@ function UniverseConfig({ value, onChange }) {
               Select {type.replace('_', ' ')}
             </option>
 
-            {filterOptions[type].map((option) => (
+            {(filterOptions[type] || []).map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
@@ -123,6 +166,7 @@ function UniverseConfig({ value, onChange }) {
               type: 'symbols',
               value: '',
               symbols,
+              membership_basis: 'current_snapshot',
             })
           }}
         />
@@ -130,9 +174,9 @@ function UniverseConfig({ value, onChange }) {
 
       <span className="field-help">
         {type === 'all_stocks'
-          ? `${universeData?.total_stocks || 0} stocks in current research universe`
+          ? `${universeData?.total_stocks || 0} stocks in current research universe (display count only)`
           : type === 'major_stocks'
-            ? `${universeData?.major_stocks_total || 0} Nifty 500 stocks`
+            ? `${universeData?.major_stocks_total || 0} current Nifty 500 constituents`
             : 'Filter the current research universe.'}
       </span>
     </div>
