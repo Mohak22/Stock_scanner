@@ -643,6 +643,7 @@ def execute_research(
             function=lambda: repository.load_bhavcopy(
                 data_start.date().isoformat(),
                 data_end.date().isoformat(),
+                ref=data_revision,
             ),
         )
 
@@ -942,6 +943,7 @@ def execute_research(
                 function=lambda: repository.load_mto(
                     data_start.date().isoformat(),
                     data_end.date().isoformat(),
+                    ref=data_revision,
                 ),
             )
         except ValueError as exc:
@@ -1105,7 +1107,8 @@ def execute_research(
             minimum_tick=0.35,
             easing="ease_out",
             function=lambda: repository.load_parquet(
-                market_data_path
+                market_data_path,
+                ref=data_revision,
             ),
         )
 
