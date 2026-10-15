@@ -22,7 +22,8 @@ from api.research.universe import (
     load_research_universe_dataframe,
     validate_bhavcopy_session_coverage,
 )
-
+from research.engine.cost_model import apply_transaction_costs
+from research.engine.random_baseline import build_random_baseline
 from research.engine.feature_engine import calculate_features
 from research.engine.market_data_loader import load_market_index
 from research.engine.research_engine import (
@@ -1356,6 +1357,11 @@ def execute_research(
             market_dataframe=market_data,
         )
 
+        signal_data, cost_analysis = apply_transaction_costs(
+            signal_data=signal_data,
+            horizons=horizons,
+        )
+        
         if not signal_data.empty:
 
             signal_data = signal_data.merge(
@@ -1364,6 +1370,38 @@ def execute_research(
                 how="left",
             )
 
+        # ------------------------------------------------------
+        # Random baseline: same dates and signal counts
+        # ------------------------------------------------------
+
+        if signal_data.empty:
+            candidate_data = pd.DataFrame()
+
+        else:
+            candidate_mask = pd.Series(
+                True,
+                index=data.index,
+            )
+
+            candidate_data = evaluate_temporal_stage(
+                dataframe=data,
+                signal_mask=candidate_mask,
+                stage=stage,
+                horizons=horizons,
+                market_dataframe=market_data,
+            )
+
+            candidate_data, _ = apply_transaction_costs(
+                signal_data=candidate_data,
+                horizons=horizons,
+            )
+
+        random_baseline = build_random_baseline(
+            candidate_data=candidate_data,
+            signal_data=signal_data,
+            horizons=horizons,
+        )
+        
         # ------------------------------------------------------
         # Diagnostics + A3 analysis
         # ------------------------------------------------------
@@ -1426,11 +1464,16 @@ def execute_research(
             "diagnostics": split_result[
                 "diagnostics"
             ],
+            "survivorship_sensitivity": split_result.get(
+                "survivorship_sensitivity", {}
+            ),
+            "random_baseline": random_baseline,
             "analysis": analysis,
             "warnings": split_result[
                 "warnings"
             ],
             "signals": signal_data,
+            "cost_analysis": cost_analysis,
         }
 
     # ==========================================================
@@ -1574,6 +1617,12 @@ def execute_research(
             "diagnostics": result[
                 "diagnostics"
             ],
+            "survivorship_sensitivity": result.get(
+                "survivorship_sensitivity", {}
+            ),
+            "random_baseline": result.get(
+                "random_baseline", {}
+            ),
             "analysis": result.get(
                 "analysis",
                 {},
@@ -1584,6 +1633,7 @@ def execute_research(
             "signals": signals.to_dict(
                 orient="records"
             ),
+            "cost_analysis": result.get("cost_analysis", {}),
         }
 
     # ==========================================================

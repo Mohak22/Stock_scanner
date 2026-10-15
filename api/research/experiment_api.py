@@ -475,6 +475,9 @@ def _stage_result(result: dict | None) -> dict | None:
         "diagnostics": result.get("diagnostics", {}),
         "analysis": result.get("analysis", {}),
         "warnings": result.get("warnings", []),
+        "survivorship_sensitivity": result.get(
+            "survivorship_sensitivity", {}
+        ),
     }
 
 
