@@ -478,6 +478,7 @@ def _stage_result(result: dict | None) -> dict | None:
         "survivorship_sensitivity": result.get(
             "survivorship_sensitivity", {}
         ),
+        "random_baseline": result.get("random_baseline", {}),
     }
 
 
