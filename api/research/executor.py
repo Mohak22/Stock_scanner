@@ -38,7 +38,9 @@ from research.engine.temporal_evaluation import (
     feature_lookback_requirements,
     generate_signal_mask,
 )
-
+from research.engine.multiple_testing import (
+    apply_corrections_to_random_baseline,
+)
 
 RESEARCH_ENGINE_VERSION = "1.0.0"
 
@@ -1402,6 +1404,10 @@ def execute_research(
             horizons=horizons,
         )
         
+        random_baseline = apply_corrections_to_random_baseline(
+            random_baseline=random_baseline,
+            alpha=0.05,
+        )
         # ------------------------------------------------------
         # Diagnostics + A3 analysis
         # ------------------------------------------------------
