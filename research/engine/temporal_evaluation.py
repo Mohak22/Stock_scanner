@@ -324,7 +324,7 @@ def _normalise_market_data(
             subset=["TIMESTAMP"],
             keep="last",
         )
-        .reset_index(drop=True)
+        .set_index("TIMESTAMP", drop=False)
     )
 
 
@@ -352,11 +352,7 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    entry_positions = market.index[
-        market["TIMESTAMP"] == signal_date
-    ]
-
-    if len(entry_positions) == 0:
+    if signal_date not in market.index:
         return {
             "entry_date": None,
             "outcome_date": None,
@@ -364,7 +360,7 @@ def _market_outcome(
             "status": "MARKET_ENTRY_UNAVAILABLE",
         }
 
-    entry_row = market.loc[entry_positions[0]]
+    entry_row = market.loc[signal_date]
     entry_date = entry_row["TIMESTAMP"]
 
     if outcome_date is None:
@@ -383,11 +379,7 @@ def _market_outcome(
             "status": "MARKET_OUTCOME_OUTSIDE_STAGE",
         }
 
-    outcome_positions = market.index[
-        market["TIMESTAMP"] == outcome_date
-    ]
-
-    if len(outcome_positions) == 0:
+    if outcome_date not in market.index:
         return {
             "entry_date": entry_date,
             "outcome_date": outcome_date,
@@ -395,7 +387,7 @@ def _market_outcome(
             "status": "MARKET_OUTCOME_UNAVAILABLE",
         }
 
-    outcome_row = market.loc[outcome_positions[0]]
+    outcome_row = market.loc[outcome_date]
     entry_price = float(entry_row["MARKET_CLOSE"])
     outcome_price = float(outcome_row["MARKET_CLOSE"])
 

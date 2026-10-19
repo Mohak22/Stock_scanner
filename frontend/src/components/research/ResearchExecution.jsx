@@ -109,7 +109,7 @@ function ResearchExecution({
         </div>
       )}
 
-      {!isRunning && !runError && (
+      {!isRunning && (
         <div className="run-section">
           <div>
             <strong>

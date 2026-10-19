@@ -8,6 +8,7 @@ Created on Mon Sep 21 11:07:09 2026
 """
 
 from typing import Any, Callable
+import logging
 import threading
 import time
 
@@ -46,6 +47,7 @@ RESEARCH_ENGINE_VERSION = "1.0.0"
 
 ProgressCallback = Callable[[int, str], None]
 
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # GRANULAR PROGRESS SYSTEM
@@ -1310,11 +1312,13 @@ def execute_research(
         "Evaluating outcomes",
     )
 
+
     def build_split_result(
         split_name: str,
         split_start: pd.Timestamp,
         split_end: pd.Timestamp,
     ) -> dict:
+        total_started = time.perf_counter()
 
         # ------------------------------------------------------
         # Split date range
@@ -1322,9 +1326,7 @@ def execute_research(
 
         split_end_exclusive = (
             split_end
-            + pd.Timedelta(
-                days=1
-            )
+            + pd.Timedelta(days=1)
         )
 
         split_mask = (
@@ -1335,11 +1337,7 @@ def execute_research(
             )
         )
 
-        split_data = (
-            data.loc[
-                split_mask
-            ].copy()
-        )
+        split_data = data.loc[split_mask].copy()
 
         # ------------------------------------------------------
         # Evaluate entries and outcomes
@@ -1351,6 +1349,7 @@ def execute_research(
             split_end,
         )
 
+        step_started = time.perf_counter()
         signal_data = evaluate_temporal_stage(
             dataframe=data,
             signal_mask=signal_mask,
@@ -1358,14 +1357,26 @@ def execute_research(
             horizons=horizons,
             market_dataframe=market_data,
         )
+        print(
+            f"Research timing [{split_name}] "
+            f"evaluate_selected_signals: "
+            f"{time.perf_counter() - step_started:.2f}s",
+            flush=True,
+        )
 
+        step_started = time.perf_counter()
         signal_data, cost_analysis = apply_transaction_costs(
             signal_data=signal_data,
             horizons=horizons,
         )
-        
-        if not signal_data.empty:
+        print(
+            f"Research timing [{split_name}] "
+            f"costs_selected_signals: "
+            f"{time.perf_counter() - step_started:.2f}s",
+            flush=True,
+        )
 
+        if not signal_data.empty:
             signal_data = signal_data.merge(
                 regime_merge_data,
                 on="TIMESTAMP",
@@ -1385,6 +1396,7 @@ def execute_research(
                 index=data.index,
             )
 
+            step_started = time.perf_counter()
             candidate_data = evaluate_temporal_stage(
                 dataframe=data,
                 signal_mask=candidate_mask,
@@ -1392,33 +1404,59 @@ def execute_research(
                 horizons=horizons,
                 market_dataframe=market_data,
             )
+            print(
+                f"Research timing [{split_name}] "
+                f"evaluate_candidate_universe: "
+                f"{time.perf_counter() - step_started:.2f}s",
+                flush=True,
+            )
 
+            step_started = time.perf_counter()
             candidate_data, _ = apply_transaction_costs(
                 signal_data=candidate_data,
                 horizons=horizons,
             )
+            print(
+                f"Research timing [{split_name}] "
+                f"costs_candidate_universe: "
+                f"{time.perf_counter() - step_started:.2f}s",
+                flush=True,
+            )
 
+        step_started = time.perf_counter()
         random_baseline = build_random_baseline(
             candidate_data=candidate_data,
             signal_data=signal_data,
             horizons=horizons,
         )
-        
+        print(
+            f"Research timing [{split_name}] "
+            f"random_baseline: "
+            f"{time.perf_counter() - step_started:.2f}s",
+            flush=True,
+        )
+
         random_baseline = apply_corrections_to_random_baseline(
             random_baseline=random_baseline,
             alpha=0.05,
         )
+
         # ------------------------------------------------------
-        # Diagnostics + A3 analysis
+        # Diagnostics
         # ------------------------------------------------------
 
-        split_result = (
-            build_research_diagnostics(
-                dataframe=split_data,
-                signal_data=signal_data,
-                horizons=horizons,
-                features=features,
-            )
+        step_started = time.perf_counter()
+        split_result = build_research_diagnostics(
+            dataframe=split_data,
+            signal_data=signal_data,
+            horizons=horizons,
+            features=features,
+        )
+        print(
+            f"Research timing [{split_name}] "
+            f"diagnostics: "
+            f"{time.perf_counter() - step_started:.2f}s",
+            flush=True,
         )
 
         # ------------------------------------------------------
@@ -1426,32 +1464,32 @@ def execute_research(
         # ------------------------------------------------------
 
         analysis = (
-            split_result.get(
-                "analysis",
-                {},
-            )
+            split_result.get("analysis", {})
             or {}
         )
 
         if signal_data.empty:
-
-            analysis[
-                "by_market_regime"
-            ] = {}
+            analysis["by_market_regime"] = {}
 
         else:
-
             try:
+                step_started = time.perf_counter()
 
-                analysis[
-                    "by_market_regime"
-                ] = analyze_by_market_regime(
-                    signal_data=signal_data,
-                    horizons=horizons,
+                analysis["by_market_regime"] = (
+                    analyze_by_market_regime(
+                        signal_data=signal_data,
+                        horizons=horizons,
+                    )
+                )
+
+                print(
+                    f"Research timing [{split_name}] "
+                    f"market_regime_analysis: "
+                    f"{time.perf_counter() - step_started:.2f}s",
+                    flush=True,
                 )
 
             except ValueError as exc:
-
                 raise HTTPException(
                     status_code=400,
                     detail=(
@@ -1460,27 +1498,28 @@ def execute_research(
                     ),
                 ) from exc
 
-        return {
-            "summary": split_result[
-                "summary"
-            ],
-            "performance": split_result[
-                "performance"
-            ],
-            "diagnostics": split_result[
-                "diagnostics"
-            ],
+        result = {
+            "summary": split_result["summary"],
+            "performance": split_result["performance"],
+            "diagnostics": split_result["diagnostics"],
             "survivorship_sensitivity": split_result.get(
                 "survivorship_sensitivity", {}
             ),
             "random_baseline": random_baseline,
             "analysis": analysis,
-            "warnings": split_result[
-                "warnings"
-            ],
+            "warnings": split_result["warnings"],
             "signals": signal_data,
             "cost_analysis": cost_analysis,
         }
+
+        print(
+            f"Research timing [{split_name}] "
+            f"total_build_split_result: "
+            f"{time.perf_counter() - total_started:.2f}s",
+            flush=True,
+        )
+
+        return result
 
     # ==========================================================
     # 18. DEVELOPMENT

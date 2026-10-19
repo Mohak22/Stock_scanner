@@ -57,6 +57,20 @@ function ResearchConfig() {
 
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState('')
+
+  useEffect(() => {
+    if (runError) {
+      setRunError('')
+    }
+  }, [
+    developmentStart,
+    developmentEnd,
+    validationStart,
+    validationEnd,
+    holdoutStart,
+    holdoutEnd,
+  ])
+
   const [researchResult, setResearchResult] = useState(null)
 
   const eventSourceRef = useRef(null)

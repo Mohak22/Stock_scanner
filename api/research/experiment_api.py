@@ -587,8 +587,6 @@ def _validate_research_result(
 
     required_config_fields = {
         "research_schema_version",
-        "research_question",
-        "hypothesis",
         "development_start",
         "development_end",
         "signal_timing",

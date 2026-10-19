@@ -21,11 +21,18 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
    * ----------------------------------------------------------
    */
 
-  const stageResult = researchResult?.[activeStage] || {}
-  const summary = stageResult.summary || {}
-  const diagnostics = stageResult.diagnostics || {}
-  const performance = stageResult.performance || {}
-  const analysis = stageResult.analysis || {}
+const stageResult = researchResult?.[activeStage] || {}
+const summary = stageResult.summary || {}
+const diagnostics = stageResult.diagnostics || {}
+const performance = stageResult.performance || {}
+const analysis = stageResult.analysis || {}
+
+const costAnalysis = stageResult.cost_analysis || {}
+const costByHorizon = costAnalysis.by_horizon || {}
+
+const randomBaseline = stageResult.random_baseline || {}
+const randomByHorizon = randomBaseline.by_horizon || {}
+const multipleTesting = randomBaseline.multiple_testing || {}
 
   const byFeature = analysis.by_feature || {}
   const byMarketRegime = analysis.by_market_regime || {}
@@ -795,6 +802,270 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
 
 
       {/* =====================================================
+          NET RETURNS AND TRANSACTION COSTS
+          ===================================================== */}
+
+      <div className="result-section">
+        <div className="section-heading">
+          <div>
+            <span className="section-kicker">
+              COST-ADJUSTED PERFORMANCE
+            </span>
+            <h3>Estimated Net Returns</h3>
+            <p>
+              Net returns use the configured NSE equity-delivery
+              cost model. These are estimates, not actual executed
+              trading results.
+            </p>
+          </div>
+        </div>
+
+        <div className="results-grid">
+          <div className="result-card">
+            <span>Estimated Buy-Side Cost</span>
+            <strong>
+              {Number.isFinite(costAnalysis.effective_buy_cost_pct)
+                ? `${costAnalysis.effective_buy_cost_pct.toFixed(4)}%`
+                : '—'}
+            </strong>
+          </div>
+
+          <div className="result-card">
+            <span>Estimated Sell-Side Cost</span>
+            <strong>
+              {Number.isFinite(costAnalysis.effective_sell_cost_pct)
+                ? `${costAnalysis.effective_sell_cost_pct.toFixed(4)}%`
+                : '—'}
+            </strong>
+          </div>
+
+          <div className="result-card">
+            <span>Slippage Assumption</span>
+            <strong>
+              {Number.isFinite(costAnalysis.assumptions?.slippage_bps_per_side)
+                ? `${costAnalysis.assumptions.slippage_bps_per_side} bps / side`
+                : '—'}
+            </strong>
+          </div>
+        </div>
+
+        <div className="performance-table-wrapper">
+          <table className="performance-table">
+            <thead>
+              <tr>
+                <th>Horizon</th>
+                <th>Valid Outcomes</th>
+                <th>Avg Gross Return</th>
+                <th>Avg Net Return</th>
+                <th>Median Net Return</th>
+                <th>Positive Net Outcomes</th>
+                <th>Avg Estimated Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(costByHorizon).map(([horizon, metrics]) => (
+                <tr key={horizon}>
+                  <td className="table-horizon">{horizon}</td>
+                  <td>{metrics.observations ?? '—'}</td>
+                  <td>
+                    {metrics.average_gross_return_pct != null
+                      ? `${metrics.average_gross_return_pct.toFixed(2)}%`
+                      : '—'}
+                  </td>
+                  <td className={
+                    metrics.average_net_return_pct == null
+                      ? ''
+                      : metrics.average_net_return_pct >= 0
+                        ? 'positive-value'
+                        : 'negative-value'
+                  }>
+                    {metrics.average_net_return_pct != null
+                      ? `${metrics.average_net_return_pct.toFixed(2)}%`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.median_net_return_pct != null
+                      ? `${metrics.median_net_return_pct.toFixed(2)}%`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.positive_net_return_pct != null
+                      ? `${metrics.positive_net_return_pct.toFixed(2)}%`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.average_estimated_cost_pct != null
+                      ? `${metrics.average_estimated_cost_pct.toFixed(3)}%`
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+
+              {Object.keys(costByHorizon).length === 0 && (
+                <tr>
+                  <td colSpan={7} className="empty-analysis">
+                    Cost-adjusted results are unavailable for this stage.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="warnings-card">
+          <div className="card-title">Cost Model Assumptions and Exclusions</div>
+          <div className="warning-row">
+            Brokerage assumed: {
+              costAnalysis.assumptions?.brokerage_rate != null
+                ? `${(costAnalysis.assumptions.brokerage_rate * 100).toFixed(4)}%`
+                : 'not available'
+            }.
+          </div>
+          {(costAnalysis.excluded_costs || []).map((item, index) => (
+            <div className="warning-row" key={index}>
+              Excluded: {item}
+            </div>
+          ))}
+          <div className="warning-row">
+            Slippage is an explicit assumption, not an estimate fitted
+            to historical bid-ask spreads. Actual costs can differ.
+          </div>
+        </div>
+      </div>
+
+      {/* =====================================================
+          RANDOM BASELINE AND MULTIPLE TESTING
+          ===================================================== */}
+
+      <div className="result-section">
+        <div className="section-heading">
+          <div>
+            <span className="section-kicker">
+              STATISTICAL EVIDENCE
+            </span>
+            <h3>Random Baseline and Multiple Testing</h3>
+            <p>
+              The baseline compares selected signals against random
+              eligible stocks on the same dates while preserving the
+              number of eligible signals per date.
+            </p>
+          </div>
+        </div>
+
+        <div className="performance-table-wrapper">
+          <table className="performance-table">
+            <thead>
+              <tr>
+                <th>Horizon</th>
+                <th>Valid Outcomes</th>
+                <th>Observed Net Excess</th>
+                <th>Random Net Excess</th>
+                <th>Observed − Random</th>
+                <th>Raw p-value</th>
+                <th>Bonferroni p</th>
+                <th>BH-adjusted p</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(randomByHorizon).map(([horizon, metrics]) => (
+                <tr key={horizon}>
+                  <td className="table-horizon">{horizon}</td>
+                  <td>{metrics.observations ?? '—'}</td>
+                  <td>
+                    {metrics.observed_mean_net_excess_return_pct != null
+                      ? `${metrics.observed_mean_net_excess_return_pct.toFixed(3)}%`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.random_mean_net_excess_return_pct != null
+                      ? `${metrics.random_mean_net_excess_return_pct.toFixed(3)}%`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.observed_minus_random_mean_pct_points != null
+                      ? `${metrics.observed_minus_random_mean_pct_points.toFixed(3)} pp`
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.raw_p_value != null
+                      ? metrics.raw_p_value.toFixed(4)
+                      : metrics.nominal_one_sided_p_value != null
+                        ? metrics.nominal_one_sided_p_value.toFixed(4)
+                        : '—'}
+                  </td>
+                  <td>
+                    {metrics.bonferroni_adjusted_p_value != null
+                      ? metrics.bonferroni_adjusted_p_value.toFixed(4)
+                      : '—'}
+                  </td>
+                  <td>
+                    {metrics.bh_adjusted_p_value != null
+                      ? metrics.bh_adjusted_p_value.toFixed(4)
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+
+              {Object.keys(randomByHorizon).length === 0 && (
+                <tr>
+                  <td colSpan={8} className="empty-analysis">
+                    Random-baseline results are unavailable for this stage.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="results-grid">
+          <div className="result-card">
+            <span>Correction Family Size</span>
+            <strong>{multipleTesting.hypothesis_count ?? '—'}</strong>
+          </div>
+          <div className="result-card">
+            <span>Significance Level</span>
+            <strong>
+              {multipleTesting.alpha != null
+                ? `α = ${multipleTesting.alpha}`
+                : '—'}
+            </strong>
+          </div>
+          <div className="result-card">
+            <span>Permutations Requested</span>
+            <strong>{randomBaseline.permutations_requested ?? '—'}</strong>
+          </div>
+        </div>
+
+        <div className="warnings-card">
+          <div className="card-title">Interpretation and Limitations</div>
+
+          <div className="warning-row">
+            {randomBaseline.interpretation ||
+              'Random-baseline interpretation is unavailable.'}
+          </div>
+
+          {multipleTesting.family_scope && (
+            <div className="warning-row">
+              Correction family: {multipleTesting.family_scope}
+            </div>
+          )}
+
+          {(multipleTesting.limitations || []).map((item, index) => (
+            <div className="warning-row" key={index}>
+              {item}
+            </div>
+          ))}
+
+          <div className="warning-row">
+            Adjusted p-values address the declared horizon family only.
+            They do not account for every strategy or experiment tried.
+            Statistical significance does not establish future profitability.
+          </div>
+        </div>
+      </div>
+
+
+      {/* =====================================================
           RESEARCH INTELLIGENCE
           ===================================================== */}
 
@@ -1461,40 +1732,30 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
 
 
       {/* =====================================================
+ 
+      {/* =====================================================
           WARNINGS
           ===================================================== */}
 
-      {diagnostics.warnings?.length > 0 && (
+      {Array.isArray(stageResult.warnings) &&
+        stageResult.warnings.length > 0 && (
+          <div className="warnings-card">
+            <div className="card-title">
+              Research Warnings
+            </div>
 
-        <div className="warnings-card">
-
-          <div className="card-title">
-            Research Warnings
-          </div>
-
-          {diagnostics.warnings.map(
-            (warning, index) => (
-
-              <div
-                className="warning-row"
-                key={index}
-              >
-
+            {stageResult.warnings.map((warning, index) => (
+              <div className="warning-row" key={index}>
                 ⚠ {
                   typeof warning === 'string'
                     ? warning
-                    : warning?.message ??
-                    JSON.stringify(warning)
+                    : warning?.message ?? JSON.stringify(warning)
                 }
-
               </div>
+            ))}
+          </div>
+        )}
 
-            )
-          )}
-
-        </div>
-
-      )}
 
       {/* =====================================================
           AGENT 2
