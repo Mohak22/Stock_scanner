@@ -73,6 +73,13 @@ function ResearchConfig() {
 
   const [researchResult, setResearchResult] = useState(null)
 
+  const stageResultsRef = useRef({
+    development: null,
+    validation: null,
+    final_holdout: null,
+    research_config: null,
+  })
+
   const eventSourceRef = useRef(null)
 
   useEffect(() => {
@@ -692,7 +699,17 @@ function ResearchConfig() {
     }
 
     setRunError('')
-    setResearchResult(null)
+
+    if (researchStage === 'development') {
+      stageResultsRef.current = {
+        development: null,
+        validation: null,
+        final_holdout: null,
+        research_config: null,
+      }
+      setResearchResult(null)
+    }
+
     setJobId(null)
     setJobProgress(0)
     setJobStage('')
@@ -812,9 +829,39 @@ function ResearchConfig() {
                   )
                 }
 
-                setResearchResult(
-                  resultData.result
-                )
+                const completedResult = resultData.result
+                const completedStageResult = completedResult?.development
+
+                if (!completedStageResult) {
+                  throw new Error(
+                    `The ${researchStage} run did not return an evaluation result.`
+                  )
+                }
+
+                const completeConfig = {
+                  ...completedResult.research_config,
+                  development_start: developmentStart,
+                  development_end: developmentEnd,
+                  validation_start: validationStart,
+                  validation_end: validationEnd,
+                  holdout_start: holdoutStart,
+                  holdout_end: holdoutEnd,
+                }
+
+                const nextStageResults = {
+                  ...stageResultsRef.current,
+                  [researchStage]: completedStageResult,
+                  research_config: completeConfig,
+                }
+
+                stageResultsRef.current = nextStageResults
+
+                setResearchResult({
+                  research_config: completeConfig,
+                  development: nextStageResults.development,
+                  validation: nextStageResults.validation,
+                  final_holdout: nextStageResults.final_holdout,
+                })
               } catch (error) {
                 setRunError(
                   error.message ||
@@ -1085,13 +1132,27 @@ function ResearchConfig() {
         isRunning={isRunning}
         runError={runError}
         onRunResearch={runResearch}
+        onSaveExperiment={saveExperiment}
+        researchResult={researchResult}
         onCancel={() => {
+          stageResultsRef.current = {
+            development: null,
+            validation: null,
+            final_holdout: null,
+            research_config: null,
+          }
           setResearchResult(null)
           setJobStatus(null)
           setJobProgress(0)
           setJobStage('')
         }}
         onModify={() => {
+          stageResultsRef.current = {
+            development: null,
+            validation: null,
+            final_holdout: null,
+            research_config: null,
+          }
           setResearchResult(null)
           setJobStatus(null)
           setJobProgress(0)
@@ -1127,12 +1188,8 @@ function ResearchConfig() {
       />
 
       <ResearchResults
-        researchResult={
-          researchResult
-        }
-        onSaveExperiment={
-          saveExperiment
-        }
+        onSaveExperiment={saveExperiment}
+        researchResult={researchResult}
       />
     </section>
   )

@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react'
 
 function ResearchExecution({
@@ -8,6 +9,8 @@ function ResearchExecution({
   onCancel,
   onModify,
   onProceed,
+  onSaveExperiment,
+  researchResult,
   jobProgress,
   jobStage,
   jobStatus,
@@ -16,9 +19,9 @@ function ResearchExecution({
     useState(jobStage || 'Starting research')
 
   const [stageKey, setStageKey] = useState(0)
+  const [isSaving, setIsSaving] = useState(false)
 
-  const previousStageRef =
-    useRef(jobStage)
+  const previousStageRef = useRef(jobStage)
 
   useEffect(() => {
     if (!jobStage) return
@@ -46,6 +49,48 @@ function ResearchExecution({
         ? 'VALIDATION'
         : 'FINAL TESTING'
 
+  const handleSaveExperiment = async () => {
+    if (isSaving) return
+
+    if (!researchResult) {
+      window.alert(
+        'No completed research result is available to save.',
+      )
+      return
+    }
+
+    if (typeof onSaveExperiment !== 'function') {
+      window.alert(
+        'Save failed: the save function is not connected.',
+      )
+      return
+    }
+
+    setIsSaving(true)
+
+    try {
+      const result = await onSaveExperiment(researchResult)
+
+      if (!result?.experiment_id) {
+        throw new Error(
+          'The server did not return an experiment ID. Verify whether the experiment was saved.',
+        )
+      }
+
+      window.alert(
+        `Experiment saved successfully.\n\nExperiment ID: ${result.experiment_id}`,
+      )
+    } catch (error) {
+      console.error('Save experiment failed:', error)
+
+      window.alert(
+        `Experiment could not be saved.\n\n${error.message || 'Unknown error'}`,
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <>
       {isRunning && (
@@ -53,14 +98,10 @@ function ResearchExecution({
           <div className="execution-status-header">
             <div className="execution-status-title">
               <span className="execution-live-dot" />
-              <span>
-                {stageLabel} RUNNING
-              </span>
+              <span>{stageLabel} RUNNING</span>
             </div>
 
-            <strong>
-              {progress}%
-            </strong>
+            <strong>{progress}%</strong>
           </div>
 
           <div
@@ -72,9 +113,7 @@ function ResearchExecution({
           >
             <div
               className="execution-progress-bar"
-              style={{
-                width: `${progress}%`,
-              }}
+              style={{ width: `${progress}%` }}
             />
           </div>
 
@@ -99,13 +138,8 @@ function ResearchExecution({
 
       {runError && (
         <div className="run-error">
-          <strong>
-            Research could not be executed
-          </strong>
-
-          <span>
-            {runError}
-          </span>
+          <strong>Research could not be executed</strong>
+          <span>{runError}</span>
         </div>
       )}
 
@@ -136,8 +170,10 @@ function ResearchExecution({
           </div>
 
           <button
+            type="button"
             className="run-button"
             onClick={onRunResearch}
+            disabled={isSaving}
           >
             {researchStage === 'development' &&
               'RUN DEVELOPMENT'}
@@ -159,6 +195,7 @@ function ResearchExecution({
               type="button"
               className="secondary-button"
               onClick={onCancel}
+              disabled={isSaving}
             >
               CANCEL
             </button>
@@ -167,6 +204,7 @@ function ResearchExecution({
               type="button"
               className="secondary-button"
               onClick={onModify}
+              disabled={isSaving}
             >
               MODIFY
             </button>
@@ -176,6 +214,7 @@ function ResearchExecution({
                 type="button"
                 className="primary-button"
                 onClick={onProceed}
+                disabled={isSaving}
               >
                 PROCEED TO VALIDATION
               </button>
@@ -186,6 +225,7 @@ function ResearchExecution({
                 type="button"
                 className="primary-button"
                 onClick={onProceed}
+                disabled={isSaving}
               >
                 PROCEED TO TESTING
               </button>
@@ -195,9 +235,12 @@ function ResearchExecution({
               <button
                 type="button"
                 className="primary-button"
-                onClick={onProceed}
+                onClick={handleSaveExperiment}
+                disabled={isSaving}
               >
-                SAVE EXPERIMENT
+                {isSaving
+                  ? 'SAVING EXPERIMENT...'
+                  : 'SAVE EXPERIMENT'}
               </button>
             )}
           </div>
