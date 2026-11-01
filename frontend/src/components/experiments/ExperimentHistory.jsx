@@ -60,7 +60,7 @@ function getPerformance(
 ) {
     return (
         experiment?.development?.performance?.[
-            horizon
+        horizon
         ] || null
     )
 }
@@ -141,46 +141,47 @@ function ExperimentHistory({
     const [error, setError] =
         useState('')
 
-    async function loadExperiments() {
+    useEffect(() => {
+        let isMounted = true
 
-        try {
-
-            setIsLoading(true)
-
-            const response =
-                await fetch(
+        async function fetchExperiments() {
+            try {
+                const response = await fetch(
                     `${API_BASE}/research/experiments`
                 )
 
-            const data =
-                await response.json()
+                const data = await response.json()
 
-            if (!response.ok) {
-                throw new Error(
-                    data?.detail ||
-                    `Failed to load experiments (${response.status})`
-                )
+                if (!response.ok) {
+                    throw new Error(
+                        data?.detail ||
+                        `Failed to load experiments (${response.status})`
+                    )
+                }
+
+                if (isMounted) {
+                    setExperiments(data.experiments || [])
+                    setError('')
+                }
+            } catch (err) {
+                if (isMounted) {
+                    setError(
+                        err.message ||
+                        'Failed to load experiments.'
+                    )
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false)
+                }
             }
-
-            setExperiments(
-                data.experiments || []
-            )
-
-        } catch (err) {
-
-            setError(
-                err.message ||
-                'Failed to load experiments.'
-            )
-
-        } finally {
-
-            setIsLoading(false)
         }
-    }
 
-    useEffect(() => {
-        loadExperiments()
+        fetchExperiments()
+
+        return () => {
+            isMounted = false
+        }
     }, [])
 
     const filteredExperiments =
@@ -196,9 +197,9 @@ function ExperimentHistory({
 
                     const matchesStatus =
                         statusFilter ===
-                            'ALL' ||
+                        'ALL' ||
                         experiment.status ===
-                            statusFilter
+                        statusFilter
 
                     if (!matchesStatus) {
                         return false
@@ -385,7 +386,7 @@ function ExperimentHistory({
                     current.map(
                         (item) =>
                             item.experiment_id ===
-                            experiment.experiment_id
+                                experiment.experiment_id
                                 ? {
                                     ...item,
                                     status: 'LOCKED',
@@ -564,7 +565,7 @@ function ExperimentHistory({
                         className="experiment-compare-button"
                         disabled={
                             selectedExperimentIds.length <
-                                2 ||
+                            2 ||
                             isComparing
                         }
                         onClick={
@@ -578,15 +579,15 @@ function ExperimentHistory({
 
                     {selectedExperimentIds.length >
                         0 && (
-                        <button
-                            className="experiment-clear-button"
-                            onClick={
-                                clearSelection
-                            }
-                        >
-                            CLEAR
-                        </button>
-                    )}
+                            <button
+                                className="experiment-clear-button"
+                                onClick={
+                                    clearSelection
+                                }
+                            >
+                                CLEAR
+                            </button>
+                        )}
 
                 </div>
 
@@ -742,7 +743,7 @@ function ExperimentHistory({
                                             <span
                                                 className={
                                                     experiment.status ===
-                                                    'LOCKED'
+                                                        'LOCKED'
                                                         ? 'comparison-status locked'
                                                         : 'comparison-status'
                                                 }

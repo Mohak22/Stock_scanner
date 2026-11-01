@@ -23,9 +23,11 @@ function UniverseConfig({ value, onChange }) {
     loadUniverse()
   }, [])
 
-  const rows = universeData?.universe || []
-
   const filterOptions = useMemo(() => {
+    const rows = Array.isArray(universeData?.universe)
+      ? universeData.universe
+      : []
+
     const unique = (key) =>
       [...new Set(
         rows
@@ -40,7 +42,7 @@ function UniverseConfig({ value, onChange }) {
       industry: unique('INDUSTRY'),
       basic_industry: unique('BASIC_INDUSTRY'),
     }
-  }, [rows])
+  }, [universeData])
 
   const type = value?.type || 'all_stocks'
   const selectedValue = value?.value || ''

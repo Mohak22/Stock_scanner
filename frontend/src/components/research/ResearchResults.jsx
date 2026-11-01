@@ -21,18 +21,18 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
    * ----------------------------------------------------------
    */
 
-const stageResult = researchResult?.[activeStage] || {}
-const summary = stageResult.summary || {}
-const diagnostics = stageResult.diagnostics || {}
-const performance = stageResult.performance || {}
-const analysis = stageResult.analysis || {}
+  const stageResult = researchResult?.[activeStage] || {}
+  const summary = stageResult.summary || {}
+  const diagnostics = stageResult.diagnostics || {}
+  const performance = stageResult.performance || {}
+  const analysis = stageResult.analysis || {}
 
-const costAnalysis = stageResult.cost_analysis || {}
-const costByHorizon = costAnalysis.by_horizon || {}
+  const costAnalysis = stageResult.cost_analysis || {}
+  const costByHorizon = costAnalysis.by_horizon || {}
 
-const randomBaseline = stageResult.random_baseline || {}
-const randomByHorizon = randomBaseline.by_horizon || {}
-const multipleTesting = randomBaseline.multiple_testing || {}
+  const randomBaseline = stageResult.random_baseline || {}
+  const randomByHorizon = randomBaseline.by_horizon || {}
+  const multipleTesting = randomBaseline.multiple_testing || {}
 
   const byFeature = analysis.by_feature || {}
   const byMarketRegime = analysis.by_market_regime || {}
@@ -47,9 +47,13 @@ const multipleTesting = randomBaseline.multiple_testing || {}
    * ----------------------------------------------------------
    */
 
-  const signalRows = Array.isArray(stageResult.signals)
-    ? stageResult.signals
-    : []
+  const signalRows = useMemo(
+    () =>
+      Array.isArray(stageResult.signals)
+        ? stageResult.signals
+        : [],
+    [stageResult.signals]
+  )
 
   /*
    * ----------------------------------------------------------

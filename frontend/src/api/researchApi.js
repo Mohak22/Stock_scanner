@@ -20,12 +20,14 @@ async function fetchWithTimeout(
   } catch (error) {
     if (error.name === 'AbortError') {
       throw new Error(
-        'Research API is not responding on http://127.0.0.1:8000'
+        'Research API is not responding on http://127.0.0.1:8000',
+        { cause: error }
       )
     }
 
     throw new Error(
-      'Cannot connect to Research API on http://127.0.0.1:8000'
+      'Cannot connect to Research API on http://127.0.0.1:8000',
+      { cause: error }
     )
   } finally {
     clearTimeout(timeoutId)

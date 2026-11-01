@@ -69,21 +69,6 @@ function LiveTrading() {
         return data
     }
 
-    async function loadStatus() {
-        try {
-            const data = await apiRequest(
-                '/execution/status'
-            )
-
-            setStatus(data)
-        } catch (error) {
-            setMessage({
-                type: 'error',
-                text: error.message,
-            })
-        }
-    }
-
     async function connectZerodha() {
         try {
             const data = await apiRequest(
@@ -303,7 +288,42 @@ function LiveTrading() {
     }
 
     useEffect(() => {
-        loadStatus()
+        let isMounted = true
+
+        async function fetchInitialStatus() {
+            try {
+                const response = await fetch(
+                    `${API_BASE}/execution/status`
+                )
+
+                const data = await response.json()
+
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail ||
+                        data.message ||
+                        'Failed to load execution status.'
+                    )
+                }
+
+                if (isMounted) {
+                    setStatus(data)
+                }
+            } catch (error) {
+                if (isMounted) {
+                    setMessage({
+                        type: 'error',
+                        text: error.message,
+                    })
+                }
+            }
+        }
+
+        fetchInitialStatus()
+
+        return () => {
+            isMounted = false
+        }
     }, [])
 
     return (

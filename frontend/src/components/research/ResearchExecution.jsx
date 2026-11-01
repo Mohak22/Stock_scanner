@@ -1,5 +1,4 @@
-
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 
 function ResearchExecution({
   researchStage,
@@ -15,27 +14,10 @@ function ResearchExecution({
   jobStage,
   jobStatus,
 }) {
-  const [displayStage, setDisplayStage] =
-    useState(jobStage || 'Starting research')
-
-  const [stageKey, setStageKey] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
 
-  const previousStageRef = useRef(jobStage)
-
-  useEffect(() => {
-    if (!jobStage) return
-
-    if (
-      previousStageRef.current &&
-      previousStageRef.current !== jobStage
-    ) {
-      setStageKey((value) => value + 1)
-    }
-
-    setDisplayStage(jobStage)
-    previousStageRef.current = jobStage
-  }, [jobStage])
+  const displayStage =
+    jobStage || 'Starting research'
 
   const progress = Math.max(
     0,
@@ -118,7 +100,7 @@ function ResearchExecution({
           </div>
 
           <div
-            key={stageKey}
+            key={displayStage}
             className="execution-stage-current"
           >
             <span className="execution-stage-spinner" />

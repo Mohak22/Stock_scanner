@@ -15,7 +15,6 @@ function ResearchConfig() {
   const [featureError, setFeatureError] = useState('')
   const [researchStage, setResearchStage] =
     useState('development')
-  const [jobId, setJobId] = useState(null)
   const [jobProgress, setJobProgress] = useState(0)
   const [jobStage, setJobStage] = useState('')
   const [jobStatus, setJobStatus] = useState(null)
@@ -58,19 +57,6 @@ function ResearchConfig() {
   const [isRunning, setIsRunning] = useState(false)
   const [runError, setRunError] = useState('')
 
-  useEffect(() => {
-    if (runError) {
-      setRunError('')
-    }
-  }, [
-    developmentStart,
-    developmentEnd,
-    validationStart,
-    validationEnd,
-    holdoutStart,
-    holdoutEnd,
-  ])
-
   const [researchResult, setResearchResult] = useState(null)
 
   const stageResultsRef = useRef({
@@ -81,6 +67,36 @@ function ResearchConfig() {
   })
 
   const eventSourceRef = useRef(null)
+
+  const updateDevelopmentStart = (value) => {
+    setRunError('')
+    setDevelopmentStart(value)
+  }
+
+  const updateDevelopmentEnd = (value) => {
+    setRunError('')
+    setDevelopmentEnd(value)
+  }
+
+  const updateValidationStart = (value) => {
+    setRunError('')
+    setValidationStart(value)
+  }
+
+  const updateValidationEnd = (value) => {
+    setRunError('')
+    setValidationEnd(value)
+  }
+
+  const updateHoldoutStart = (value) => {
+    setRunError('')
+    setHoldoutStart(value)
+  }
+
+  const updateHoldoutEnd = (value) => {
+    setRunError('')
+    setHoldoutEnd(value)
+  }
 
   useEffect(() => {
     async function loadAvailableDates() {
@@ -710,7 +726,6 @@ function ResearchConfig() {
       setResearchResult(null)
     }
 
-    setJobId(null)
     setJobProgress(0)
     setJobStage('')
     setJobStatus(null)
@@ -759,7 +774,6 @@ function ResearchConfig() {
         )
       }
 
-      setJobId(newJobId)
       setJobStatus(data.status)
       setJobProgress(
         data.progress ?? 0
@@ -1050,24 +1064,12 @@ function ResearchConfig() {
           researchStage={
             researchStage
           }
-          developmentStart={
-            developmentStart
-          }
-          developmentEnd={
-            developmentEnd
-          }
-          validationStart={
-            validationStart
-          }
-          validationEnd={
-            validationEnd
-          }
-          holdoutStart={
-            holdoutStart
-          }
-          holdoutEnd={
-            holdoutEnd
-          }
+          setDevelopmentStart={updateDevelopmentStart}
+          setDevelopmentEnd={updateDevelopmentEnd}
+          setValidationStart={updateValidationStart}
+          setValidationEnd={updateValidationEnd}
+          setHoldoutStart={updateHoldoutStart}
+          setHoldoutEnd={updateHoldoutEnd}
           onDevelopmentStartChange={
             setDevelopmentStart
           }
