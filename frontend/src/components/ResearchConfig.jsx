@@ -1061,138 +1061,131 @@ function ResearchConfig() {
         />
 
         <DateRangeConfig
-          researchStage={
-            researchStage
-          }
-          setDevelopmentStart={updateDevelopmentStart}
-          setDevelopmentEnd={updateDevelopmentEnd}
-          setValidationStart={updateValidationStart}
-          setValidationEnd={updateValidationEnd}
-          setHoldoutStart={updateHoldoutStart}
-          setHoldoutEnd={updateHoldoutEnd}
-          onDevelopmentStartChange={
-            setDevelopmentStart
-          }
-          onDevelopmentEndChange={
-            setDevelopmentEnd
-          }
-          onValidationStartChange={
-            setValidationStart
-          }
-          onValidationEndChange={
-            setValidationEnd
-          }
-          onHoldoutStartChange={
-            setHoldoutStart
-          }
-          onHoldoutEndChange={
-            setHoldoutEnd
-          }
+          researchStage={researchStage}
+
+          developmentStart={developmentStart}
+          developmentEnd={developmentEnd}
+
+          validationStart={validationStart}
+          validationEnd={validationEnd}
+
+          holdoutStart={holdoutStart}
+          holdoutEnd={holdoutEnd}
+
+          onDevelopmentStartChange={updateDevelopmentStart}
+          onDevelopmentEndChange={updateDevelopmentEnd}
+
+          onValidationStartChange={updateValidationStart}
+          onValidationEndChange={updateValidationEnd}
+
+          onHoldoutStartChange={updateHoldoutStart}
+          onHoldoutEndChange={updateHoldoutEnd}
+
           isRunning={isRunning}
         />
+
+        <ConditionBuilder
+          conditions={conditions}
+          features={features}
+          loadingFeatures={
+            loadingFeatures
+          }
+          featureError={
+            featureError
+          }
+          isRunning={isRunning}
+          onAddCondition={
+            addCondition
+          }
+          onRemoveCondition={
+            removeCondition
+          }
+          onUpdateCondition={
+            updateCondition
+          }
+          onUpdateFeature={
+            updateFeature
+          }
+        />
+
+        <EvaluationHorizons
+          horizons={[
+            1, 3, 5, 10
+          ]}
+          selectedHorizons={
+            evaluationHorizons
+          }
+          onToggle={
+            toggleHorizon
+          }
+          disabled={isRunning}
+        />
+
+        <ResearchExecution
+          researchStage={researchStage}
+          isRunning={isRunning}
+          runError={runError}
+          onRunResearch={runResearch}
+          onSaveExperiment={saveExperiment}
+          researchResult={researchResult}
+          onCancel={() => {
+            stageResultsRef.current = {
+              development: null,
+              validation: null,
+              final_holdout: null,
+              research_config: null,
+            }
+            setResearchResult(null)
+            setJobStatus(null)
+            setJobProgress(0)
+            setJobStage('')
+          }}
+          onModify={() => {
+            stageResultsRef.current = {
+              development: null,
+              validation: null,
+              final_holdout: null,
+              research_config: null,
+            }
+            setResearchResult(null)
+            setJobStatus(null)
+            setJobProgress(0)
+            setJobStage('')
+          }}
+          onProceed={() => {
+            if (researchStage === 'development') {
+              setResearchStage('validation')
+              setResearchResult(null)
+              setJobStatus(null)
+              setJobProgress(0)
+              setJobStage('')
+              return
+            }
+
+            if (researchStage === 'validation') {
+              setResearchStage('testing')
+              setResearchResult(null)
+              setJobStatus(null)
+              setJobProgress(0)
+              setJobStage('')
+              return
+            }
+
+            if (researchStage === 'testing') {
+              // Final result remains available for saving.
+              return
+            }
+          }}
+          jobProgress={jobProgress}
+          jobStage={jobStage}
+          jobStatus={jobStatus}
+        />
+
+        <ResearchResults
+          onSaveExperiment={saveExperiment}
+          researchResult={researchResult}
+        />
       </div>
-
-      <ConditionBuilder
-        conditions={conditions}
-        features={features}
-        loadingFeatures={
-          loadingFeatures
-        }
-        featureError={
-          featureError
-        }
-        isRunning={isRunning}
-        onAddCondition={
-          addCondition
-        }
-        onRemoveCondition={
-          removeCondition
-        }
-        onUpdateCondition={
-          updateCondition
-        }
-        onUpdateFeature={
-          updateFeature
-        }
-      />
-
-      <EvaluationHorizons
-        horizons={[
-          1, 3, 5, 10
-        ]}
-        selectedHorizons={
-          evaluationHorizons
-        }
-        onToggle={
-          toggleHorizon
-        }
-        disabled={isRunning}
-      />
-
-      <ResearchExecution
-        researchStage={researchStage}
-        isRunning={isRunning}
-        runError={runError}
-        onRunResearch={runResearch}
-        onSaveExperiment={saveExperiment}
-        researchResult={researchResult}
-        onCancel={() => {
-          stageResultsRef.current = {
-            development: null,
-            validation: null,
-            final_holdout: null,
-            research_config: null,
-          }
-          setResearchResult(null)
-          setJobStatus(null)
-          setJobProgress(0)
-          setJobStage('')
-        }}
-        onModify={() => {
-          stageResultsRef.current = {
-            development: null,
-            validation: null,
-            final_holdout: null,
-            research_config: null,
-          }
-          setResearchResult(null)
-          setJobStatus(null)
-          setJobProgress(0)
-          setJobStage('')
-        }}
-        onProceed={() => {
-          if (researchStage === 'development') {
-            setResearchStage('validation')
-            setResearchResult(null)
-            setJobStatus(null)
-            setJobProgress(0)
-            setJobStage('')
-            return
-          }
-
-          if (researchStage === 'validation') {
-            setResearchStage('testing')
-            setResearchResult(null)
-            setJobStatus(null)
-            setJobProgress(0)
-            setJobStage('')
-            return
-          }
-
-          if (researchStage === 'testing') {
-            // Final result remains available for saving.
-            return
-          }
-        }}
-        jobProgress={jobProgress}
-        jobStage={jobStage}
-        jobStatus={jobStatus}
-      />
-
-      <ResearchResults
-        onSaveExperiment={saveExperiment}
-        researchResult={researchResult}
-      />
     </section>
   )
 }

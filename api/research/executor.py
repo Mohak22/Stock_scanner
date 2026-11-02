@@ -1220,9 +1220,22 @@ def execute_research(
     # Use the benchmark's available trading sessions as a reference.
     if membership_basis == "point_in_time":
         try:
+            # Temporary exception: NSE special Saturday session.
+            # 2025-02-01 is excluded until its historical archive is verified.
+            TEMPORARILY_EXCLUDED_SESSIONS = {
+                pd.Timestamp("2025-02-01"),
+            }
+            
+            expected_bhavcopy_sessions = {
+                pd.Timestamp(session).normalize()
+                for session in market_data["TIMESTAMP"].dropna().unique()
+            }
+            
+            expected_bhavcopy_sessions -= TEMPORARILY_EXCLUDED_SESSIONS
+            
             validate_bhavcopy_session_coverage(
                 observed_dates=observed_bhavcopy_sessions,
-                expected_dates=market_data["TIMESTAMP"],
+                expected_dates=expected_bhavcopy_sessions,
             )
         except ValueError as exc:
             raise HTTPException(
@@ -1391,9 +1404,20 @@ def execute_research(
             candidate_data = pd.DataFrame()
 
         else:
-            candidate_mask = pd.Series(
-                True,
-                index=data.index,
+            # The random baseline only needs candidate stocks on dates
+            # when the selected strategy generated signals.
+            candidate_dates = (
+                pd.to_datetime(
+                    signal_data["TIMESTAMP"],
+                    errors="coerce",
+                )
+                .dropna()
+                .dt.normalize()
+                .unique()
+            )
+            
+            candidate_mask = data["TIMESTAMP"].isin(
+                candidate_dates
             )
 
             step_started = time.perf_counter()

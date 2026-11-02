@@ -162,7 +162,26 @@ def calculate_features(
         if period is not None:
             period = int(period)
 
-        if feature_type == "rsi":
+        # --------------------------------------------------
+        # RAW OHLC PRICE FEATURES
+        # --------------------------------------------------
+
+        if feature_type in {"open", "high", "low", "close"}:
+
+            column = feature_type.upper()
+
+            if column not in result.columns:
+                raise ValueError(
+                    f"{column} column is required "
+                    f"for the {feature_type} feature."
+                )
+
+            result[column] = pd.to_numeric(
+                result[column],
+                errors="coerce",
+            )
+
+        elif feature_type == "rsi":
 
             if period is None:
                 raise ValueError(

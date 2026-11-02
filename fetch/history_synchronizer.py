@@ -85,7 +85,14 @@ class HistorySynchronizer:
         1
     )
 
+    # ==============================================================
+    # VERIFIED SPECIAL TRADING SESSIONS
+    # ==============================================================
 
+    SPECIAL_TRADING_SESSIONS = {
+        date(2025, 2, 1),
+    }
+    
     # ==================================================================
     # FILE PATTERNS
     # ==================================================================
@@ -562,20 +569,20 @@ class HistorySynchronizer:
         while current_date <= self.data_as_of:
 
             # ----------------------------------------------------------
-            # WEEKEND
+            # WEEKENDS
             # ----------------------------------------------------------
 
-            if current_date.weekday() >= 5:
+            if (
+                current_date.weekday() >= 5
+                and current_date not in self.SPECIAL_TRADING_SESSIONS
+            ):
 
                 print(
-                    "Skipping weekend : "
+                    "Skipping non-trading weekend : "
                     f"{current_date.strftime('%d-%m-%Y')}"
                 )
 
-                current_date += timedelta(
-                    days=1
-                )
-
+                current_date += timedelta(days=1)
                 continue
 
 

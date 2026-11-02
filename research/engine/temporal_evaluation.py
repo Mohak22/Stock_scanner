@@ -494,13 +494,15 @@ def evaluate_temporal_stage(
     unique_horizons = sorted(set(horizons))
 
     for symbol, group in groups.items():
-
-        for position, row in group.iterrows():
-
+    
+        # Iterate only over rows selected for evaluation.
+        # Original group indices are preserved, so `position`
+        # remains valid for the future outcome lookup using iloc.
+        selected_rows = group.loc[group["_SIGNAL"]]
+    
+        for position, row in selected_rows.iterrows():
+    
             signal_date = row["TIMESTAMP"]
-
-            if not row["_SIGNAL"]:
-                continue
 
             if not (
                 stage.start <= signal_date <= stage.end
