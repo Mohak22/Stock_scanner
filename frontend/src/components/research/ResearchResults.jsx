@@ -267,6 +267,13 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
       config.hypothesis ||
       'The observed research relationship may be robust enough to justify a controlled follow-up experiment.'
 
+
+    const hasValidation =
+      researchResult?.validation != null
+
+    const hasFinalHoldout =
+      researchResult?.final_holdout != null
+
     const baseResearchRequest = {
       development_start:
         config.development_start,
@@ -275,16 +282,24 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
         config.development_end,
 
       validation_start:
-        config.validation_start ?? null,
+        hasValidation
+          ? config.validation_start ?? null
+          : null,
 
       validation_end:
-        config.validation_end ?? null,
+        hasValidation
+          ? config.validation_end ?? null
+          : null,
 
       holdout_start:
-        config.holdout_start ?? null,
+        hasFinalHoldout
+          ? config.holdout_start ?? null
+          : null,
 
       holdout_end:
-        config.holdout_end ?? null,
+        hasFinalHoldout
+          ? config.holdout_end ?? null
+          : null,
 
       universe:
         config.universe,
@@ -304,6 +319,7 @@ function ResearchResults({ researchResult, onSaveExperiment }) {
       outcome_definition:
         config.outcome_definition,
     }
+
 
     setIsAskingAgent2(true)
     setAgent2Error('')
