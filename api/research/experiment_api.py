@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from typing import Any
-from uuid import uuid4
+from uuid import uuid4, UUID
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException
@@ -48,6 +48,7 @@ class SaveExperimentRequest(BaseModel):
     notes: str | None = None
     tags: list[str] = Field(default_factory=list)
     parent_experiment_id: str | None = None
+    source_agent_run_id: str | None = None
 
 
 class CompareExperimentsRequest(BaseModel):
@@ -717,7 +718,69 @@ def save_experiment(
         parent_experiment_id
     )
 
-    experiment_id_value = experiment_id()
+    source_agent_run_id = request.source_agent_run_id
+    
+    if source_agent_run_id:
+        try:
+            stable_run_id = UUID(source_agent_run_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid source_agent_run_id.",
+            ) from exc
+    
+        experiment_id_value = f"EXP-AI-{stable_run_id.hex.upper()}"
+    
+        # A previous attempt may already have saved this experiment.
+        try:
+            existing, existing_sha = store.get_large(
+                experiment_path(experiment_id_value)
+            )
+    
+            if existing.get("source_agent_run_id") != source_agent_run_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Experiment identity collision.",
+                )
+    
+            # Repair metadata if a previous attempt stopped between writes.
+            metadata_path = experiment_metadata_path(experiment_id_value)
+    
+            try:
+                metadata_sha = store.get_sha(metadata_path)
+                store.put(
+                    metadata_path,
+                    experiment_metadata(existing),
+                    f"Repair metadata for {experiment_id_value}",
+                    metadata_sha,
+                )
+            except RuntimeError:
+                store.put(
+                    metadata_path,
+                    experiment_metadata(existing),
+                    f"Create metadata for {experiment_id_value}",
+                )
+    
+            return {
+                "saved": True,
+                "already_saved": True,
+                "experiment_id": experiment_id_value,
+                "status": existing.get("status", "SAVED"),
+                "created_at": existing.get("created_at"),
+                "parent_experiment_id": existing.get("parent_experiment_id"),
+                "lineage": existing.get("lineage", {}),
+                "commit_sha": existing_sha,
+            }
+    
+        except HTTPException:
+            raise
+        except RuntimeError:
+            # No existing experiment: create it below.
+            pass
+    else:
+        # Preserve existing manual Research Cockpit behaviour.
+        experiment_id_value = experiment_id()
+    
     created_at = now()
 
     lineage = {

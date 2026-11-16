@@ -46,7 +46,8 @@ if not DEMO_MODE:
     from api.execution.router import router as execution_router
     from api.research_agent.router import router as research_agent_router
     from api.research_assistant.router import router as research_assistant_router
-    
+    from api.research_assistant.router import router as research_assistant_router, resume_interrupted_runs
+
 # ======================================================================
 # APPLICATION
 # ======================================================================
@@ -102,7 +103,18 @@ _agent_request_times = defaultdict(deque)
 AGENT_REQUEST_LIMIT = 5
 AGENT_WINDOW_SECONDS = 60
 
-
+@app.on_event("startup")
+def recover_ai_research_runs():
+    if not DEMO_MODE:
+        try:
+            resume_interrupted_runs()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "AI research recovery failed during startup."
+            )
+            
+            
 @app.middleware("http")
 async def enforce_demo_safety(request: Request, call_next):
     method = request.method.upper()
