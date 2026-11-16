@@ -380,6 +380,11 @@ class GitHubStore:
 store = GitHubStore()
 
 
+def _is_github_not_found(exc: RuntimeError) -> bool:
+    """Only a real GitHub HTTP 404 is treated as a missing file."""
+    return "(404):" in str(exc)
+
+
 # ======================================================================
 # HELPERS
 # ======================================================================
@@ -733,37 +738,30 @@ def save_experiment(
     
         # A previous attempt may already have saved this experiment.
         try:
-            existing, existing_sha = store.get_large(
-                experiment_path(experiment_id_value)
-            )
-    
+            existing, existing_sha = store.get_large(experiment_path(experiment_id_value))
+        except RuntimeError as exc:
+            if not _is_github_not_found(exc):
+                raise HTTPException(status_code=502, detail=f"Could not check AI experiment idempotency: {exc}") from exc
+            existing = None
+            existing_sha = None
+
+        if existing is not None:
             if existing.get("source_agent_run_id") != source_agent_run_id:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Experiment identity collision.",
-                )
-    
-            # Repair metadata if a previous attempt stopped between writes.
+                raise HTTPException(status_code=409, detail="Experiment identity collision.")
             metadata_path = experiment_metadata_path(experiment_id_value)
-    
             try:
                 metadata_sha = store.get_sha(metadata_path)
-                store.put(
-                    metadata_path,
-                    experiment_metadata(existing),
-                    f"Repair metadata for {experiment_id_value}",
-                    metadata_sha,
-                )
-            except RuntimeError:
-                store.put(
-                    metadata_path,
-                    experiment_metadata(existing),
-                    f"Create metadata for {experiment_id_value}",
-                )
-    
+            except RuntimeError as exc:
+                if not _is_github_not_found(exc):
+                    raise HTTPException(status_code=502, detail=f"Could not inspect experiment metadata: {exc}") from exc
+                metadata_sha = None
+            try:
+                store.put(metadata_path, experiment_metadata(existing),
+                          f"Repair metadata for {experiment_id_value}", metadata_sha)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=502, detail=f"Could not repair experiment metadata: {exc}") from exc
             return {
-                "saved": True,
-                "already_saved": True,
+                "saved": True, "already_saved": True,
                 "experiment_id": experiment_id_value,
                 "status": existing.get("status", "SAVED"),
                 "created_at": existing.get("created_at"),
@@ -771,12 +769,7 @@ def save_experiment(
                 "lineage": existing.get("lineage", {}),
                 "commit_sha": existing_sha,
             }
-    
-        except HTTPException:
-            raise
-        except RuntimeError:
-            # No existing experiment: create it below.
-            pass
+
     else:
         # Preserve existing manual Research Cockpit behaviour.
         experiment_id_value = experiment_id()
@@ -805,6 +798,7 @@ def save_experiment(
     record = {
         "schema_version": 2,
         "experiment_id": experiment_id_value,
+        "source_agent_run_id": source_agent_run_id,
         "status": "SAVED",
         "name": request.name,
         "notes": request.notes,
@@ -854,25 +848,33 @@ def save_experiment(
     }
 
     try:
-        commit_sha = store.put(
-            experiment_path(experiment_id_value),
-            record,
-            f"Save research experiment {experiment_id_value}",
-        )
+        try:
+            commit_sha = store.put(
+                experiment_path(experiment_id_value), record,
+                f"Save research experiment {experiment_id_value}",
+            )
+        except RuntimeError as exc:
+            if not source_agent_run_id or not ("(409):" in str(exc) or "(422):" in str(exc)):
+                raise
+            existing, existing_sha = store.get_large(experiment_path(experiment_id_value))
+            if existing.get("source_agent_run_id") != source_agent_run_id:
+                raise HTTPException(status_code=409, detail="Experiment identity collision during concurrent save.") from exc
+            record = existing
+            commit_sha = existing_sha
 
-        store.put(
-            experiment_metadata_path(
-                experiment_id_value
-            ),
-            experiment_metadata(record),
-            f"Save experiment metadata {experiment_id_value}",
-        )
-
+        metadata_path = experiment_metadata_path(experiment_id_value)
+        try:
+            metadata_sha = store.get_sha(metadata_path)
+        except RuntimeError as exc:
+            if not _is_github_not_found(exc):
+                raise
+            metadata_sha = None
+        store.put(metadata_path, experiment_metadata(record),
+                  f"Save experiment metadata {experiment_id_value}", metadata_sha)
+    except HTTPException:
+        raise
     except RuntimeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {
         "saved": True,

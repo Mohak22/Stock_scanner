@@ -45,8 +45,10 @@ if not DEMO_MODE:
     from api.research.workflow_api import router as workflow_router
     from api.execution.router import router as execution_router
     from api.research_agent.router import router as research_agent_router
-    from api.research_assistant.router import router as research_assistant_router
-    from api.research_assistant.router import router as research_assistant_router, resume_interrupted_runs
+    from api.research_assistant.router import (
+        router as research_assistant_router,
+        resume_interrupted_runs,
+    )
 
 # ======================================================================
 # APPLICATION

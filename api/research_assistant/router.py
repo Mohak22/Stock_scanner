@@ -557,11 +557,8 @@ def _execute_approved_research(
             proposal["research_request"]
         )
 
-        db.table("agent_runs").update({
-            "status": "running",
-            "current_step": "executing_research",
-            "updated_at": _now(),
-        }).eq("id", run_id).execute()
+        # The conditional pending -> running update above is the sole
+        # execution claim; do not overwrite it with an unconditional update.
 
         # Run the existing deterministic research engine.
         result = execute_research(
@@ -592,6 +589,7 @@ def _execute_approved_research(
                 name=proposal["research_question"][:120],
                 notes="Created by AI Research Assistant after explicit approval.",
                 parent_experiment_id=proposal.get("parent_experiment_id"),
+                source_agent_run_id=run_id,
             )
         )
 
@@ -754,11 +752,19 @@ def approve_proposal(
 
     run_id = ledger["agent_run_id"]
 
-    db.table("agent_runs").update({
-        "status": "running",
-        "current_step": "queued_for_execution",
-        "updated_at": _now(),
-    }).eq("id", run_id).eq("status", "awaiting_approval").execute()
+    queued = (
+        db.table("agent_runs").update({
+            "status": "pending",
+            "current_step": "queued_for_execution",
+            "updated_at": _now(),
+        }).eq("id", run_id).eq("status", "awaiting_approval")
+        .select("id").execute()
+    )
+    if not queued.data:
+        db.table("research_ledger").update({
+            "approval_status": "pending", "updated_at": _now(),
+        }).eq("id", str(ledger_id)).eq("approval_status", "approved").execute()
+        raise HTTPException(status_code=409, detail="Could not queue this approved research run.")
 
     background_tasks.add_task(
         _execute_approved_research,
@@ -854,85 +860,42 @@ def get_agent_run(session_id: UUID, run_id: UUID) -> dict:
 
 
 def resume_interrupted_runs() -> int:
-    """
-    Recover approved AI research runs after an API process restart.
-
-    Run this during application startup. This implementation assumes
-    one Uvicorn worker; do not run multiple API worker processes yet.
-    """
+    """Recover approved runs after restart; currently single-worker only."""
     db = _db()
-
     response = (
         db.table("research_ledger")
-        .select("id,session_id,agent_run_id,approval_status,status")
-        .eq("approval_status", "approved")
-        .in_("status", ["proposed", "running"])
-        .execute()
+        .select("id,session_id,agent_run_id,approval_status")
+        .eq("approval_status", "approved").execute()
     )
-
     recovered = 0
-
     for ledger in response.data or []:
         run_id = ledger.get("agent_run_id")
-
         if not run_id:
             continue
-
-        run_response = (
-            db.table("agent_runs")
-            .select("id,status")
-            .eq("id", run_id)
-            .limit(1)
-            .execute()
-        )
-
+        run_response = db.table("agent_runs").select("id,status").eq("id", run_id).limit(1).execute()
         runs = run_response.data or []
         if not runs:
+            logger.error("Approved ledger %s has no run %s.", ledger.get("id"), run_id)
             continue
-
-        run_status = runs[0]["status"]
-
-        if run_status not in {"pending", "running"}:
-            continue
-
-        # A running job from the previous process is interrupted.
-        # Requeue it; the worker's conditional claim prevents duplicates.
-        if run_status == "running":
+        status = runs[0].get("status")
+        if status == "running":
             reset = (
-                queued = (
-                    db.table("agent_runs")
-                    .update({
-                        "status": "pending",
-                        "current_step": "queued_for_execution",
-                        "updated_at": _now(),
-                    })
-                    .eq("id", run_id)
-                    .eq("status", "awaiting_approval")
-                    .select("id")
-                    .execute()
-                )
-            
-                if not queued.data:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="Could not queue this approved run.",
-                    )
+                db.table("agent_runs").update({
+                    "status": "pending",
+                    "current_step": "recovered_after_restart",
+                    "updated_at": _now(),
+                }).eq("id", run_id).eq("status", "running")
+                .select("id").execute()
             )
-
             if not reset.data:
                 continue
-
-        thread = threading.Thread(
+        elif status != "pending":
+            continue
+        threading.Thread(
             target=_execute_approved_research,
-            args=(
-                ledger["session_id"],
-                ledger["id"],
-                run_id,
-            ),
-            daemon=True,
-        )
-        thread.start()
+            args=(ledger["session_id"], ledger["id"], run_id),
+            daemon=True, name=f"research-recovery-{run_id}",
+        ).start()
         recovered += 1
-
     logger.info("Recovered %s approved research runs.", recovered)
     return recovered
