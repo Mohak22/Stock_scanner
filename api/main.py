@@ -45,7 +45,8 @@ if not DEMO_MODE:
     from api.research.workflow_api import router as workflow_router
     from api.execution.router import router as execution_router
     from api.research_agent.router import router as research_agent_router
-
+    from api.research_assistant.router import router as research_assistant_router
+    
 # ======================================================================
 # APPLICATION
 # ======================================================================
@@ -87,7 +88,8 @@ if not DEMO_MODE:
     app.include_router(workflow_router)
     app.include_router(research_agent_router)
     app.include_router(execution_router)
-
+    app.include_router(research_assistant_router)
+    
 repository = ResearchDataRepository()
 
 data_revision = repository.get_revision()
