@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar'
 import TopBar from './components/TopBar'
 
 import ResearchConfig from './components/ResearchConfig'
+import AIResearchAssistant from './components/AIResearchAssistant'
+
 import ExperimentHistory from './components/experiments/ExperimentHistory'
 import ExperimentDetail from './components/experiments/ExperimentDetail'
 
@@ -12,7 +14,6 @@ import StrategyLibrary from './components/strategies/StrategyLibrary'
 import StrategyDetail from './components/strategies/StrategyDetail'
 
 import LiveTrading from './components/LiveTrading'
-
 
 function App() {
     const [activePage, setActivePage] =
@@ -24,44 +25,31 @@ function App() {
     const [selectedStrategy, setSelectedStrategy] =
         useState(null)
 
-
     function openExperiment(experiment) {
         setSelectedExperimentId(
             experiment.experiment_id
         )
 
-        setActivePage(
-            'experiment-detail'
-        )
+        setActivePage('experiment-detail')
     }
-
 
     function backToExperimentHistory() {
         setSelectedExperimentId(null)
 
-        setActivePage(
-            'experiments'
-        )
+        setActivePage('experiments')
     }
-
 
     function openStrategy(strategy) {
         setSelectedStrategy(strategy)
 
-        setActivePage(
-            'strategy-detail'
-        )
+        setActivePage('strategy-detail')
     }
-
 
     function backToStrategyLibrary() {
         setSelectedStrategy(null)
 
-        setActivePage(
-            'strategies'
-        )
+        setActivePage('strategies')
     }
-
 
     return (
         <div className="app">
@@ -81,57 +69,41 @@ function App() {
                         <ResearchConfig />
                     )}
 
+                    {activePage === 'ai-research' && (
+                        <AIResearchAssistant />
+                    )}
 
                     {activePage === 'experiments' && (
                         <ExperimentHistory
-                            onOpenExperiment={
-                                openExperiment
-                            }
+                            onOpenExperiment={openExperiment}
                         />
                     )}
 
-
-                    {activePage ===
-                        'experiment-detail' &&
+                    {activePage === 'experiment-detail' &&
                         selectedExperimentId && (
                             <ExperimentDetail
-                                experimentId={
-                                    selectedExperimentId
-                                }
-                                onBack={
-                                    backToExperimentHistory
-                                }
+                                experimentId={selectedExperimentId}
+                                onBack={backToExperimentHistory}
                             />
                         )}
-
 
                     {activePage === 'strategies' && (
                         <StrategyLibrary
-                            onOpenStrategy={
-                                openStrategy
-                            }
+                            onOpenStrategy={openStrategy}
                         />
                     )}
 
-
-                    {activePage ===
-                        'strategy-detail' &&
+                    {activePage === 'strategy-detail' &&
                         selectedStrategy && (
                             <StrategyDetail
-                                strategy={
-                                    selectedStrategy
-                                }
-                                onBack={
-                                    backToStrategyLibrary
-                                }
+                                strategy={selectedStrategy}
+                                onBack={backToStrategyLibrary}
                             />
                         )}
 
-
-                    {activePage ===
-                        'live-trading' && (
-                            <LiveTrading />
-                        )}
+                    {activePage === 'live-trading' && (
+                        <LiveTrading />
+                    )}
 
                 </main>
 
@@ -140,6 +112,5 @@ function App() {
         </div>
     )
 }
-
 
 export default App

@@ -26,7 +26,7 @@ from api.research_agent.guardrails import (
     validate_agent_2_proposal,
 )
 from api.research_agent.models import Agent2Request
-
+from api.research_assistant.conversation import router as conversation_router
 from api.data.github_data import ResearchDataRepository
 from api.research.executor import execute_research
 from api.research.experiment_api import (
@@ -42,7 +42,7 @@ router = APIRouter(
     prefix="/ai-research",
     tags=["ai-research-assistant"],
 )
-
+router.include_router(conversation_router)
 
 # ============================================================
 # REQUEST MODELS

@@ -1,6 +1,7 @@
 function Sidebar({ activePage, setActivePage }) {
   return (
     <aside className="sidebar">
+
       <div className="brand">
         <div className="brand-icon">◉</div>
 
@@ -11,6 +12,7 @@ function Sidebar({ activePage, setActivePage }) {
       </div>
 
       <nav className="sidebar-menu">
+
         <div className="menu-item">
           Dashboard
         </div>
@@ -24,37 +26,46 @@ function Sidebar({ activePage, setActivePage }) {
         </div>
 
         <div
-          className={`menu-item ${activePage === 'research' ? 'active' : ''
-            }`}
+          className={`menu-item ${
+            activePage === 'research' ? 'active' : ''
+          }`}
           onClick={() => setActivePage('research')}
         >
           Research Cockpit
         </div>
 
         <div
-          className={`menu-item ${activePage === 'experiments' ? 'active' : ''
-            }`}
+          className={`menu-item ${
+            activePage === 'ai-research' ? 'active' : ''
+          }`}
+          onClick={() => setActivePage('ai-research')}
+        >
+          AI Research Assistant
+        </div>
+
+        <div
+          className={`menu-item ${
+            activePage === 'experiments' ? 'active' : ''
+          }`}
           onClick={() => setActivePage('experiments')}
         >
           Experiment History
         </div>
 
         <div
-          className={`menu-item ${activePage === 'strategies' ? 'active' : ''
-            }`}
+          className={`menu-item ${
+            activePage === 'strategies' ? 'active' : ''
+          }`}
           onClick={() => setActivePage('strategies')}
         >
           Strategy Library
         </div>
 
         <div
-          className={`menu-item ${activePage === 'live-trading'
-              ? 'active'
-              : ''
-            }`}
-          onClick={() =>
-            setActivePage('live-trading')
-          }
+          className={`menu-item ${
+            activePage === 'live-trading' ? 'active' : ''
+          }`}
+          onClick={() => setActivePage('live-trading')}
         >
           Live Trading
         </div>
@@ -74,9 +85,11 @@ function Sidebar({ activePage, setActivePage }) {
         <div className="menu-item">
           Settings
         </div>
+
       </nav>
 
       <div className="market-snapshot">
+
         <h3>Market Snapshot</h3>
 
         <div className="market-row">
@@ -93,7 +106,9 @@ function Sidebar({ activePage, setActivePage }) {
           <span>NIFTY MIDCAP</span>
           <span>+1.06%</span>
         </div>
+
       </div>
+
     </aside>
   )
 }
