@@ -1,29 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './AIResearchAssistant.css'
 
-const API_BASE_URL = 'http://127.0.0.1:8000'
-
-const DEFAULT_RESEARCH_REQUEST = {
-  development_start: '2016-01-01',
-  development_end: '2022-12-31',
-  validation_start: '2023-01-01',
-  validation_end: '2024-12-31',
-  holdout_start: '2025-01-01',
-  holdout_end: '2025-12-31',
-  universe: {
-    type: 'all_stocks',
-    value: '',
-    symbols: [],
-    membership_basis: 'point_in_time'
-  },
-  features: [{ type: 'rsi', parameters: { period: 14 } }],
-  entry_conditions: [{
-    left: { feature: 'rsi', parameters: { period: 14 } },
-    operator: '<',
-    right: { value: 30 }
-  }],
-  evaluation_horizons: [1, 3, 5, 10]
-}
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 
 async function api(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -34,82 +14,36 @@ async function api(path, options = {}) {
     }
   })
 
-  const payload = await response.json().catch(() => ({}))
+  const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    const detail = payload.detail
     throw new Error(
-      typeof detail === 'string'
-        ? detail
-        : JSON.stringify(detail || `Request failed (${response.status})`)
+      typeof data.detail === 'string'
+        ? data.detail
+        : JSON.stringify(data.detail || `Request failed (${response.status})`)
     )
   }
 
-  return payload
-}
-
-function pretty(value) {
-  return JSON.stringify(value, null, 2)
+  return data
 }
 
 function formatDate(value) {
   if (!value) return ''
-
   const date = new Date(value)
-
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString()
 }
 
 export default function AIResearchAssistant() {
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState([])
-
-  const [researchQuestion, setResearchQuestion] = useState(
-    'Does an RSI below 30 improve forward returns compared with a random-entry baseline?'
-  )
-
-  const [hypothesis, setHypothesis] = useState(
-    'Stocks with RSI(14) below 30 have higher subsequent returns than the random-entry baseline after transaction costs.'
-  )
-
-  const [requestJson, setRequestJson] = useState(
-    pretty(DEFAULT_RESEARCH_REQUEST)
-  )
-
-  const [acknowledgeDevelopmentOnly, setAcknowledgeDevelopmentOnly] =
-    useState(false)
-
-  const [busy, setBusy] = useState(false)
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [initializing, setInitializing] = useState(true)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [activeRun, setActiveRun] = useState(null)
 
-  const activeSession = useMemo(
-    () => sessions.find((item) => item.id === activeSessionId),
-    [sessions, activeSessionId]
-  )
-
-  const loadSessions = useCallback(async (preferredId = '') => {
-    const data = await api('/ai-research/sessions')
-    const rows = data.sessions || []
-
-    setSessions(rows)
-
-    const nextId =
-      preferredId ||
-      activeSessionId ||
-      rows[0]?.id ||
-      ''
-
-    if (nextId) {
-      setActiveSessionId(nextId)
-    }
-
-    return nextId
-  }, [activeSessionId])
+  const conversationRef = useRef(null)
+  const inputRef = useRef(null)
 
   const loadMessages = useCallback(async (sessionId) => {
     if (!sessionId) return
@@ -121,503 +55,326 @@ export default function AIResearchAssistant() {
     setMessages(data.messages || [])
   }, [])
 
-  useEffect(() => {
-    loadSessions().catch((err) => setError(err.message))
-  }, [loadSessions])
+  const loadSessions = useCallback(async () => {
+    const data = await api('/ai-research/sessions')
+    const rows = data.sessions || []
+
+    setSessions(rows)
+    return rows
+  }, [])
+
+  const createSession = useCallback(async () => {
+    const data = await api('/ai-research/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'New Research Chat' })
+    })
+
+    const session = data.session
+
+    setSessions((current) => [session, ...current])
+    setActiveSessionId(session.id)
+    setMessages([])
+
+    return session.id
+  }, [])
 
   useEffect(() => {
-    if (activeSessionId) {
-      loadMessages(activeSessionId).catch(
-        (err) => setError(err.message)
-      )
-    } else {
-      setMessages([])
-    }
-  }, [activeSessionId, loadMessages])
-
-  useEffect(() => {
-    if (
-      !activeRun?.runId ||
-      !activeSessionId ||
-      ['completed', 'failed', 'cancelled'].includes(activeRun.status)
-    ) {
-      return undefined
-    }
-
     let cancelled = false
 
-    const poll = async () => {
+    async function initialize() {
       try {
-        const data = await api(
-          `/ai-research/sessions/${activeSessionId}/runs/${activeRun.runId}`
-        )
+        const rows = await loadSessions()
 
         if (cancelled) return
 
-        const run = data.run
-
-        setActiveRun((current) =>
-          current?.runId === run.id
-            ? {
-                ...current,
-                status: run.status,
-                step: run.current_step,
-                output: run.output_data,
-                error: run.error_message
-              }
-            : current
-        )
-
-        if (
-          ['completed', 'failed', 'cancelled'].includes(run.status)
-        ) {
-          await loadMessages(activeSessionId)
-          await loadSessions(activeSessionId)
+        if (rows.length > 0) {
+          setActiveSessionId(rows[0].id)
+        } else {
+          await createSession()
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err.message)
-        }
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setInitializing(false)
       }
     }
 
-    poll()
-
-    const timer = window.setInterval(poll, 2500)
+    initialize()
 
     return () => {
       cancelled = true
-      window.clearInterval(timer)
     }
-  }, [
-    activeRun?.runId,
-    activeRun?.status,
-    activeSessionId,
-    loadMessages,
-    loadSessions
-  ])
+  }, [loadSessions, createSession])
 
-  async function createSession() {
-    setBusy(true)
+  useEffect(() => {
+    if (!activeSessionId) return
+
+    loadMessages(activeSessionId).catch((err) => {
+      setError(err.message)
+    })
+  }, [activeSessionId, loadMessages])
+
+  useEffect(() => {
+    const element = conversationRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [messages, loading])
+
+  async function handleNewChat() {
+    if (loading) return
+
     setError('')
-    setNotice('')
 
     try {
-      const data = await api('/ai-research/sessions', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: 'New Research Chat'
-        })
-      })
-
-      await loadSessions(data.session.id)
-
-      setMessages([])
-      setActiveRun(null)
-
-      setNotice('New research session created.')
+      await createSession()
+      inputRef.current?.focus()
     } catch (err) {
       setError(err.message)
-    } finally {
-      setBusy(false)
     }
   }
 
-  async function submitProposal(event) {
+  async function handleSend(event) {
     event.preventDefault()
 
-    setBusy(true)
+    const message = input.trim()
+    if (!message || loading) return
+
     setError('')
-    setNotice('')
+    setLoading(true)
+
+    let sessionId = activeSessionId
 
     try {
-      if (!activeSessionId) {
-        throw new Error(
-          'Create or select a research session first.'
-        )
+      if (!sessionId) {
+        sessionId = await createSession()
       }
 
-      const baseResearchRequest = JSON.parse(requestJson)
-
-      const data = await api(
-        `/ai-research/sessions/${activeSessionId}/propose`,
+      setMessages((current) => [
+        ...current,
         {
-          method: 'POST',
-          body: JSON.stringify({
-            research_question: researchQuestion.trim(),
-            hypothesis: hypothesis.trim(),
-            base_research_request: baseResearchRequest
-          })
+          id: `temp-${Date.now()}`,
+          role: 'user',
+          content: message
         }
-      )
+      ])
 
-      setActiveRun({
-        runId: data.agent_run_id,
-        ledgerId: data.ledger_id,
-        status: data.status
+      setInput('')
+
+      await api(`/ai-research/sessions/${sessionId}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message })
       })
 
-      await loadMessages(activeSessionId)
-
-      setNotice(
-        `Proposal generated with ${data.model || 'the configured model'}. Review it below before approving.`
-      )
+      await loadMessages(sessionId)
+      await loadSessions()
     } catch (err) {
-      setError(
-        err instanceof SyntaxError
-          ? 'Research request must be valid JSON.'
-          : err.message
-      )
+      setError(err.message)
+      if (sessionId) {
+        await loadMessages(sessionId).catch(() => {})
+      }
     } finally {
-      setBusy(false)
+      setLoading(false)
+      inputRef.current?.focus()
     }
   }
 
-  async function decideProposal(ledgerId, approve) {
-    setBusy(true)
+  function selectSession(sessionId) {
+    if (loading) return
     setError('')
-    setNotice('')
-
-    try {
-      const path =
-        `/ai-research/sessions/${activeSessionId}` +
-        `/ledger/${ledgerId}/` +
-        `${approve ? 'approve' : 'reject'}`
-
-      const body = approve
-        ? {
-            acknowledge_development_only:
-              acknowledgeDevelopmentOnly
-          }
-        : {
-            reason: 'Rejected by user'
-          }
-
-      const data = await api(path, {
-        method: 'POST',
-        body: JSON.stringify(body)
-      })
-
-      setNotice(
-        approve
-          ? 'Approved. Research execution has been queued.'
-          : 'Proposal rejected.'
-      )
-
-      if (approve) {
-        setActiveRun((current) =>
-          current
-            ? {
-                ...current,
-                status: data.execution_status || 'queued'
-              }
-            : current
-        )
-      }
-
-      await loadMessages(activeSessionId)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
+    setActiveSessionId(sessionId)
   }
 
   return (
-    <section className="ai-research-page">
-      <header className="ai-research-header">
-        <div>
-          <div className="ai-eyebrow">
-            STOCK SCANNER / RESEARCH WORKSPACE
+    <section className="ai-chat-page">
+      <aside className="ai-chat-sidebar">
+        <div className="ai-chat-sidebar-top">
+          <div className="ai-chat-brand">
+            <span className="ai-chat-brand-icon">⌁</span>
+            <div>
+              <strong>Research AI</strong>
+              <small>Stock Scanner</small>
+            </div>
           </div>
 
-          <h1>AI Research Assistant</h1>
-
-          <p>
-            Explore a hypothesis, review a proposed experiment,
-            then explicitly approve execution.
-          </p>
+          <button
+            className="ai-new-chat-button"
+            onClick={handleNewChat}
+            disabled={loading}
+          >
+            + New chat
+          </button>
         </div>
 
-        <button
-          className="ai-primary-button"
-          onClick={createSession}
-          disabled={busy}
-        >
-          + New session
-        </button>
-      </header>
-
-      {error && (
-        <div className="ai-alert ai-alert-error">
-          {error}
+        <div className="ai-chat-history-label">
+          RECENT CONVERSATIONS
         </div>
-      )}
 
-      {notice && (
-        <div className="ai-alert ai-alert-success">
-          {notice}
-        </div>
-      )}
-
-      <div className="ai-research-layout">
-        <aside className="ai-session-panel">
-          <div className="ai-panel-heading">
-            Research sessions
-          </div>
-
-          {sessions.length === 0 && (
-            <p className="ai-muted">
-              No sessions yet. Create one to begin.
-            </p>
-          )}
-
+        <div className="ai-chat-session-list">
           {sessions.map((session) => (
             <button
               key={session.id}
-              className={
-                `ai-session-item ${
-                  session.id === activeSessionId ? 'selected' : ''
-                }`
-              }
-              onClick={() => {
-                setActiveSessionId(session.id)
-                setActiveRun(null)
-                setError('')
-              }}
+              className={`ai-chat-session ${
+                session.id === activeSessionId ? 'active' : ''
+              }`}
+              onClick={() => selectSession(session.id)}
+              disabled={loading}
             >
-              <strong>
-                {session.title || 'Research chat'}
-              </strong>
-
-              <span>
-                {formatDate(
-                  session.updated_at || session.created_at
-                )}
+              <span className="ai-chat-session-title">
+                {session.title || 'Research conversation'}
               </span>
+              <small>
+                {formatDate(session.updated_at || session.created_at)}
+              </small>
             </button>
           ))}
-        </aside>
 
-        <div className="ai-main-panel">
-          <div className="ai-panel-heading">
-            {activeSession?.title || 'New research session'}
+          {sessions.length === 0 && !initializing && (
+            <p className="ai-chat-empty-history">
+              Your conversations will appear here.
+            </p>
+          )}
+        </div>
+
+        <div className="ai-chat-sidebar-footer">
+          <span className="ai-online-dot" />
+          Research assistant
+          <small>Conversational mode</small>
+        </div>
+      </aside>
+
+      <main className="ai-chat-main">
+        <header className="ai-chat-header">
+          <div>
+            <span className="ai-chat-eyebrow">
+              STOCK RESEARCH WORKSPACE
+            </span>
+            <h1>AI Research Assistant</h1>
+            <p>
+              Ask questions, explore hypotheses and understand your research.
+            </p>
           </div>
 
-          <div className="ai-conversation">
-            {messages.length === 0 && (
-              <div className="ai-empty-state">
-                <div className="ai-empty-icon">⌁</div>
+          <span className="ai-chat-version">BETA</span>
+        </header>
 
-                <h2>Start with a research question</h2>
-
-                <p>
-                  Describe what you want to investigate.
-                  The assistant will propose a test; it will
-                  not execute anything until you approve it.
-                </p>
-              </div>
-            )}
-
-            {messages.map((message) => (
-              <article
-                key={message.id}
-                className={`ai-message ai-message-${message.role}`}
-              >
-                <div className="ai-message-role">
-                  {message.role === 'user'
-                    ? 'YOU'
-                    : 'RESEARCH ASSISTANT'}
-                </div>
-
-                <div className="ai-message-content">
-                  {message.content}
-                </div>
-
-                {message.metadata?.proposal && (
-                  <div className="ai-proposal-card">
-                    <div className="ai-proposal-topline">
-                      <strong>Experiment proposal</strong>
-
-                      <span>
-                        {message.metadata.proposal.experiment_type ||
-                          'Research experiment'}
-                      </span>
-                    </div>
-
-                    <h3>
-                      {message.metadata.proposal.research_question}
-                    </h3>
-
-                    <p>
-                      <b>Hypothesis:</b>{' '}
-                      {message.metadata.proposal.hypothesis}
-                    </p>
-
-                    <p>
-                      <b>Rationale:</b>{' '}
-                      {message.metadata.proposal.rationale}
-                    </p>
-
-                    <p>
-                      <b>Expected learning:</b>{' '}
-                      {message.metadata.proposal.expected_learning}
-                    </p>
-
-                    <div className="ai-proposal-actions">
-                      <label className="ai-check-label">
-                        <input
-                          type="checkbox"
-                          checked={acknowledgeDevelopmentOnly}
-                          onChange={(event) =>
-                            setAcknowledgeDevelopmentOnly(
-                              event.target.checked
-                            )
-                          }
-                        />
-
-                        I understand this proposal may run
-                        without complete validation/holdout stages.
-                      </label>
-
-                      <div className="ai-action-row">
-                        <button
-                          className="ai-secondary-button"
-                          disabled={busy}
-                          onClick={() =>
-                            decideProposal(
-                              message.metadata.ledger_id,
-                              false
-                            )
-                          }
-                        >
-                          Reject
-                        </button>
-
-                        <button
-                          className="ai-primary-button"
-                          disabled={busy}
-                          onClick={() =>
-                            decideProposal(
-                              message.metadata.ledger_id,
-                              true
-                            )
-                          }
-                        >
-                          Approve &amp; execute
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </article>
-            ))}
+        {error && (
+          <div className="ai-chat-error">
+            {error}
+            <button onClick={() => setError('')}>Dismiss</button>
           </div>
+        )}
 
-          {activeRun && (
-            <div className="ai-run-status">
-              <div>
-                <strong>Execution status</strong>
-
-                <span
-                  className={
-                    `ai-status-pill status-${activeRun.status}`
-                  }
-                >
-                  {activeRun.status}
-                </span>
-              </div>
-
+        <div className="ai-chat-conversation" ref={conversationRef}>
+          {initializing ? (
+            <div className="ai-chat-welcome">
+              <div className="ai-chat-welcome-icon">⌁</div>
+              <h2>Preparing your research workspace</h2>
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="ai-chat-welcome">
+              <div className="ai-chat-welcome-icon">⌁</div>
+              <span className="ai-chat-eyebrow">YOUR RESEARCH COMPANION</span>
+              <h2>What would you like to investigate?</h2>
               <p>
-                {activeRun.step || 'Waiting for status update'}
-
-                {activeRun.error
-                  ? ` — ${activeRun.error}`
-                  : ''}
+                Ask about market concepts, statistics, existing experiments
+                or a research hypothesis. I’ll help clarify the question
+                before suggesting a research workflow.
               </p>
 
-              {activeRun.output?.experiment_id && (
-                <p>
-                  Saved experiment:{' '}
-                  <b>{activeRun.output.experiment_id}</b>
-                </p>
+              <div className="ai-chat-suggestions">
+                {[
+                  'Explain how RSI works and its limitations.',
+                  'Does delivery volume improve returns after an oversold signal?',
+                  'How should I avoid look-ahead bias in a backtest?'
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setInput(suggestion)}
+                  >
+                    {suggestion}
+                    <span>↗</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="ai-chat-message-list">
+              {messages.map((message) => (
+                <article
+                  key={message.id}
+                  className={`ai-chat-message ${
+                    message.role === 'user' ? 'user' : 'assistant'
+                  }`}
+                >
+                  <div className="ai-chat-avatar">
+                    {message.role === 'user' ? 'YOU' : 'AI'}
+                  </div>
+
+                  <div className="ai-chat-message-body">
+                    <div className="ai-chat-message-label">
+                      {message.role === 'user'
+                        ? 'You'
+                        : 'Research Assistant'}
+                    </div>
+                    <div className="ai-chat-message-content">
+                      {message.content}
+                    </div>
+                  </div>
+                </article>
+              ))}
+
+              {loading && (
+                <div className="ai-chat-thinking">
+                  <span />
+                  <span />
+                  <span />
+                  <small>Thinking through your question</small>
+                </div>
               )}
             </div>
           )}
+        </div>
 
-          <form
-            className="ai-composer"
-            onSubmit={submitProposal}
-          >
-            <div className="ai-panel-heading">
-              Propose a new experiment
-            </div>
-
-            <label>Research question</label>
-
+        <div className="ai-chat-composer-area">
+          <form className="ai-chat-composer" onSubmit={handleSend}>
             <textarea
-              value={researchQuestion}
-              onChange={(event) =>
-                setResearchQuestion(event.target.value)
-              }
-              rows={2}
-              minLength={5}
-              maxLength={1000}
-              required
-            />
-
-            <label>Hypothesis</label>
-
-            <textarea
-              value={hypothesis}
-              onChange={(event) =>
-                setHypothesis(event.target.value)
-              }
-              rows={2}
-              minLength={5}
-              maxLength={1000}
-              required
-            />
-
-            <details className="ai-config-details">
-              <summary>
-                Research configuration (JSON)
-              </summary>
-
-              <p>
-                Configure dates, universe, features,
-                conditions and evaluation horizons.
-                The API validates this against the research schema.
-              </p>
-
-              <textarea
-                className="ai-json-editor"
-                value={requestJson}
-                onChange={(event) =>
-                  setRequestJson(event.target.value)
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault()
+                  event.currentTarget.form.requestSubmit()
                 }
-                spellCheck="false"
-                rows={18}
-              />
-            </details>
+              }}
+              placeholder="Ask a research question..."
+              rows={2}
+              maxLength={4000}
+              disabled={initializing || loading}
+            />
 
-            <div className="ai-composer-footer">
-              <span>
-                Python engine owns calculations.
-                AI only proposes and interprets.
-              </span>
-
+            <div className="ai-chat-composer-bottom">
+              <span>Enter to send · Shift + Enter for a new line</span>
               <button
-                className="ai-primary-button"
                 type="submit"
-                disabled={busy || !activeSessionId}
+                disabled={!input.trim() || loading || initializing}
               >
-                {busy ? 'Working…' : 'Generate proposal'}
+                {loading ? 'Thinking…' : 'Send'}
+                <span>↑</span>
               </button>
             </div>
           </form>
+
+          <p className="ai-chat-disclaimer">
+            AI responses may be incomplete. Research calculations and
+            experiment results must come from the deterministic research engine.
+            Live web search is not connected yet.
+          </p>
         </div>
-      </div>
+      </main>
     </section>
   )
 }
