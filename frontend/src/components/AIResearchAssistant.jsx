@@ -1,5 +1,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './AIResearchAssistant.css'
 
 const API_BASE_URL =
@@ -17,11 +19,18 @@ async function api(path, options = {}) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    throw new Error(
-      typeof data.detail === 'string'
-        ? data.detail
-        : JSON.stringify(data.detail || `Request failed (${response.status})`)
-    )
+    const detail = data.detail
+
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : detail?.message ||
+          JSON.stringify(detail || `Request failed (${response.status})`)
+
+    const error = new Error(message)
+    error.code = detail?.code || 'REQUEST_FAILED'
+    error.status = response.status
+    throw error
   }
 
   return data
@@ -29,8 +38,50 @@ async function api(path, options = {}) {
 
 function formatDate(value) {
   if (!value) return ''
+
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString()
+
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleDateString()
+}
+
+function MarkdownMessage({ content }) {
+  return (
+    <div className="ai-chat-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ ...props }) => (
+            <a {...props} target="_blank" rel="noreferrer" />
+          ),
+          code: ({ className, children, ...props }) => {
+            const isBlock = Boolean(className)
+
+            return isBlock ? (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className="ai-inline-code" {...props}>
+                {children}
+              </code>
+            )
+          },
+          pre: ({ children }) => (
+            <pre className="ai-code-block">{children}</pre>
+          ),
+          table: ({ children }) => (
+            <div className="ai-table-wrap">
+              <table>{children}</table>
+            </div>
+          )
+        }}
+      >
+        {content || ''}
+      </ReactMarkdown>
+    </div>
+  )
 }
 
 export default function AIResearchAssistant() {
@@ -44,6 +95,9 @@ export default function AIResearchAssistant() {
 
   const conversationRef = useRef(null)
   const inputRef = useRef(null)
+
+  // Reuse the same ID when retrying a failed request.
+  const pendingMessageIdRef = useRef(null)
 
   const loadMessages = useCallback(async (sessionId) => {
     if (!sessionId) return
@@ -66,12 +120,18 @@ export default function AIResearchAssistant() {
   const createSession = useCallback(async () => {
     const data = await api('/ai-research/sessions', {
       method: 'POST',
-      body: JSON.stringify({ title: 'New Research Chat' })
+      body: JSON.stringify({
+        title: 'New Research Chat'
+      })
     })
 
     const session = data.session
 
-    setSessions((current) => [session, ...current])
+    setSessions((current) => [
+      session,
+      ...current.filter((item) => item.id !== session.id)
+    ])
+
     setActiveSessionId(session.id)
     setMessages([])
 
@@ -116,13 +176,18 @@ export default function AIResearchAssistant() {
 
   useEffect(() => {
     const element = conversationRef.current
-    if (element) element.scrollTop = element.scrollHeight
+
+    if (element) {
+      element.scrollTop = element.scrollHeight
+    }
   }, [messages, loading])
 
   async function handleNewChat() {
     if (loading) return
 
     setError('')
+    pendingMessageIdRef.current = null
+    setInput('')
 
     try {
       await createSession()
@@ -136,38 +201,71 @@ export default function AIResearchAssistant() {
     event.preventDefault()
 
     const message = input.trim()
-    if (!message || loading) return
+
+    if (!message || loading || initializing) return
 
     setError('')
     setLoading(true)
 
     let sessionId = activeSessionId
 
+    // Keep this ID until a successful response.
+    const clientMessageId =
+      pendingMessageIdRef.current ||
+      (globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
+    pendingMessageIdRef.current = clientMessageId
+
     try {
       if (!sessionId) {
         sessionId = await createSession()
       }
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: `temp-${Date.now()}`,
-          role: 'user',
-          content: message
-        }
-      ])
+      const alreadyDisplayed = messages.some(
+        (item) =>
+          item.role === 'user' &&
+          item.metadata?.client_message_id === clientMessageId
+      )
+
+      if (!alreadyDisplayed) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: `temp-${clientMessageId}`,
+            role: 'user',
+            content: message,
+            metadata: {
+              client_message_id: clientMessageId
+            }
+          }
+        ])
+      }
 
       setInput('')
 
-      await api(`/ai-research/sessions/${sessionId}/chat`, {
-        method: 'POST',
-        body: JSON.stringify({ message })
-      })
+      await api(
+        `/ai-research/sessions/${sessionId}/chat`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            message,
+            client_message_id: clientMessageId
+          })
+        }
+      )
+
+      pendingMessageIdRef.current = null
 
       await loadMessages(sessionId)
       await loadSessions()
     } catch (err) {
       setError(err.message)
+
+      // Keep the draft and idempotency key for a safe retry.
+      setInput(message)
+
       if (sessionId) {
         await loadMessages(sessionId).catch(() => {})
       }
@@ -179,7 +277,10 @@ export default function AIResearchAssistant() {
 
   function selectSession(sessionId) {
     if (loading) return
+
     setError('')
+    setInput('')
+    pendingMessageIdRef.current = null
     setActiveSessionId(sessionId)
   }
 
@@ -221,6 +322,7 @@ export default function AIResearchAssistant() {
               <span className="ai-chat-session-title">
                 {session.title || 'Research conversation'}
               </span>
+
               <small>
                 {formatDate(session.updated_at || session.created_at)}
               </small>
@@ -247,7 +349,9 @@ export default function AIResearchAssistant() {
             <span className="ai-chat-eyebrow">
               STOCK RESEARCH WORKSPACE
             </span>
+
             <h1>AI Research Assistant</h1>
+
             <p>
               Ask questions, explore hypotheses and understand your research.
             </p>
@@ -258,7 +362,7 @@ export default function AIResearchAssistant() {
 
         {error && (
           <div className="ai-chat-error">
-            {error}
+            <span>{error}</span>
             <button onClick={() => setError('')}>Dismiss</button>
           </div>
         )}
@@ -272,8 +376,13 @@ export default function AIResearchAssistant() {
           ) : messages.length === 0 ? (
             <div className="ai-chat-welcome">
               <div className="ai-chat-welcome-icon">⌁</div>
-              <span className="ai-chat-eyebrow">YOUR RESEARCH COMPANION</span>
+
+              <span className="ai-chat-eyebrow">
+                YOUR RESEARCH COMPANION
+              </span>
+
               <h2>What would you like to investigate?</h2>
+
               <p>
                 Ask about market concepts, statistics, existing experiments
                 or a research hypothesis. I’ll help clarify the question
@@ -315,9 +424,14 @@ export default function AIResearchAssistant() {
                         ? 'You'
                         : 'Research Assistant'}
                     </div>
-                    <div className="ai-chat-message-content">
-                      {message.content}
-                    </div>
+
+                    {message.role === 'user' ? (
+                      <div className="ai-chat-message-content">
+                        {message.content}
+                      </div>
+                    ) : (
+                      <MarkdownMessage content={message.content} />
+                    )}
                   </div>
                 </article>
               ))}
@@ -339,7 +453,16 @@ export default function AIResearchAssistant() {
             <textarea
               ref={inputRef}
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={(event) => {
+                const nextValue = event.target.value
+
+                // Editing a failed draft creates a new request.
+                if (nextValue.trim() !== input.trim()) {
+                  pendingMessageIdRef.current = null
+                }
+
+                setInput(nextValue)
+              }}
               onKeyDown={(event) => {
                 if (
                   event.key === 'Enter' &&
@@ -358,6 +481,7 @@ export default function AIResearchAssistant() {
 
             <div className="ai-chat-composer-bottom">
               <span>Enter to send · Shift + Enter for a new line</span>
+
               <button
                 type="submit"
                 disabled={!input.trim() || loading || initializing}
@@ -369,9 +493,9 @@ export default function AIResearchAssistant() {
           </form>
 
           <p className="ai-chat-disclaimer">
-            AI responses may be incomplete. Research calculations and
-            experiment results must come from the deterministic research engine.
-            Live web search is not connected yet.
+            Research calculations and experiment results must come from
+            the deterministic Python engine. Live web search is not
+            connected yet.
           </p>
         </div>
       </main>
