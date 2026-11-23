@@ -29,7 +29,9 @@ class ResearchDesignerOutput(BaseModel):
     @model_validator(mode="after")
     def validate_output(self):
         if self.status == "proposal" and self.research_request is None:
-            raise ValueError("A proposal must include research_request.")
+            raise ValueError(
+                "A proposal must include research_request."
+            )
 
         if (
             self.status == "needs_clarification"
@@ -42,54 +44,10 @@ class ResearchDesignerOutput(BaseModel):
         return self
 
 
-def design_experiment(
-    *,
-    user_message: str,
-    conversation_history: list[dict[str, str]] | None = None,
-    design_mode: Literal["initial", "follow_up"] = "initial",
-    prior_research_request: dict[str, Any] | None = None,
-    evidence_summary: dict[str, Any] | None = None,
-    previous_experiment_id: str | None = None,
-) -> tuple[ResearchDesignerOutput, dict[str, Any]]:
-    """
-    Design either an initial experiment or a follow-up experiment.
-
-    This function only proposes a ResearchRequest.
-    It never executes research.
-    """
-
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not configured.")
-
-    from google import genai
-    from google.genai import types
-
-    model = os.getenv(
-        "RESEARCH_DESIGNER_MODEL",
-        os.getenv("RESEARCH_ROUTER_MODEL", "gemini-3.5-flash-lite"),
-    )
-
-    client = genai.Client(api_key=api_key)
-
-    context = {
-        "design_mode": design_mode,
-        "conversation_history": conversation_history or [],
-        "latest_user_message": user_message,
-        "supported_features": get_feature_registry(),
-        "research_request_schema": ResearchRequest.model_json_schema(),
-        "prior_research_request": prior_research_request,
-        "evidence_summary": evidence_summary,
-        "previous_experiment_id": previous_experiment_id,
-    }
-
-    system_prompt = """
+SHARED_DESIGNER_RULES = """
 You are the Research Experiment Designer for Stock Scanner.
 
-Your job is to turn a user's research idea into a valid historical
-experiment configuration.
-
-You are a research-design agent, not a trading agent.
+You design historical research experiments. You are not a trading agent.
 
 GENERAL RULES
 
@@ -97,63 +55,22 @@ GENERAL RULES
 2. Follow research_request_schema exactly.
 3. Never invent fields, feature IDs, parameters or operators.
 4. Never generate Python code or arbitrary SQL.
-5. Never invent market data, experiment results or statistics.
+5. Never invent market data, results or statistics.
 6. Never claim approval or execution.
 7. The deterministic Python research engine owns calculations.
-8. Do not bypass validation or human approval.
-
-DESIGN MODE
-
-The context contains design_mode.
-
-If design_mode is "initial":
-- Design a new experiment from the user's hypothesis.
-- Ask for clarification if essential information is missing.
-- Do not invent dates, symbols, universe or evaluation horizons.
-
-If design_mode is "follow_up":
-- Improve the previous experiment using the supplied evidence.
-- Treat prior_research_request as the baseline configuration.
-- Treat evidence_summary as the factual result of the previous run.
-- Do not invent or exaggerate findings.
-- Preserve the previous dates, universe, timing and horizons unless
-  the user explicitly asks to change them or the evidence requires
-  a clearly explained change.
-- Change only what is necessary for the proposed hypothesis.
-- Explain exactly what changed and why.
-- If evidence is insufficient to justify a change, say so and ask
-  one focused clarification question.
-- Do not blindly add features or conditions merely because they
-  sound sophisticated.
-- A follow-up proposal must be a complete ResearchRequest, not
-  a partial patch.
-
-CLARIFICATION RULES
-
-Ask one focused question at a time when essential information is
-missing or ambiguous.
-
-Essential initial information includes:
-- Measurable hypothesis.
-- Development start and end dates.
-- Supported universe.
-- At least one supported feature.
-- At least one valid entry condition.
-- Evaluation horizons.
-
-Do not silently invent missing information.
+8. Never bypass validation or human approval.
+9. Ask one focused clarification question at a time.
+10. Do not silently invent dates, symbols, universe or horizons.
 
 FEATURE RULES
 
-Examples:
-- RSI below 30 can use feature "rsi", parameter {"period": 14},
-  operator "<", value 30.
+- Use only the supplied feature registry.
+- RSI below 30 may use feature "rsi", parameter {"period": 14},
+  operator "<", value 30, if supported by the schema.
 - Volume greater than twice average volume may use "volume" and
-  "average_volume" if the feature definitions support the intended
-  comparison.
-
-Do not assume whether a rolling average includes the current day.
-If the hypothesis depends on this distinction, flag it.
+  "average_volume" if the feature definitions support the comparison.
+- Do not assume whether a rolling average includes the current day.
+  Flag this if it materially affects the hypothesis.
 
 TEMPORAL CONVENTION
 
@@ -182,17 +99,138 @@ For clarification:
 
 For proposal:
 - research_request must be a complete valid candidate.
-- Explain the proposed experiment and assumptions.
-- For follow-up proposals, explicitly explain the changes
-  relative to the previous experiment.
+- Explain the assumptions.
 - Never say the proposal has been approved or executed.
 """
+
+
+INITIAL_DESIGNER_PROMPT = """
+DESIGN MODE: INITIAL EXPERIMENT
+
+The user wants to investigate a new, independent research hypothesis.
+
+Your job:
+- Translate the user's idea into a measurable hypothesis.
+- Identify the outcome and comparison needed to test it.
+- Ask for missing essential information.
+- Design a new experiment from the user's stated requirements.
+- Do not use a previous experiment as a baseline unless the user
+  explicitly asks to build on one.
+
+Essential information includes:
+- Measurable hypothesis.
+- Development start and end dates.
+- Supported universe.
+- At least one supported feature.
+- At least one valid entry condition.
+- Evaluation horizons.
+
+Do not invent missing values. Ask focused questions.
+"""
+
+
+FOLLOW_UP_DESIGNER_PROMPT = """
+DESIGN MODE: FOLLOW-UP EXPERIMENT
+
+The user explicitly wants to improve or modify a previous experiment.
+
+The input contains:
+- prior_research_request: the previous validated configuration.
+- evidence_summary: compact factual evidence from the previous run.
+- previous_experiment_id: the saved experiment identifier.
+
+Rules:
+- Treat prior_research_request as the baseline configuration.
+- Treat evidence_summary as the factual result of the previous run.
+- Never invent, exaggerate or reinterpret missing findings as facts.
+- Preserve dates, universe, timing and evaluation horizons unless
+  the user explicitly asks to change them or there is a clear reason.
+- Change only what is necessary to test the user's proposed improvement.
+- Explain exactly what changes and why.
+- Do not add features or conditions just to make the experiment
+  look more sophisticated.
+- A follow-up must be a complete ResearchRequest, not a partial patch.
+- If the user's requested change is unclear, ask one focused question.
+- If the previous evidence does not justify the proposed change,
+  explain that limitation.
+"""
+
+
+def build_designer_system_prompt(
+    design_mode: Literal["initial", "follow_up"],
+) -> str:
+    if design_mode == "initial":
+        mode_prompt = INITIAL_DESIGNER_PROMPT
+    elif design_mode == "follow_up":
+        mode_prompt = FOLLOW_UP_DESIGNER_PROMPT
+    else:
+        raise ValueError(f"Unsupported design mode: {design_mode}")
+
+    return SHARED_DESIGNER_RULES + "\n\n" + mode_prompt
+
+
+def design_experiment(
+    *,
+    user_message: str,
+    conversation_history: list[dict[str, str]] | None = None,
+    design_mode: Literal["initial", "follow_up"] = "initial",
+    prior_research_request: dict[str, Any] | None = None,
+    evidence_summary: dict[str, Any] | None = None,
+    previous_experiment_id: str | None = None,
+) -> tuple[ResearchDesignerOutput, dict[str, Any]]:
+
+    if design_mode == "follow_up":
+        if not prior_research_request or not evidence_summary:
+            raise ValueError(
+                "Follow-up design requires the previous request "
+                "and its evidence summary."
+            )
+
+    if design_mode == "initial" and any([
+        prior_research_request,
+        evidence_summary,
+        previous_experiment_id,
+    ]):
+        raise ValueError(
+            "Initial design must not receive previous experiment context."
+        )
+
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured.")
+
+    from google import genai
+    from google.genai import types
+
+    model = os.getenv(
+        "RESEARCH_DESIGNER_MODEL",
+        os.getenv("RESEARCH_ROUTER_MODEL", "gemini-3.5-flash-lite"),
+    )
+
+    context = {
+        "conversation_history": conversation_history or [],
+        "latest_user_message": user_message,
+        "supported_features": get_feature_registry(),
+        "research_request_schema": ResearchRequest.model_json_schema(),
+    }
+
+    if design_mode == "follow_up":
+        context.update({
+            "previous_experiment_id": previous_experiment_id,
+            "prior_research_request": prior_research_request,
+            "evidence_summary": evidence_summary,
+        })
+
+    system_prompt = build_designer_system_prompt(design_mode)
 
     prompt = (
         system_prompt
         + "\n\nINPUT CONTEXT:\n"
         + json.dumps(context, ensure_ascii=False, default=str)
     )
+
+    client = genai.Client(api_key=api_key)
 
     response = client.models.generate_content(
         model=model,
@@ -205,8 +243,11 @@ For proposal:
     )
 
     raw_text = getattr(response, "text", None)
+
     if not raw_text:
-        raise RuntimeError("Research Designer returned an empty response.")
+        raise RuntimeError(
+            "Research Designer returned an empty response."
+        )
 
     result = ResearchDesignerOutput.model_validate_json(raw_text)
 
@@ -229,5 +270,15 @@ For proposal:
     return result, usage
 
 
-# Backward-compatible name for any existing imports.
-design_initial_experiment = design_experiment
+def design_initial_experiment(**kwargs):
+    return design_experiment(
+        design_mode="initial",
+        **kwargs,
+    )
+
+
+def design_follow_up_experiment(**kwargs):
+    return design_experiment(
+        design_mode="follow_up",
+        **kwargs,
+    )

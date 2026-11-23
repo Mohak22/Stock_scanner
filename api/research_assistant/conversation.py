@@ -16,6 +16,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from api.integrations.supabase_client import get_supabase_client
+from api.research_workflow.intent_router import (
+    build_experiment_context,
+    resolve_research_action,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -27,6 +31,12 @@ ALLOWED_INTENTS = {
     "compare_experiments",
     "out_of_scope",
     "needs_clarification",
+}
+
+ALLOWED_RESEARCH_ACTIONS = {
+    "new_research",
+    "follow_up",
+    "ambiguous",
 }
 
 
@@ -77,11 +87,34 @@ def _load_recent_messages(
     return list(reversed(response.data or []))
 
 
+def _load_session_experiments(
+    session_id: UUID,
+    limit: int = 15,
+) -> list[dict]:
+    """
+    Load only this session's experiment ledger records.
+
+    The LLM receives a compact reference list. The full validated
+    request and evidence remain server-side.
+    """
+
+    response = (
+        get_supabase_client()
+        .table("research_ledger")
+        .select(
+            "id,hypothesis,proposal,evidence_summary,status,"
+            "approval_status,created_at"
+        )
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+
+    return build_experiment_context(response.data or [])
+
+
 def _response_budget(message: str) -> int:
-    """
-    One model call per message.
-    Output allowance is adjusted to the question's likely complexity.
-    """
     text = message.lower()
 
     technical_terms = (
@@ -114,12 +147,14 @@ def _response_budget(message: str) -> int:
 def _call_research_router(
     messages: list[dict],
     latest_user_message: str,
+    available_experiments: list[dict] | None = None,
 ) -> tuple[dict, dict]:
 
     from google import genai
     from google.genai import types
 
     api_key = os.getenv("GEMINI_API_KEY")
+
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured.")
 
@@ -132,6 +167,16 @@ def _call_research_router(
     )
 
     client = genai.Client(api_key=api_key)
+
+    # Expose only identifiers and short descriptions to the classifier.
+    experiment_references = [
+        {
+            "experiment_id": item["experiment_id"],
+            "hypothesis": item.get("hypothesis", ""),
+            "status": item.get("status", ""),
+        }
+        for item in (available_experiments or [])
+    ]
 
     system_prompt = """
 You are the conversational research assistant for Stock Scanner.
@@ -146,9 +191,8 @@ CAPABILITIES:
 - Explain statistics, probability, hypothesis testing and ML concepts.
 - Discuss backtesting, temporal validation, leakage and research design.
 - Help formulate and critique research hypotheses.
-- Discuss the user's existing experiments when their evidence is
-  actually present in the conversation.
-- Identify when a user wants to investigate a new hypothesis.
+- Discuss existing experiments only when their evidence is available.
+- Identify whether the user wants a new experiment or a follow-up.
 
 LIMITATIONS:
 - Live web search and current market data are not connected.
@@ -158,39 +202,63 @@ LIMITATIONS:
 - The deterministic Python research engine owns all calculations.
 
 ANSWER QUALITY:
-1. Answer the actual question first. Do not begin with generic filler.
-2. Do not make technical answers artificially short.
-3. For a conceptual question, explain the intuition, then the mechanism,
-   then give a practical stock-market or research example.
-4. For a formula question, explain every variable and show a small
-   numerical example when useful.
-5. For a statistical question, explain assumptions and limitations.
-6. For a hypothesis, discuss the rationale, measurable outcome,
-   comparison/baseline, confounders and possible failure modes.
-7. For an implementation question, explain the sequence of steps.
-8. Use headings, bullets, tables and code formatting when they improve
-   readability. Markdown is supported.
-9. Avoid repeating the question or adding unnecessary conclusions.
-10. Ask one focused clarification only when essential information is
-    missing. Do not turn every question into an experiment.
-11. Never invent capabilities that the application does not have.
-12. Be honest when evidence is insufficient.
-
-RESPONSE DEPTH:
-- Simple factual question: concise answer.
-- Conceptual question: normally 3-6 useful paragraphs.
-- Technical/statistical question: explain the reasoning with examples.
-- Research hypothesis: provide a structured critique, not merely
-  a one-line restatement.
-- Do not pad answers. Detail must add understanding.
+1. Answer the actual question first.
+2. Explain intuition before technical terminology where useful.
+3. Explain assumptions and limitations for statistical questions.
+4. For hypotheses, discuss rationale, measurable outcome,
+   comparison/baseline, confounders and failure modes.
+5. Ask one focused clarification only when essential information
+   is missing. Do not turn every question into an experiment.
+6. Never invent capabilities that the application does not have.
+7. Be honest when evidence is insufficient.
+8. Avoid unnecessary repetition and filler.
 
 INTENT CLASSIFICATION:
 - research_question: conceptual or technical research discussion.
-- propose_experiment: user wants a new experiment.
-- explain_experiment: user asks about an existing experiment.
-- compare_experiments: user wants experiments compared.
+- propose_experiment: the user wants an experiment proposal.
+- explain_experiment: the user asks about an existing experiment.
+- compare_experiments: the user wants experiments compared.
 - out_of_scope: unrelated request.
 - needs_clarification: essential information is missing.
+
+RESEARCH ACTION CLASSIFICATION:
+
+When intent is "propose_experiment", also classify research_action:
+
+1. "new_research":
+   The user clearly wants a new, independent experiment or a different
+   hypothesis. Previous experiments are not the baseline.
+
+2. "follow_up":
+   The user clearly wants to improve, modify, extend or retest a
+   specific previous experiment. Examples:
+   - "Add a volume filter to EXP-123."
+   - "Can we improve the previous RSI experiment?"
+   - "Test the same setup but with a different threshold."
+
+   If the user clearly refers to a previous experiment, set
+   referenced_experiment_id to its exact ID from AVAILABLE EXPERIMENTS.
+
+3. "ambiguous":
+   Use this when you cannot confidently distinguish a new experiment
+   from an improvement, or cannot identify which previous experiment
+   the user means.
+
+IMPORTANT:
+- Do not assume that every new hypothesis is a follow-up.
+- Do not assume that every message mentioning a previous experiment
+  means the user wants to modify it.
+- "Let's test something else" is normally new_research if it clearly
+  means a separate investigation; otherwise use ambiguous.
+- "Improve it" without a clear antecedent is ambiguous.
+- Never invent an experiment ID.
+- Only select IDs present in AVAILABLE EXPERIMENTS.
+- If the user says "new experiment" or "independent experiment",
+  choose new_research even if prior experiments exist.
+- If the user says "improve", "modify", "extend" or "add a condition"
+  but the target is unclear, choose ambiguous.
+- For non-proposal intents, set research_action to null and
+  referenced_experiment_id to null.
 
 Return one valid JSON object with exactly these keys:
 {
@@ -199,7 +267,9 @@ Return one valid JSON object with exactly these keys:
   "needs_follow_up": false,
   "follow_up_question": "",
   "research_question": "",
-  "hypothesis": ""
+  "hypothesis": "",
+  "research_action": null,
+  "referenced_experiment_id": null
 }
 
 A proposed experiment is only a research idea. Do not claim it has
@@ -210,12 +280,20 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
 
     prompt = (
         system_prompt
+        + "\n\nAVAILABLE EXPERIMENTS:\n"
+        + json.dumps(
+            experiment_references,
+            ensure_ascii=False,
+            default=str,
+        )
         + "\n\nRECENT CONVERSATION:\n"
         + json.dumps(
             messages,
             ensure_ascii=False,
             default=str,
         )
+        + "\n\nLATEST USER MESSAGE:\n"
+        + latest_user_message
     )
 
     response = client.models.generate_content(
@@ -231,19 +309,25 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     raw_text = getattr(response, "text", None)
 
     if not raw_text:
-        raise RuntimeError("The research assistant returned an empty response.")
+        raise RuntimeError(
+            "The research assistant returned an empty response."
+        )
 
     result = json.loads(raw_text)
 
     intent = result.get("intent")
 
     if intent not in ALLOWED_INTENTS:
-        raise ValueError("The research assistant returned an invalid intent.")
+        raise ValueError(
+            "The research assistant returned an invalid intent."
+        )
 
     assistant_text = str(result.get("response", "")).strip()
 
     if not assistant_text:
-        raise RuntimeError("The research assistant returned an empty answer.")
+        raise RuntimeError(
+            "The research assistant returned an empty answer."
+        )
 
     result["response"] = assistant_text
     result["needs_follow_up"] = bool(
@@ -257,6 +341,21 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     )
     result["hypothesis"] = str(
         result.get("hypothesis", "")
+    )
+
+    action = result.get("research_action")
+
+    if intent == "propose_experiment":
+        if action not in ALLOWED_RESEARCH_ACTIONS:
+            action = "ambiguous"
+    else:
+        action = None
+
+    result["research_action"] = action
+
+    reference = result.get("referenced_experiment_id")
+    result["referenced_experiment_id"] = (
+        str(reference).strip() if reference else None
     )
 
     usage_metadata = getattr(response, "usage_metadata", None)
@@ -290,7 +389,6 @@ def chat_with_research_assistant(
     message = request.message.strip()
 
     try:
-        # Idempotency: a retry reuses the original user-message row.
         existing = (
             db.table("chat_messages")
             .select("id")
@@ -315,26 +413,57 @@ def chat_with_research_assistant(
             }).execute()
 
         messages = _load_recent_messages(session_id)
+        available_experiments = _load_session_experiments(session_id)
 
         routed, usage = _call_research_router(
             messages,
             message,
+            available_experiments,
         )
 
+        routing = {
+            "research_action": None,
+            "referenced_experiment_id": None,
+            "prior_research_request": None,
+            "evidence_summary": None,
+            "clarification_question": None,
+        }
+
+        if routed["intent"] == "propose_experiment":
+            routing = resolve_research_action(
+                classifier_action=routed["research_action"],
+                referenced_experiment_id=(
+                    routed["referenced_experiment_id"]
+                ),
+                experiments=available_experiments,
+            )
+
+            if routing["research_action"] == "clarification_required":
+                clarification = routing["clarification_question"]
+                routed["response"] = clarification
+                routed["needs_follow_up"] = True
+                routed["follow_up_question"] = clarification
+
         assistant_text = routed["response"]
+
+        metadata = {
+            "intent": routed["intent"],
+            "needs_follow_up": routed["needs_follow_up"],
+            "follow_up_question": routed["follow_up_question"],
+            "research_question": routed["research_question"],
+            "hypothesis": routed["hypothesis"],
+            "research_action": routing["research_action"],
+            "referenced_experiment_id": (
+                routing["referenced_experiment_id"]
+            ),
+            "usage": usage,
+        }
 
         db.table("chat_messages").insert({
             "session_id": str(session_id),
             "role": "assistant",
             "content": assistant_text,
-            "metadata": {
-                "intent": routed["intent"],
-                "needs_follow_up": routed["needs_follow_up"],
-                "follow_up_question": routed["follow_up_question"],
-                "research_question": routed["research_question"],
-                "hypothesis": routed["hypothesis"],
-                "usage": usage,
-            },
+            "metadata": metadata,
         }).execute()
 
         db.table("chat_sessions").update({
@@ -350,6 +479,10 @@ def chat_with_research_assistant(
             "follow_up_question": routed["follow_up_question"],
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
+            "research_action": routing["research_action"],
+            "referenced_experiment_id": (
+                routing["referenced_experiment_id"]
+            ),
             "usage": usage,
         }
 
