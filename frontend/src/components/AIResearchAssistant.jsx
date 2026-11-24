@@ -20,7 +20,6 @@ async function api(path, options = {}) {
 
   if (!response.ok) {
     const detail = data.detail
-
     const message =
       typeof detail === 'string'
         ? detail
@@ -84,19 +83,180 @@ function MarkdownMessage({ content }) {
   )
 }
 
+function ProposalCard({
+  message,
+  busy,
+  onApprove,
+  onReject,
+  onRefresh
+}) {
+  const metadata = message.metadata || {}
+  const ledgerId = metadata.ledger_id
+  const runId = metadata.agent_run_id
+  const workflowStatus = metadata.workflow_status
+
+  const [acknowledgeDevelopmentOnly, setAcknowledgeDevelopmentOnly] =
+    useState(false)
+
+  const [requiresDevelopmentAcknowledgement, setRequiresDevelopmentAcknowledgement] =
+    useState(false)
+
+  const [actionError, setActionError] = useState('')
+  const [actionStatus, setActionStatus] = useState('')
+
+  if (workflowStatus !== 'proposal_saved' || !ledgerId || !runId) {
+    return <MarkdownMessage content={message.content} />
+  }
+
+  async function handleApprove() {
+    setActionError('')
+    setActionStatus('')
+
+    try {
+      await onApprove({
+        ledgerId,
+        acknowledgeDevelopmentOnly
+      })
+
+      setActionStatus('Approval submitted. Research has been queued.')
+      setRequiresDevelopmentAcknowledgement(false)
+    } catch (error) {
+      if (
+        error.status === 400 &&
+        error.message.toLowerCase().includes('development-only')
+      ) {
+        setRequiresDevelopmentAcknowledgement(true)
+        setActionError(
+          'This proposal does not include complete validation and holdout stages. Review the limitation and explicitly acknowledge it before proceeding.'
+        )
+        return
+      }
+
+      setActionError(error.message)
+    }
+  }
+
+  async function handleReject() {
+    setActionError('')
+    setActionStatus('')
+
+    try {
+      await onReject({ ledgerId })
+      setActionStatus('Proposal rejected.')
+    } catch (error) {
+      setActionError(error.message)
+    }
+  }
+
+  return (
+    <div className="ai-proposal-card">
+      <div className="ai-proposal-card-header">
+        <div>
+          <span className="ai-proposal-eyebrow">RESEARCH PROPOSAL</span>
+          <h3>Experiment awaiting your decision</h3>
+        </div>
+
+        <span className="ai-proposal-status">PENDING APPROVAL</span>
+      </div>
+
+      <div className="ai-proposal-content">
+        <MarkdownMessage content={message.content} />
+      </div>
+
+      <div className="ai-proposal-identifiers">
+        <div>
+          <span>Ledger ID</span>
+          <code>{ledgerId}</code>
+        </div>
+        <div>
+          <span>Agent run ID</span>
+          <code>{runId}</code>
+        </div>
+      </div>
+
+      {actionError && (
+        <div className="ai-proposal-error" role="alert">
+          {actionError}
+        </div>
+      )}
+
+      {requiresDevelopmentAcknowledgement && (
+        <label className="ai-proposal-acknowledgement">
+          <input
+            type="checkbox"
+            checked={acknowledgeDevelopmentOnly}
+            onChange={(event) =>
+              setAcknowledgeDevelopmentOnly(event.target.checked)
+            }
+          />
+          <span>
+            I understand this is a development-only run and does not
+            provide complete validation or final holdout evidence.
+          </span>
+        </label>
+      )}
+
+      {actionStatus && (
+        <div className="ai-proposal-success" role="status">
+          {actionStatus}
+        </div>
+      )}
+
+      <div className="ai-proposal-actions">
+        <button
+          type="button"
+          className="ai-proposal-approve"
+          onClick={handleApprove}
+          disabled={
+            busy ||
+            (requiresDevelopmentAcknowledgement &&
+              !acknowledgeDevelopmentOnly) ||
+            Boolean(actionStatus)
+          }
+        >
+          {busy ? 'Processing…' : 'Approve proposal'}
+        </button>
+
+        <button
+          type="button"
+          className="ai-proposal-reject"
+          onClick={handleReject}
+          disabled={busy || Boolean(actionStatus)}
+        >
+          Reject
+        </button>
+
+        <button
+          type="button"
+          className="ai-proposal-refresh"
+          onClick={() => onRefresh(runId)}
+          disabled={busy}
+        >
+          Refresh status
+        </button>
+      </div>
+
+      <p className="ai-proposal-disclaimer">
+        Approval queues the existing deterministic research pipeline.
+        The proposal itself has not been executed.
+      </p>
+    </div>
+  )
+}
+
 export default function AIResearchAssistant() {
   const [sessions, setSessions] = useState([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [error, setError] = useState('')
+  const [runStatuses, setRunStatuses] = useState({})
 
   const conversationRef = useRef(null)
   const inputRef = useRef(null)
-
-  // Reuse the same ID when retrying a failed request.
   const pendingMessageIdRef = useRef(null)
 
   const loadMessages = useCallback(async (sessionId) => {
@@ -134,6 +294,7 @@ export default function AIResearchAssistant() {
 
     setActiveSessionId(session.id)
     setMessages([])
+    setRunStatuses({})
 
     return session.id
   }, [])
@@ -183,7 +344,7 @@ export default function AIResearchAssistant() {
   }, [messages, loading])
 
   async function handleNewChat() {
-    if (loading) return
+    if (loading || actionBusy) return
 
     setError('')
     pendingMessageIdRef.current = null
@@ -202,14 +363,13 @@ export default function AIResearchAssistant() {
 
     const message = input.trim()
 
-    if (!message || loading || initializing) return
+    if (!message || loading || initializing || actionBusy) return
 
     setError('')
     setLoading(true)
 
     let sessionId = activeSessionId
 
-    // Keep this ID until a successful response.
     const clientMessageId =
       pendingMessageIdRef.current ||
       (globalThis.crypto?.randomUUID
@@ -262,8 +422,6 @@ export default function AIResearchAssistant() {
       await loadSessions()
     } catch (err) {
       setError(err.message)
-
-      // Keep the draft and idempotency key for a safe retry.
       setInput(message)
 
       if (sessionId) {
@@ -275,17 +433,232 @@ export default function AIResearchAssistant() {
     }
   }
 
+  async function handleApprove({
+    ledgerId,
+    acknowledgeDevelopmentOnly
+  }) {
+    if (!activeSessionId) return
+
+    setActionBusy(true)
+
+    try {
+      const result = await api(
+        `/ai-research/sessions/${activeSessionId}/ledger/${ledgerId}/approve`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            acknowledge_development_only:
+              acknowledgeDevelopmentOnly
+          })
+        }
+      )
+
+      setRunStatuses((current) => ({
+        ...current,
+        [result.agent_run_id]: 'pending'
+      }))
+
+      await refreshRunStatus(result.agent_run_id)
+      await loadMessages(activeSessionId)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function handleReject({ ledgerId }) {
+    if (!activeSessionId) return
+
+    const confirmed = window.confirm(
+      'Reject this research proposal? It will not be executed.'
+    )
+
+    if (!confirmed) return
+
+    setActionBusy(true)
+
+    try {
+      await api(
+        `/ai-research/sessions/${activeSessionId}/ledger/${ledgerId}/reject`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            reason: 'Rejected by user'
+          })
+        }
+      )
+
+      await loadMessages(activeSessionId)
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function refreshRunStatus(runId) {
+    if (!activeSessionId || !runId) return
+
+    try {
+      const result = await api(
+        `/ai-research/sessions/${activeSessionId}/runs/${runId}`
+      )
+
+      const run = result.run
+
+      setRunStatuses((current) => ({
+        ...current,
+        [runId]: run.status
+      }))
+
+      return run.status
+    } catch (err) {
+      setError(`Could not refresh research status: ${err.message}`)
+      return null
+    }
+  }
+
   function selectSession(sessionId) {
-    if (loading) return
+    if (loading || actionBusy) return
 
     setError('')
     setInput('')
     pendingMessageIdRef.current = null
+    setRunStatuses({})
     setActiveSessionId(sessionId)
   }
 
   return (
     <section className="ai-chat-page">
+      <style>{`
+        .ai-proposal-card {
+          margin-top: 16px;
+          padding: 17px;
+          border: 1px solid #24536a;
+          border-radius: 10px;
+          background: #091b29;
+        }
+        .ai-proposal-card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          gap: 12px;
+          padding-bottom: 13px;
+          border-bottom: 1px solid #1c394c;
+        }
+        .ai-proposal-eyebrow {
+          color: #48cde8;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 1.3px;
+        }
+        .ai-proposal-card h3 {
+          margin: 6px 0 0;
+          color: #e3f2fa;
+          font-size: 15px;
+        }
+        .ai-proposal-status {
+          padding: 5px 8px;
+          border: 1px solid #80652e;
+          border-radius: 5px;
+          color: #f0ce83;
+          font-size: 9px;
+          font-weight: 800;
+        }
+        .ai-proposal-content {
+          padding: 15px 0 5px;
+        }
+        .ai-proposal-identifiers {
+          display: grid;
+          gap: 8px;
+          padding: 12px;
+          border: 1px solid #1c3548;
+          border-radius: 7px;
+          background: #071521;
+        }
+        .ai-proposal-identifiers div {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+        .ai-proposal-identifiers span {
+          color: #718da1;
+          font-size: 9px;
+        }
+        .ai-proposal-identifiers code {
+          color: #9bdced;
+          font-size: 10px;
+          overflow-wrap: anywhere;
+        }
+        .ai-proposal-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 14px;
+        }
+        .ai-proposal-actions button {
+          padding: 9px 12px;
+          border: 1px solid #31536a;
+          border-radius: 6px;
+          background: #10283a;
+          color: #c9e1ed;
+          font-size: 10px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .ai-proposal-actions button:disabled {
+          opacity: .45;
+          cursor: not-allowed;
+        }
+        .ai-proposal-actions .ai-proposal-approve {
+          border-color: #187b70;
+          background: #0d3b38;
+          color: #9ce8d4;
+        }
+        .ai-proposal-actions .ai-proposal-reject {
+          border-color: #75434a;
+          background: #321e25;
+          color: #f0b2b6;
+        }
+        .ai-proposal-acknowledgement {
+          display: flex;
+          align-items: flex-start;
+          gap: 9px;
+          margin-top: 13px;
+          padding: 11px;
+          border: 1px solid #80652e;
+          border-radius: 7px;
+          color: #e8d5a5;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+        .ai-proposal-acknowledgement input {
+          margin-top: 3px;
+        }
+        .ai-proposal-error,
+        .ai-proposal-success {
+          margin-top: 12px;
+          padding: 10px;
+          border-radius: 6px;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+        .ai-proposal-error {
+          border: 1px solid #75434a;
+          background: #291920;
+          color: #f0b2b6;
+        }
+        .ai-proposal-success {
+          border: 1px solid #246b5d;
+          background: #102a29;
+          color: #9ce8d4;
+        }
+        .ai-proposal-disclaimer {
+          margin: 12px 0 0;
+          color: #71899a;
+          font-size: 9px;
+          line-height: 1.5;
+        }
+      `}</style>
+
       <aside className="ai-chat-sidebar">
         <div className="ai-chat-sidebar-top">
           <div className="ai-chat-brand">
@@ -299,7 +672,7 @@ export default function AIResearchAssistant() {
           <button
             className="ai-new-chat-button"
             onClick={handleNewChat}
-            disabled={loading}
+            disabled={loading || actionBusy}
           >
             + New chat
           </button>
@@ -317,7 +690,7 @@ export default function AIResearchAssistant() {
                 session.id === activeSessionId ? 'active' : ''
               }`}
               onClick={() => selectSession(session.id)}
-              disabled={loading}
+              disabled={loading || actionBusy}
             >
               <span className="ai-chat-session-title">
                 {session.title || 'Research conversation'}
@@ -407,34 +780,55 @@ export default function AIResearchAssistant() {
             </div>
           ) : (
             <div className="ai-chat-message-list">
-              {messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={`ai-chat-message ${
-                    message.role === 'user' ? 'user' : 'assistant'
-                  }`}
-                >
-                  <div className="ai-chat-avatar">
-                    {message.role === 'user' ? 'YOU' : 'AI'}
-                  </div>
+              {messages.map((message) => {
+                const metadata = message.metadata || {}
+                const runStatus = metadata.agent_run_id
+                  ? runStatuses[metadata.agent_run_id]
+                  : null
 
-                  <div className="ai-chat-message-body">
-                    <div className="ai-chat-message-label">
-                      {message.role === 'user'
-                        ? 'You'
-                        : 'Research Assistant'}
+                return (
+                  <article
+                    key={message.id}
+                    className={`ai-chat-message ${
+                      message.role === 'user' ? 'user' : 'assistant'
+                    }`}
+                  >
+                    <div className="ai-chat-avatar">
+                      {message.role === 'user' ? 'YOU' : 'AI'}
                     </div>
 
-                    {message.role === 'user' ? (
-                      <div className="ai-chat-message-content">
-                        {message.content}
+                    <div className="ai-chat-message-body">
+                      <div className="ai-chat-message-label">
+                        {message.role === 'user'
+                          ? 'You'
+                          : 'Research Assistant'}
                       </div>
-                    ) : (
-                      <MarkdownMessage content={message.content} />
-                    )}
-                  </div>
-                </article>
-              ))}
+
+                      {message.role === 'user' ? (
+                        <div className="ai-chat-message-content">
+                          {message.content}
+                        </div>
+                      ) : (
+                        <>
+                          <ProposalCard
+                            message={message}
+                            busy={actionBusy}
+                            onApprove={handleApprove}
+                            onReject={handleReject}
+                            onRefresh={refreshRunStatus}
+                          />
+
+                          {runStatus && (
+                            <div className="ai-proposal-success">
+                              Current execution status: <strong>{runStatus}</strong>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </article>
+                )
+              })}
 
               {loading && (
                 <div className="ai-chat-thinking">
@@ -456,7 +850,6 @@ export default function AIResearchAssistant() {
               onChange={(event) => {
                 const nextValue = event.target.value
 
-                // Editing a failed draft creates a new request.
                 if (nextValue.trim() !== input.trim()) {
                   pendingMessageIdRef.current = null
                 }
@@ -476,7 +869,7 @@ export default function AIResearchAssistant() {
               placeholder="Ask a research question..."
               rows={2}
               maxLength={4000}
-              disabled={initializing || loading}
+              disabled={initializing || loading || actionBusy}
             />
 
             <div className="ai-chat-composer-bottom">
@@ -484,7 +877,12 @@ export default function AIResearchAssistant() {
 
               <button
                 type="submit"
-                disabled={!input.trim() || loading || initializing}
+                disabled={
+                  !input.trim() ||
+                  loading ||
+                  initializing ||
+                  actionBusy
+                }
               >
                 {loading ? 'Thinking…' : 'Send'}
                 <span>↑</span>

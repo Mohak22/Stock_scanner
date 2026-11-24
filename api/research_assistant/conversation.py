@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 # -*- coding: utf-8 -*-
 """
@@ -10,12 +11,21 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from api.integrations.supabase_client import get_supabase_client
+from api.research_agent.models import Agent2Proposal
+from api.research_workflow.graph import (
+    run_follow_up_research_design,
+    run_initial_research_design,
+)
+from api.research_workflow.intent_router import (
+    build_experiment_context,
+    resolve_research_action,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,6 +39,12 @@ ALLOWED_INTENTS = {
     "needs_clarification",
 }
 
+ALLOWED_RESEARCH_ACTIONS = {
+    "new_research",
+    "follow_up",
+    "ambiguous",
+}
+
 
 class ChatMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
@@ -37,6 +53,36 @@ class ChatMessageRequest(BaseModel):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _build_saved_chat_response(
+    *,
+    session_id: UUID,
+    content: str,
+    metadata: dict,
+) -> dict:
+    """Reconstruct the original API response for an idempotent retry."""
+
+    metadata = metadata or {}
+
+    return {
+        "success": True,
+        "session_id": str(session_id),
+        "intent": metadata.get("intent"),
+        "response": content,
+        "needs_follow_up": metadata.get("needs_follow_up", False),
+        "follow_up_question": metadata.get("follow_up_question", ""),
+        "research_question": metadata.get("research_question", ""),
+        "hypothesis": metadata.get("hypothesis", ""),
+        "research_action": metadata.get("research_action"),
+        "referenced_experiment_id": metadata.get(
+            "referenced_experiment_id"
+        ),
+        "workflow_status": metadata.get("workflow_status"),
+        "agent_run_id": metadata.get("agent_run_id"),
+        "ledger_id": metadata.get("ledger_id"),
+        "usage": metadata.get("usage", {}),
+    }
 
 
 def _get_active_session(session_id: UUID) -> dict:
@@ -77,11 +123,34 @@ def _load_recent_messages(
     return list(reversed(response.data or []))
 
 
+def _load_session_experiments(
+    session_id: UUID,
+    limit: int = 15,
+) -> list[dict]:
+    """
+    Load only this session's experiment ledger records.
+
+    The LLM receives a compact reference list. The full validated
+    request and evidence remain server-side.
+    """
+
+    response = (
+        get_supabase_client()
+        .table("research_ledger")
+        .select(
+            "id,hypothesis,proposal,evidence_summary,status,"
+            "approval_status,created_at"
+        )
+        .eq("session_id", str(session_id))
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+
+    return build_experiment_context(response.data or [])
+
+
 def _response_budget(message: str) -> int:
-    """
-    One model call per message.
-    Output allowance is adjusted to the question's likely complexity.
-    """
     text = message.lower()
 
     technical_terms = (
@@ -114,12 +183,14 @@ def _response_budget(message: str) -> int:
 def _call_research_router(
     messages: list[dict],
     latest_user_message: str,
+    available_experiments: list[dict] | None = None,
 ) -> tuple[dict, dict]:
 
     from google import genai
     from google.genai import types
 
     api_key = os.getenv("GEMINI_API_KEY")
+
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not configured.")
 
@@ -132,6 +203,16 @@ def _call_research_router(
     )
 
     client = genai.Client(api_key=api_key)
+
+    # Expose only identifiers and short descriptions to the classifier.
+    experiment_references = [
+        {
+            "experiment_id": item["experiment_id"],
+            "hypothesis": item.get("hypothesis", ""),
+            "status": item.get("status", ""),
+        }
+        for item in (available_experiments or [])
+    ]
 
     system_prompt = """
 You are the conversational research assistant for Stock Scanner.
@@ -146,9 +227,8 @@ CAPABILITIES:
 - Explain statistics, probability, hypothesis testing and ML concepts.
 - Discuss backtesting, temporal validation, leakage and research design.
 - Help formulate and critique research hypotheses.
-- Discuss the user's existing experiments when their evidence is
-  actually present in the conversation.
-- Identify when a user wants to investigate a new hypothesis.
+- Discuss existing experiments only when their evidence is available.
+- Identify whether the user wants a new experiment or a follow-up.
 
 LIMITATIONS:
 - Live web search and current market data are not connected.
@@ -158,39 +238,63 @@ LIMITATIONS:
 - The deterministic Python research engine owns all calculations.
 
 ANSWER QUALITY:
-1. Answer the actual question first. Do not begin with generic filler.
-2. Do not make technical answers artificially short.
-3. For a conceptual question, explain the intuition, then the mechanism,
-   then give a practical stock-market or research example.
-4. For a formula question, explain every variable and show a small
-   numerical example when useful.
-5. For a statistical question, explain assumptions and limitations.
-6. For a hypothesis, discuss the rationale, measurable outcome,
-   comparison/baseline, confounders and possible failure modes.
-7. For an implementation question, explain the sequence of steps.
-8. Use headings, bullets, tables and code formatting when they improve
-   readability. Markdown is supported.
-9. Avoid repeating the question or adding unnecessary conclusions.
-10. Ask one focused clarification only when essential information is
-    missing. Do not turn every question into an experiment.
-11. Never invent capabilities that the application does not have.
-12. Be honest when evidence is insufficient.
-
-RESPONSE DEPTH:
-- Simple factual question: concise answer.
-- Conceptual question: normally 3-6 useful paragraphs.
-- Technical/statistical question: explain the reasoning with examples.
-- Research hypothesis: provide a structured critique, not merely
-  a one-line restatement.
-- Do not pad answers. Detail must add understanding.
+1. Answer the actual question first.
+2. Explain intuition before technical terminology where useful.
+3. Explain assumptions and limitations for statistical questions.
+4. For hypotheses, discuss rationale, measurable outcome,
+   comparison/baseline, confounders and failure modes.
+5. Ask one focused clarification only when essential information
+   is missing. Do not turn every question into an experiment.
+6. Never invent capabilities that the application does not have.
+7. Be honest when evidence is insufficient.
+8. Avoid unnecessary repetition and filler.
 
 INTENT CLASSIFICATION:
 - research_question: conceptual or technical research discussion.
-- propose_experiment: user wants a new experiment.
-- explain_experiment: user asks about an existing experiment.
-- compare_experiments: user wants experiments compared.
+- propose_experiment: the user wants an experiment proposal.
+- explain_experiment: the user asks about an existing experiment.
+- compare_experiments: the user wants experiments compared.
 - out_of_scope: unrelated request.
 - needs_clarification: essential information is missing.
+
+RESEARCH ACTION CLASSIFICATION:
+
+When intent is "propose_experiment", also classify research_action:
+
+1. "new_research":
+   The user clearly wants a new, independent experiment or a different
+   hypothesis. Previous experiments are not the baseline.
+
+2. "follow_up":
+   The user clearly wants to improve, modify, extend or retest a
+   specific previous experiment. Examples:
+   - "Add a volume filter to EXP-123."
+   - "Can we improve the previous RSI experiment?"
+   - "Test the same setup but with a different threshold."
+
+   If the user clearly refers to a previous experiment, set
+   referenced_experiment_id to its exact ID from AVAILABLE EXPERIMENTS.
+
+3. "ambiguous":
+   Use this when you cannot confidently distinguish a new experiment
+   from an improvement, or cannot identify which previous experiment
+   the user means.
+
+IMPORTANT:
+- Do not assume that every new hypothesis is a follow-up.
+- Do not assume that every message mentioning a previous experiment
+  means the user wants to modify it.
+- "Let's test something else" is normally new_research if it clearly
+  means a separate investigation; otherwise use ambiguous.
+- "Improve it" without a clear antecedent is ambiguous.
+- Never invent an experiment ID.
+- Only select IDs present in AVAILABLE EXPERIMENTS.
+- If the user says "new experiment" or "independent experiment",
+  choose new_research even if prior experiments exist.
+- If the user says "improve", "modify", "extend" or "add a condition"
+  but the target is unclear, choose ambiguous.
+- For non-proposal intents, set research_action to null and
+  referenced_experiment_id to null.
 
 Return one valid JSON object with exactly these keys:
 {
@@ -199,7 +303,9 @@ Return one valid JSON object with exactly these keys:
   "needs_follow_up": false,
   "follow_up_question": "",
   "research_question": "",
-  "hypothesis": ""
+  "hypothesis": "",
+  "research_action": null,
+  "referenced_experiment_id": null
 }
 
 A proposed experiment is only a research idea. Do not claim it has
@@ -210,12 +316,20 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
 
     prompt = (
         system_prompt
+        + "\n\nAVAILABLE EXPERIMENTS:\n"
+        + json.dumps(
+            experiment_references,
+            ensure_ascii=False,
+            default=str,
+        )
         + "\n\nRECENT CONVERSATION:\n"
         + json.dumps(
             messages,
             ensure_ascii=False,
             default=str,
         )
+        + "\n\nLATEST USER MESSAGE:\n"
+        + latest_user_message
     )
 
     response = client.models.generate_content(
@@ -231,19 +345,25 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     raw_text = getattr(response, "text", None)
 
     if not raw_text:
-        raise RuntimeError("The research assistant returned an empty response.")
+        raise RuntimeError(
+            "The research assistant returned an empty response."
+        )
 
     result = json.loads(raw_text)
 
     intent = result.get("intent")
 
     if intent not in ALLOWED_INTENTS:
-        raise ValueError("The research assistant returned an invalid intent.")
+        raise ValueError(
+            "The research assistant returned an invalid intent."
+        )
 
     assistant_text = str(result.get("response", "")).strip()
 
     if not assistant_text:
-        raise RuntimeError("The research assistant returned an empty answer.")
+        raise RuntimeError(
+            "The research assistant returned an empty answer."
+        )
 
     result["response"] = assistant_text
     result["needs_follow_up"] = bool(
@@ -257,6 +377,21 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     )
     result["hypothesis"] = str(
         result.get("hypothesis", "")
+    )
+
+    action = result.get("research_action")
+
+    if intent == "propose_experiment":
+        if action not in ALLOWED_RESEARCH_ACTIONS:
+            action = "ambiguous"
+    else:
+        action = None
+
+    result["research_action"] = action
+
+    reference = result.get("referenced_experiment_id")
+    result["referenced_experiment_id"] = (
+        str(reference).strip() if reference else None
     )
 
     usage_metadata = getattr(response, "usage_metadata", None)
@@ -278,6 +413,172 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     return result, usage
 
 
+def _persist_langgraph_proposal(
+    *,
+    session_id: UUID,
+    client_message_id: str,
+    routing: dict,
+    workflow_result: dict,
+) -> dict:
+    """
+    Persist a validated LangGraph proposal atomically through
+    the idempotent PostgreSQL RPC function.
+
+    Repeated calls with the same session and client message ID
+    reuse the original agent run and ledger record.
+
+    This function never approves or executes an experiment.
+    """
+
+    workflow_status = workflow_result.get("status")
+
+    if workflow_status == "needs_clarification":
+        return {
+            "status": "needs_clarification",
+            "assistant_message": workflow_result.get(
+                "assistant_message",
+                "I need one clarification before designing this experiment.",
+            ),
+            "agent_run_id": None,
+            "ledger_id": None,
+        }
+
+    if workflow_status == "validation_failed":
+        errors = workflow_result.get("validation_errors") or []
+
+        error_text = "\n".join(
+            f"- {error}" for error in errors
+        )
+
+        message = (
+            workflow_result.get("assistant_message")
+            or "The proposed configuration did not pass validation."
+        )
+
+        if error_text:
+            message += "\n\nValidation details:\n" + error_text
+
+        return {
+            "status": "validation_failed",
+            "assistant_message": message,
+            "agent_run_id": None,
+            "ledger_id": None,
+        }
+
+    if workflow_status != "proposal_validated":
+        raise RuntimeError(
+            "Unexpected LangGraph workflow status: "
+            f"{workflow_status}"
+        )
+
+    if not client_message_id:
+        raise ValueError(
+            "client_message_id is required for proposal persistence."
+        )
+
+    # Validate compatibility with the existing approval pipeline.
+    proposal = Agent2Proposal.model_validate({
+        "research_question": workflow_result.get("research_question", ""),
+        "hypothesis": workflow_result.get("hypothesis", ""),
+        "rationale": workflow_result.get("rationale", ""),
+        "expected_learning": workflow_result.get("expected_learning", ""),
+        "experiment_type": workflow_result.get("experiment_type"),
+        "confidence": workflow_result.get("confidence", "medium"),
+        "research_request": workflow_result.get("validated_request"),
+        "parent_experiment_id": routing.get(
+            "referenced_experiment_id"
+        ),
+    })
+
+    proposal_data = proposal.model_dump(mode="json")
+    usage = workflow_result.get("usage") or {}
+
+    run_id = str(uuid4())
+    now = _now()
+
+    input_data = {
+        "research_question": proposal.research_question,
+        "hypothesis": proposal.hypothesis,
+        "design_mode": (
+            "follow_up"
+            if routing.get("research_action") == "follow_up"
+            else "initial"
+        ),
+        "referenced_experiment_id": routing.get(
+            "referenced_experiment_id"
+        ),
+        "client_message_id": client_message_id,
+    }
+
+    output_data = {
+        "proposal": proposal_data,
+        "usage": usage,
+        "workflow": "langgraph",
+    }
+
+    # The PostgreSQL function serializes identical request IDs and
+    # returns the original IDs when this request was already persisted.
+    rpc_response = (
+        get_supabase_client()
+        .rpc(
+            "persist_langgraph_proposal_idempotent",
+            {
+                "p_run_id": run_id,
+                "p_session_id": str(session_id),
+                "p_thread_id": str(session_id),
+                "p_provider": usage.get("provider", "gemini"),
+                "p_model": usage.get("model"),
+                "p_tokens_used": int(
+                    usage.get("total_tokens") or 0
+                ),
+                "p_input_data": input_data,
+                "p_output_data": output_data,
+                "p_started_at": now,
+                "p_hypothesis": proposal.hypothesis,
+                "p_proposal": proposal_data,
+                "p_client_message_id": client_message_id,
+            },
+        )
+        .execute()
+    )
+
+    result = rpc_response.data
+
+    if isinstance(result, list) and result:
+        result = result[0]
+
+    if not isinstance(result, dict):
+        raise RuntimeError(
+            "The proposal persistence RPC returned an invalid response."
+        )
+
+    persisted_run_id = result.get("agent_run_id")
+    ledger_id = result.get("ledger_id")
+
+    if not persisted_run_id or not ledger_id:
+        raise RuntimeError(
+            "The proposal persistence RPC did not return both identifiers."
+        )
+
+    assistant_text = (
+        f"Experiment proposal: {proposal.research_question}\n\n"
+        f"Hypothesis: {proposal.hypothesis}\n\n"
+        f"Rationale: {proposal.rationale}\n\n"
+        f"Expected learning: {proposal.expected_learning}\n\n"
+        f"Design details: {workflow_result.get('assistant_message', '')}\n\n"
+        "The proposed configuration passed deterministic validation. "
+        "It has NOT been executed. Explicit approval is required."
+    )
+
+    return {
+        "status": "proposal_saved",
+        "assistant_message": assistant_text,
+        "agent_run_id": persisted_run_id,
+        "ledger_id": ledger_id,
+        "proposal": proposal_data,
+    }
+
+
 @router.post("/sessions/{session_id}/chat")
 def chat_with_research_assistant(
     session_id: UUID,
@@ -288,69 +589,315 @@ def chat_with_research_assistant(
 
     db = get_supabase_client()
     message = request.message.strip()
+    client_message_id = request.client_message_id
 
     try:
-        # Idempotency: a retry reuses the original user-message row.
-        existing = (
+        # --------------------------------------------------------
+        # 1. Check whether this user message was already received.
+        # --------------------------------------------------------
+
+        existing_user = (
             db.table("chat_messages")
-            .select("id")
+            .select("id,content")
             .eq("session_id", str(session_id))
             .eq("role", "user")
             .contains(
                 "metadata",
-                {"client_message_id": request.client_message_id},
+                {"client_message_id": client_message_id},
             )
             .limit(1)
             .execute()
         )
 
-        if not existing.data:
-            db.table("chat_messages").insert({
-                "session_id": str(session_id),
-                "role": "user",
-                "content": message,
-                "metadata": {
-                    "client_message_id": request.client_message_id,
-                },
-            }).execute()
+        existing_user_rows = existing_user.data or []
 
-        messages = _load_recent_messages(session_id)
+        if existing_user_rows:
+            saved_user = existing_user_rows[0]
 
-        routed, usage = _call_research_router(
-            messages,
-            message,
+            if saved_user["content"].strip() != message:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "IDEMPOTENCY_KEY_REUSED",
+                        "message": (
+                            "This client_message_id was already used "
+                            "for a different message."
+                        ),
+                    },
+                )
+
+        else:
+            try:
+                db.table("chat_messages").insert({
+                    "session_id": str(session_id),
+                    "role": "user",
+                    "content": message,
+                    "metadata": {
+                        "client_message_id": client_message_id,
+                    },
+                }).execute()
+
+            except Exception:
+                # A concurrent request may have inserted this message first.
+                existing_user = (
+                    db.table("chat_messages")
+                    .select("id,content")
+                    .eq("session_id", str(session_id))
+                    .eq("role", "user")
+                    .contains(
+                        "metadata",
+                        {"client_message_id": client_message_id},
+                    )
+                    .limit(1)
+                    .execute()
+                )
+
+                rows = existing_user.data or []
+
+                if not rows:
+                    raise
+
+                if rows[0]["content"].strip() != message:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "IDEMPOTENCY_KEY_REUSED",
+                            "message": (
+                                "This client_message_id was already used "
+                                "for a different message."
+                            ),
+                        },
+                    )
+
+        # --------------------------------------------------------
+        # 2. Return an already completed response on retry.
+        # --------------------------------------------------------
+
+        existing_assistant = (
+            db.table("chat_messages")
+            .select("content,metadata")
+            .eq("session_id", str(session_id))
+            .eq("role", "assistant")
+            .contains(
+                "metadata",
+                {"client_message_id": client_message_id},
+            )
+            .limit(1)
+            .execute()
         )
 
-        assistant_text = routed["response"]
+        assistant_rows = existing_assistant.data or []
 
-        db.table("chat_messages").insert({
-            "session_id": str(session_id),
-            "role": "assistant",
-            "content": assistant_text,
-            "metadata": {
-                "intent": routed["intent"],
-                "needs_follow_up": routed["needs_follow_up"],
-                "follow_up_question": routed["follow_up_question"],
-                "research_question": routed["research_question"],
-                "hypothesis": routed["hypothesis"],
-                "usage": usage,
-            },
-        }).execute()
+        if assistant_rows:
+            saved = assistant_rows[0]
+
+            return _build_saved_chat_response(
+                session_id=session_id,
+                content=saved["content"],
+                metadata=saved.get("metadata") or {},
+            )
+
+        # --------------------------------------------------------
+        # 3. Load context and invoke the conversational router.
+        # --------------------------------------------------------
+
+        messages = _load_recent_messages(session_id)
+        available_experiments = _load_session_experiments(session_id)
+
+        routed, router_usage = _call_research_router(
+            messages,
+            message,
+            available_experiments,
+        )
+
+        routing = {
+            "research_action": None,
+            "referenced_experiment_id": None,
+            "prior_research_request": None,
+            "evidence_summary": None,
+            "clarification_question": None,
+        }
+
+        workflow_status = None
+        agent_run_id = None
+        ledger_id = None
+
+        assistant_text = routed["response"]
+        needs_follow_up = routed["needs_follow_up"]
+        follow_up_question = routed["follow_up_question"]
+
+        response_usage = {
+            "router": router_usage,
+            "designer": None,
+        }
+
+        # --------------------------------------------------------
+        # 4. Proposal intent: resolve initial vs follow-up.
+        # --------------------------------------------------------
+
+        if routed["intent"] == "propose_experiment":
+
+            routing = resolve_research_action(
+                classifier_action=routed["research_action"],
+                referenced_experiment_id=(
+                    routed["referenced_experiment_id"]
+                ),
+                experiments=available_experiments,
+            )
+
+            if routing["research_action"] == "clarification_required":
+                assistant_text = routing["clarification_question"]
+                needs_follow_up = True
+                follow_up_question = assistant_text
+
+            else:
+                workflow_kwargs = {
+                    "session_id": str(session_id),
+                    "user_message": message,
+                    "conversation_history": messages,
+                }
+
+                # ------------------------------------------------
+                # 5. Invoke the appropriate LangGraph workflow.
+                # ------------------------------------------------
+
+                if routing["research_action"] == "follow_up":
+                    workflow_result = run_follow_up_research_design(
+                        **workflow_kwargs,
+                        prior_research_request=(
+                            routing["prior_research_request"]
+                        ),
+                        evidence_summary=routing["evidence_summary"],
+                        previous_experiment_id=(
+                            routing["referenced_experiment_id"]
+                        ),
+                    )
+
+                elif routing["research_action"] == "new_research":
+                    workflow_result = run_initial_research_design(
+                        **workflow_kwargs,
+                    )
+
+                else:
+                    raise RuntimeError(
+                        "Research action was not resolved before "
+                        "invoking LangGraph."
+                    )
+
+                response_usage["designer"] = (
+                    workflow_result.get("usage") or {}
+                )
+
+                # ------------------------------------------------
+                # 6. Persist the validated proposal idempotently.
+                # ------------------------------------------------
+
+                persisted = _persist_langgraph_proposal(
+                    session_id=session_id,
+                    client_message_id=client_message_id,
+                    routing=routing,
+                    workflow_result=workflow_result,
+                )
+
+                workflow_status = persisted["status"]
+                assistant_text = persisted["assistant_message"]
+                agent_run_id = persisted.get("agent_run_id")
+                ledger_id = persisted.get("ledger_id")
+
+                if workflow_status == "needs_clarification":
+                    needs_follow_up = True
+                    follow_up_question = assistant_text
+
+                elif workflow_status == "validation_failed":
+                    needs_follow_up = True
+                    follow_up_question = ""
+
+                else:
+                    needs_follow_up = False
+                    follow_up_question = ""
+
+        # --------------------------------------------------------
+        # 7. Persist the assistant response with the same ID.
+        # --------------------------------------------------------
+
+        metadata = {
+            "client_message_id": client_message_id,
+            "intent": routed["intent"],
+            "needs_follow_up": needs_follow_up,
+            "follow_up_question": follow_up_question,
+            "research_question": routed["research_question"],
+            "hypothesis": routed["hypothesis"],
+            "research_action": routing["research_action"],
+            "referenced_experiment_id": (
+                routing["referenced_experiment_id"]
+            ),
+            "workflow_status": workflow_status,
+            "agent_run_id": agent_run_id,
+            "ledger_id": ledger_id,
+            "usage": response_usage,
+        }
+
+        try:
+            db.table("chat_messages").insert({
+                "session_id": str(session_id),
+                "role": "assistant",
+                "content": assistant_text,
+                "metadata": metadata,
+            }).execute()
+
+        except Exception:
+            # A concurrent request may have completed this same message.
+            existing_assistant = (
+                db.table("chat_messages")
+                .select("content,metadata")
+                .eq("session_id", str(session_id))
+                .eq("role", "assistant")
+                .contains(
+                    "metadata",
+                    {"client_message_id": client_message_id},
+                )
+                .limit(1)
+                .execute()
+            )
+
+            rows = existing_assistant.data or []
+
+            if not rows:
+                raise
+
+            saved = rows[0]
+
+            return _build_saved_chat_response(
+                session_id=session_id,
+                content=saved["content"],
+                metadata=saved.get("metadata") or {},
+            )
 
         db.table("chat_sessions").update({
             "updated_at": _now(),
         }).eq("id", str(session_id)).execute()
+
+        # --------------------------------------------------------
+        # 8. Return the API response.
+        # --------------------------------------------------------
 
         return {
             "success": True,
             "session_id": str(session_id),
             "intent": routed["intent"],
             "response": assistant_text,
-            "needs_follow_up": routed["needs_follow_up"],
-            "follow_up_question": routed["follow_up_question"],
+            "needs_follow_up": needs_follow_up,
+            "follow_up_question": follow_up_question,
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
-            "usage": usage,
+            "research_action": routing["research_action"],
+            "referenced_experiment_id": (
+                routing["referenced_experiment_id"]
+            ),
+            "workflow_status": workflow_status,
+            "agent_run_id": agent_run_id,
+            "ledger_id": ledger_id,
+            "usage": response_usage,
         }
 
     except HTTPException:

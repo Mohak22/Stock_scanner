@@ -18,18 +18,12 @@ Supported research universes:
     sector
     industry
     basic_industry
-    major_stocks
+    major_stocks       -> current Nifty 500
+    nifty_50           -> current Nifty 50
     symbols
 
-Major Stocks
-------------
-
-Major Stocks is represented by the current Nifty 500
-constituent universe.
-
-The Nifty 500 constituent list is stored separately from
-research_universe.csv so that the universe definition is explicit
-and reproducible.
+Index constituent universes use current snapshots, not
+point-in-time historical membership.
 """
 
 import pandas as pd
@@ -37,25 +31,17 @@ import pandas as pd
 from api.data.github_data import ResearchDataRepository
 
 
-RESEARCH_UNIVERSE_PATH = (
-    "research_universe.csv"
-)
+RESEARCH_UNIVERSE_PATH = "research_universe.csv"
 
-POINT_IN_TIME_UNIVERSE_PATH = (
-    "research_universe_history.csv"
-)
+POINT_IN_TIME_UNIVERSE_PATH = "research_universe_history.csv"
 
-MAJOR_STOCKS_UNIVERSE_PATH = (
-    "raw/nifty_500_universe.csv"
-)
+MAJOR_STOCKS_UNIVERSE_PATH = "raw/nifty_500_universe.csv"
+
+NIFTY_50_UNIVERSE_PATH = "raw/nifty_50_universe.csv"
 
 
-def _normalise_symbols(
-    dataframe: pd.DataFrame,
-) -> pd.DataFrame:
-
+def _normalise_symbols(dataframe: pd.DataFrame) -> pd.DataFrame:
     if "SYMBOL" not in dataframe.columns:
-
         raise ValueError(
             "Research universe data must contain a SYMBOL column."
         )
@@ -64,6 +50,7 @@ def _normalise_symbols(
 
     dataframe["SYMBOL"] = (
         dataframe["SYMBOL"]
+        .fillna("")
         .astype(str)
         .str.strip()
         .str.upper()
@@ -76,74 +63,70 @@ def _normalise_symbols(
     return dataframe
 
 
-def load_research_universe_dataframe() -> pd.DataFrame:
+def _load_constituent_universe(path: str, name: str) -> pd.DataFrame:
+    repository = ResearchDataRepository()
 
+    dataframe = repository.load_csv(path)
+    dataframe = _normalise_symbols(dataframe)
+
+    dataframe = (
+        dataframe.drop_duplicates(subset=["SYMBOL"])
+        .sort_values("SYMBOL")
+        .reset_index(drop=True)
+    )
+
+    if dataframe.empty:
+        raise ValueError(f"{name} universe is empty.")
+
+    return dataframe
+
+
+def load_research_universe_dataframe() -> pd.DataFrame:
     repository = ResearchDataRepository()
 
     dataframe = repository.load_csv(
         RESEARCH_UNIVERSE_PATH
     )
 
-    dataframe = _normalise_symbols(
-        dataframe
+    dataframe = _normalise_symbols(dataframe)
+
+    return (
+        dataframe.drop_duplicates(subset=["SYMBOL"])
+        .reset_index(drop=True)
     )
-
-    dataframe = dataframe.drop_duplicates(
-        subset=["SYMBOL"]
-    ).reset_index(drop=True)
-
-    return dataframe
 
 
 def load_major_stocks_universe_dataframe() -> pd.DataFrame:
-
-    repository = ResearchDataRepository()
-
-    dataframe = repository.load_csv(
-        MAJOR_STOCKS_UNIVERSE_PATH
+    return _load_constituent_universe(
+        MAJOR_STOCKS_UNIVERSE_PATH,
+        "Nifty 500",
     )
 
-    dataframe = _normalise_symbols(
-        dataframe
+
+def load_nifty_50_universe_dataframe() -> pd.DataFrame:
+    return _load_constituent_universe(
+        NIFTY_50_UNIVERSE_PATH,
+        "Nifty 50",
     )
-
-    dataframe = dataframe.drop_duplicates(
-        subset=["SYMBOL"]
-    ).reset_index(drop=True)
-
-    if dataframe.empty:
-
-        raise ValueError(
-            "Nifty 500 universe is empty."
-        )
-
-    return dataframe
 
 
 def load_point_in_time_universe_dataframe() -> pd.DataFrame:
-
     repository = ResearchDataRepository()
 
     dataframe = repository.load_csv(
         POINT_IN_TIME_UNIVERSE_PATH
     )
 
-    dataframe = _normalise_symbols(
-        dataframe
-    )
+    dataframe = _normalise_symbols(dataframe)
 
     required_columns = {
         "EFFECTIVE_FROM",
         "EFFECTIVE_TO",
     }
 
-    missing_columns = (
-        required_columns
-        - set(dataframe.columns)
-    )
+    missing_columns = required_columns - set(dataframe.columns)
 
     if missing_columns:
-
         raise ValueError(
             "Point-in-time universe is missing required "
             f"columns: {sorted(missing_columns)}"
@@ -162,7 +145,6 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     if dataframe[
         ["EFFECTIVE_FROM", "EFFECTIVE_TO"]
     ].isna().any().any():
-
         raise ValueError(
             "Point-in-time universe contains invalid "
             "EFFECTIVE_FROM or EFFECTIVE_TO dates."
@@ -174,7 +156,6 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if invalid_ranges.any():
-
         raise ValueError(
             "Point-in-time universe contains membership "
             "ranges where EFFECTIVE_FROM is after EFFECTIVE_TO."
@@ -190,7 +171,6 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if duplicate_membership.any():
-
         raise ValueError(
             "Point-in-time universe contains duplicate "
             "membership intervals."
@@ -205,9 +185,7 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     ).copy()
 
     ordered["PREVIOUS_EFFECTIVE_TO"] = (
-        ordered
-        .groupby("SYMBOL")["EFFECTIVE_TO"]
-        .shift(1)
+        ordered.groupby("SYMBOL")["EFFECTIVE_TO"].shift(1)
     )
 
     overlapping = (
@@ -219,74 +197,49 @@ def load_point_in_time_universe_dataframe() -> pd.DataFrame:
     )
 
     if overlapping.any():
-
         raise ValueError(
             "Point-in-time universe contains overlapping "
             "membership intervals for at least one symbol."
         )
 
-    ordered = ordered.drop(
-        columns=["PREVIOUS_EFFECTIVE_TO"]
+    return (
+        ordered.drop(columns=["PREVIOUS_EFFECTIVE_TO"])
+        .reset_index(drop=True)
     )
-
-    return ordered.reset_index(drop=True)
 
 
 def get_research_universe_symbols() -> set[str]:
-
-    dataframe = (
-        load_research_universe_dataframe()
-    )
-
-    return set(
-        dataframe["SYMBOL"].tolist()
-    )
+    dataframe = load_research_universe_dataframe()
+    return set(dataframe["SYMBOL"].tolist())
 
 
 def load_research_universe() -> list[dict]:
-
-    dataframe = (
-        load_research_universe_dataframe()
-    )
-
+    dataframe = load_research_universe_dataframe()
     dataframe = dataframe.fillna("")
-
-    return dataframe.to_dict(
-        orient="records"
-    )
+    return dataframe.to_dict(orient="records")
 
 
 def get_research_universe() -> dict:
-
     rows = load_research_universe()
 
-    major_stocks = (
-        load_major_stocks_universe_dataframe()
-    )
+    major_stocks = load_major_stocks_universe_dataframe()
+    nifty_50 = load_nifty_50_universe_dataframe()
 
     return {
         "universe": rows,
         "total_stocks": len(rows),
-        "major_stocks_total": len(
-            major_stocks
-        ),
-        "membership_basis": (
-            "current_snapshot_not_point_in_time"
-        ),
+        "major_stocks_total": len(major_stocks),
+        "nifty_50_total": len(nifty_50),
+        "membership_basis": "current_snapshot_not_point_in_time",
     }
 
 
 def apply_current_snapshot_universe(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
+    universe = load_research_universe_dataframe()
 
-    universe = (
-        load_research_universe_dataframe()
-    )
-
-    symbols = set(
-        universe["SYMBOL"].tolist()
-    )
+    symbols = set(universe["SYMBOL"].tolist())
 
     return dataframe[
         dataframe["SYMBOL"].isin(symbols)
@@ -296,14 +249,21 @@ def apply_current_snapshot_universe(
 def apply_major_stocks_universe(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
+    universe = load_major_stocks_universe_dataframe()
 
-    universe = (
-        load_major_stocks_universe_dataframe()
-    )
+    symbols = set(universe["SYMBOL"].tolist())
 
-    symbols = set(
-        universe["SYMBOL"].tolist()
-    )
+    return dataframe[
+        dataframe["SYMBOL"].isin(symbols)
+    ].copy()
+
+
+def apply_nifty_50_universe(
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+    universe = load_nifty_50_universe_dataframe()
+
+    symbols = set(universe["SYMBOL"].tolist())
 
     return dataframe[
         dataframe["SYMBOL"].isin(symbols)
@@ -316,10 +276,6 @@ def apply_point_in_time_universe(
     """
     Construct the historical all-stocks universe from dated NSE
     equity bhavcopy records.
-
-    A symbol is eligible on dates for which its EQ record exists
-    in the historical data. The current research universe is never
-    used to filter historical membership.
 
     This is a historical-tradability proxy, not an official
     listing/delisting master.
@@ -386,9 +342,6 @@ def validate_bhavcopy_session_coverage(
     """
     Fail closed when historical bhavcopy lacks a session represented
     in the NIFTY 50 benchmark.
-
-    This detects missing whole sessions. It cannot independently
-    prove that every individual stock record is present.
     """
 
     observed = pd.DatetimeIndex(
@@ -405,15 +358,14 @@ def validate_bhavcopy_session_coverage(
         )
     ).dropna().normalize()
 
-    observed_set = set(observed)
-    expected_set = set(expected)
-
-    missing_dates = sorted(expected_set - observed_set)
+    missing_dates = sorted(
+        set(expected) - set(observed)
+    )
 
     if missing_dates:
         examples = [
-            date.strftime("%Y-%m-%d")
-            for date in missing_dates[:10]
+            item.strftime("%Y-%m-%d")
+            for item in missing_dates[:10]
         ]
 
         raise ValueError(
@@ -429,18 +381,11 @@ def apply_research_universe(
     dataframe: pd.DataFrame,
     membership_basis: str,
 ) -> pd.DataFrame:
-
     if membership_basis == "current_snapshot":
-
-        return apply_current_snapshot_universe(
-            dataframe
-        )
+        return apply_current_snapshot_universe(dataframe)
 
     if membership_basis == "point_in_time":
-
-        return apply_point_in_time_universe(
-            dataframe
-        )
+        return apply_point_in_time_universe(dataframe)
 
     raise ValueError(
         "Unsupported universe membership basis: "

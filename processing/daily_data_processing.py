@@ -285,7 +285,15 @@ class Daily_Data_Preparation:
         self._update_nifty_500_universe(
             data_as_of=data_as_of
         )
-        
+
+        # ==============================================================
+        # STEP 8 : NIFTY 50 UNIVERSE
+        # ==============================================================
+
+        self._update_nifty_50_universe(
+            data_as_of=data_as_of
+        )
+
         # ==============================================================
         # COMPLETE
         # ==============================================================
@@ -746,7 +754,13 @@ class Daily_Data_Preparation:
 
         output_path = (
             STOCK_SCANNER_DATA_DIRECTORY
+            / "raw"
             / "nifty_500_universe.csv"
+        )
+
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True
         )
 
         headers = {
@@ -878,7 +892,163 @@ class Daily_Data_Preparation:
             f"As-of preparation date: "
             f"{data_as_of.strftime('%d-%m-%Y')}"
         )
-        
+
+
+    # ==================================================================
+    # STEP 8
+    # NIFTY 50 UNIVERSE
+    # ==================================================================
+
+    def _update_nifty_50_universe(
+        self,
+        data_as_of: date
+    ):
+        """
+        Download the current Nifty 50 constituent list from NSE
+        and save it into STOCK_SCANNER_DATA/raw.
+
+        The research layer consumes this prepared file.
+        """
+
+        print(
+            "\n"
+            + "-" * 70
+        )
+
+        print(
+            "STEP 8 : NIFTY 50 UNIVERSE"
+        )
+
+        print(
+            "-" * 70
+        )
+
+        url = (
+            "https://nsearchives.nseindia.com/"
+            "content/indices/ind_nifty50list.csv"
+        )
+
+        output_path = (
+            STOCK_SCANNER_DATA_DIRECTORY
+            / "raw"
+            / "nifty_50_universe.csv"
+        )
+
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 "
+                "(Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/153.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/csv,text/plain,*/*",
+        }
+
+        print(
+            "Fetching current Nifty 50 constituents from NSE..."
+        )
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=30,
+        )
+
+        response.raise_for_status()
+
+        dataframe = pd.read_csv(
+            io.StringIO(response.text)
+        )
+
+        dataframe.columns = [
+            str(column).strip()
+            for column in dataframe.columns
+        ]
+
+        symbol_column = next(
+            (
+                column
+                for column in dataframe.columns
+                if column.strip().lower() == "symbol"
+            ),
+            None,
+        )
+
+        company_column = next(
+            (
+                column
+                for column in dataframe.columns
+                if column.strip().lower()
+                in {
+                    "company name",
+                    "company_name",
+                    "company",
+                }
+            ),
+            None,
+        )
+
+        if symbol_column is None:
+            raise RuntimeError(
+                "NSE Nifty 50 CSV does not contain a Symbol column."
+            )
+
+        output = pd.DataFrame()
+
+        output["SYMBOL"] = (
+            dataframe[symbol_column]
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        if company_column is not None:
+            output["COMPANY_NAME"] = (
+                dataframe[company_column]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+        output = (
+            output[
+                output["SYMBOL"].ne("")
+                & output["SYMBOL"].ne("NAN")
+            ]
+            .drop_duplicates(subset=["SYMBOL"])
+            .sort_values("SYMBOL")
+            .reset_index(drop=True)
+        )
+
+        if len(output) != 50:
+            raise RuntimeError(
+                "NSE Nifty 50 constituent file did not contain "
+                f"exactly 50 unique symbols. Found {len(output)}. "
+                "Refusing to overwrite the existing snapshot."
+            )
+
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output.to_csv(
+            output_path,
+            index=False,
+        )
+
+        print(
+            f"Saved {len(output)} Nifty 50 constituents to "
+            f"{output_path}"
+        )
+
 # ======================================================================
 # STANDALONE TEST
 # ======================================================================
