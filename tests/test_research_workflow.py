@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 Created on Mon Nov 23 17:33:50 2026
@@ -62,6 +63,16 @@ def fake_valid_designer(**kwargs):
             hypothesis=(
                 "Stocks with RSI below 30 have higher subsequent returns."
             ),
+            rationale=(
+                "Oversold RSI readings may identify short-term "
+                "price reversals."
+            ),
+            expected_learning=(
+                "Determine whether RSI below 30 is associated "
+                "with stronger subsequent returns."
+            ),
+            experiment_type="threshold_sensitivity",
+            confidence="medium",
             research_request=valid_request(),
         ),
         {"provider": "test", "total_tokens": 0},
@@ -79,6 +90,16 @@ def fake_invalid_designer(**kwargs):
             assistant_message="Testing invalid feature handling.",
             research_question="Can an invalid feature pass?",
             hypothesis="It should not pass validation.",
+            rationale=(
+                "This test checks whether unsupported features "
+                "are rejected by deterministic validation."
+            ),
+            expected_learning=(
+                "Confirm that unsupported feature identifiers "
+                "cannot enter a validated research configuration."
+            ),
+            experiment_type="threshold_sensitivity",
+            confidence="high",
             research_request=request,
         ),
         {"provider": "test", "total_tokens": 0},
@@ -116,6 +137,12 @@ def test_graph_validates_supported_research_request():
     assert result["validated_request"] is not None
     assert result["validation_errors"] == []
     assert result["validated_request"]["features"][0]["type"] == "rsi"
+
+    # Confirm proposal metadata survives the graph.
+    assert result["rationale"]
+    assert result["expected_learning"]
+    assert result["experiment_type"] == "threshold_sensitivity"
+    assert result["confidence"] == "medium"
 
 
 def test_graph_rejects_unsupported_feature():
@@ -169,6 +196,16 @@ def test_follow_up_passes_previous_context_to_designer():
                     "RSI signals with stronger relative volume "
                     "produce better forward returns."
                 ),
+                rationale=(
+                    "Volume confirmation may help distinguish "
+                    "stronger reversal signals from weaker ones."
+                ),
+                expected_learning=(
+                    "Determine whether adding volume confirmation "
+                    "changes the forward-return distribution."
+                ),
+                experiment_type="confirmation_variable",
+                confidence="medium",
                 research_request=valid_request(),
             ),
             {"provider": "test", "total_tokens": 0},
@@ -195,3 +232,7 @@ def test_follow_up_passes_previous_context_to_designer():
     assert captured["prior_research_request"] == prior_request
     assert captured["evidence_summary"] == evidence
     assert captured["previous_experiment_id"] == "EXP-TEST-001"
+
+    assert result["experiment_type"] == "confirmation_variable"
+    assert result["rationale"]
+    assert result["expected_learning"]

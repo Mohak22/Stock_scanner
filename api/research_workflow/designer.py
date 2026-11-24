@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 # -*- coding: utf-8 -*-
@@ -17,21 +18,58 @@ from api.research.features import get_feature_registry
 from api.research.models import ResearchRequest
 
 
+ExperimentType = Literal[
+    "threshold_sensitivity",
+    "confirmation_variable",
+    "delivery_confirmation",
+    "market_regime",
+    "horizon",
+    "robustness",
+    "feature_interaction",
+]
+
+
 class ResearchDesignerOutput(BaseModel):
     status: Literal["needs_clarification", "proposal"]
     assistant_message: str = Field(min_length=1)
 
     research_question: str = ""
     hypothesis: str = ""
+    rationale: str = ""
+    expected_learning: str = ""
+
+    experiment_type: ExperimentType | None = None
+    confidence: Literal["low", "medium", "high"] = "medium"
 
     research_request: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_output(self):
-        if self.status == "proposal" and self.research_request is None:
-            raise ValueError(
-                "A proposal must include research_request."
-            )
+        if self.status == "proposal":
+            if self.research_request is None:
+                raise ValueError(
+                    "A proposal must include research_request."
+                )
+
+            required_fields = {
+                "research_question": self.research_question,
+                "hypothesis": self.hypothesis,
+                "rationale": self.rationale,
+                "expected_learning": self.expected_learning,
+                "experiment_type": self.experiment_type,
+            }
+
+            missing = [
+                name
+                for name, value in required_fields.items()
+                if value is None or not str(value).strip()
+            ]
+
+            if missing:
+                raise ValueError(
+                    "A proposal is missing required fields: "
+                    + ", ".join(missing)
+                )
 
         if (
             self.status == "needs_clarification"
@@ -61,6 +99,23 @@ GENERAL RULES
 8. Never bypass validation or human approval.
 9. Ask one focused clarification question at a time.
 10. Do not silently invent dates, symbols, universe or horizons.
+11. Do not invent performance results or claim expected profitability.
+12. Do not add complexity merely to make an experiment look advanced.
+
+SUPPORTED EXPERIMENT TYPES
+
+Choose exactly one:
+- threshold_sensitivity
+- confirmation_variable
+- delivery_confirmation
+- market_regime
+- horizon
+- robustness
+- feature_interaction
+
+Choose the type that best describes the actual research question.
+Do not force an experiment into a type when the intended design
+does not fit. Ask for clarification instead.
 
 FEATURE RULES
 
@@ -90,16 +145,25 @@ Return valid JSON only:
   "assistant_message": "Explanation for the user",
   "research_question": "Research question",
   "hypothesis": "Measurable hypothesis",
+  "rationale": "Why the hypothesis is worth testing",
+  "expected_learning": "What the experiment will help us learn",
+  "experiment_type": "one supported experiment type",
+  "confidence": "low, medium or high",
   "research_request": null or a complete ResearchRequest object
 }
 
 For clarification:
 - research_request must be null.
 - Ask one focused question.
+- Do not pretend a complete proposal exists.
 
 For proposal:
 - research_request must be a complete valid candidate.
-- Explain the assumptions.
+- rationale and expected_learning must be specific and honest.
+- experiment_type must be one of the supported values.
+- confidence reflects confidence in the research design,
+  not confidence that the strategy will make money.
+- Explain assumptions.
 - Never say the proposal has been approved or executed.
 """
 
@@ -153,6 +217,7 @@ Rules:
 - If the user's requested change is unclear, ask one focused question.
 - If the previous evidence does not justify the proposed change,
   explain that limitation.
+- Set the experiment type to the best-fitting supported category.
 """
 
 
@@ -213,6 +278,15 @@ def design_experiment(
         "latest_user_message": user_message,
         "supported_features": get_feature_registry(),
         "research_request_schema": ResearchRequest.model_json_schema(),
+        "supported_experiment_types": [
+            "threshold_sensitivity",
+            "confirmation_variable",
+            "delivery_confirmation",
+            "market_regime",
+            "horizon",
+            "robustness",
+            "feature_interaction",
+        ],
     }
 
     if design_mode == "follow_up":
@@ -237,7 +311,7 @@ def design_experiment(
         contents=prompt,
         config=types.GenerateContentConfig(
             temperature=0.15,
-            max_output_tokens=2200,
+            max_output_tokens=2600,
             response_mime_type="application/json",
         ),
     )

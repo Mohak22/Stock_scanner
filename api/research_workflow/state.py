@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 Created on Mon Nov 23 17:35:59 2026
@@ -35,6 +36,10 @@ class ResearchWorkflowState(TypedDict, total=False):
     assistant_message: str
     research_question: str
     hypothesis: str
+    rationale: str
+    expected_learning: str
+    experiment_type: str
+    confidence: str
 
     proposed_request: dict[str, Any] | None
     validated_request: dict[str, Any] | None

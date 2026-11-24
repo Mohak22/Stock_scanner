@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -44,27 +45,32 @@ def create_research_designer_node(
             previous_experiment_id=state.get("previous_experiment_id"),
         )
 
-        if result.status == "needs_clarification":
-            return {
-                "status": "needs_clarification",
-                "assistant_message": result.assistant_message,
-                "research_question": result.research_question,
-                "hypothesis": result.hypothesis,
-                "proposed_request": None,
-                "validated_request": None,
-                "validation_errors": [],
-                "usage": usage,
-            }
-
-        return {
-            "status": "proposal_generated",
+        common_output = {
             "assistant_message": result.assistant_message,
             "research_question": result.research_question,
             "hypothesis": result.hypothesis,
+            "rationale": result.rationale,
+            "expected_learning": result.expected_learning,
+            "experiment_type": result.experiment_type,
+            "confidence": result.confidence,
+            "usage": usage,
+        }
+
+        if result.status == "needs_clarification":
+            return {
+                **common_output,
+                "status": "needs_clarification",
+                "proposed_request": None,
+                "validated_request": None,
+                "validation_errors": [],
+            }
+
+        return {
+            **common_output,
+            "status": "proposal_generated",
             "proposed_request": result.research_request,
             "validated_request": None,
             "validation_errors": [],
-            "usage": usage,
         }
 
     return research_designer_node

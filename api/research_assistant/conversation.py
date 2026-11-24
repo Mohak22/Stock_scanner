@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 # -*- coding: utf-8 -*-
 """
@@ -10,12 +11,17 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from api.integrations.supabase_client import get_supabase_client
+from api.research_agent.models import Agent2Proposal
+from api.research_workflow.graph import (
+    run_follow_up_research_design,
+    run_initial_research_design,
+)
 from api.research_workflow.intent_router import (
     build_experiment_context,
     resolve_research_action,
@@ -377,6 +383,173 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     return result, usage
 
 
+def _persist_langgraph_proposal(
+    *,
+    session_id: UUID,
+    routing: dict,
+    workflow_result: dict,
+) -> dict:
+    """
+    Persist a LangGraph proposal in the same format used by the
+    existing Agent 2 approval and execution endpoints.
+
+    This function never approves or executes an experiment.
+    """
+
+    workflow_status = workflow_result.get("status")
+
+    if workflow_status == "needs_clarification":
+        return {
+            "status": "needs_clarification",
+            "assistant_message": workflow_result.get(
+                "assistant_message",
+                "I need one clarification before designing this experiment.",
+            ),
+            "agent_run_id": None,
+            "ledger_id": None,
+        }
+
+    if workflow_status == "validation_failed":
+        errors = workflow_result.get("validation_errors") or []
+
+        error_text = "\n".join(
+            f"- {error}" for error in errors
+        )
+
+        message = (
+            workflow_result.get("assistant_message")
+            or "The proposed configuration did not pass validation."
+        )
+
+        if error_text:
+            message += "\n\nValidation details:\n" + error_text
+
+        return {
+            "status": "validation_failed",
+            "assistant_message": message,
+            "agent_run_id": None,
+            "ledger_id": None,
+        }
+
+    if workflow_status != "proposal_validated":
+        raise RuntimeError(
+            "Unexpected LangGraph workflow status: "
+            f"{workflow_status}"
+        )
+
+    # Validate compatibility with the existing approval pipeline.
+    # This is a schema validation only; no experiment is executed.
+    proposal = Agent2Proposal.model_validate({
+        "research_question": workflow_result.get("research_question", ""),
+        "hypothesis": workflow_result.get("hypothesis", ""),
+        "rationale": workflow_result.get("rationale", ""),
+        "expected_learning": workflow_result.get("expected_learning", ""),
+        "experiment_type": workflow_result.get("experiment_type"),
+        "confidence": workflow_result.get("confidence", "medium"),
+        "research_request": workflow_result.get("validated_request"),
+        "parent_experiment_id": routing.get(
+            "referenced_experiment_id"
+        ),
+    })
+
+    proposal_data = proposal.model_dump(mode="json")
+    usage = workflow_result.get("usage") or {}
+
+    run_id = str(uuid4())
+    now = _now()
+    db = get_supabase_client()
+
+    # Create the durable agent-run record.
+    db.table("agent_runs").insert({
+        "id": run_id,
+        "session_id": str(session_id),
+        "thread_id": str(session_id),
+        "status": "running",
+        "current_step": "saving_proposal",
+        "provider": usage.get("provider", "gemini"),
+        "model": usage.get("model"),
+        "tokens_used": int(usage.get("total_tokens") or 0),
+        "input_data": {
+            "research_question": proposal.research_question,
+            "hypothesis": proposal.hypothesis,
+            "design_mode": (
+                "follow_up"
+                if routing.get("research_action") == "follow_up"
+                else "initial"
+            ),
+            "referenced_experiment_id": routing.get(
+                "referenced_experiment_id"
+            ),
+        },
+        "output_data": {
+            "proposal": proposal_data,
+            "usage": usage,
+            "workflow": "langgraph",
+        },
+        "started_at": now,
+    }).execute()
+
+    # Persist in the same ledger shape used by the existing
+    # /propose endpoint.
+    ledger_response = (
+        db.table("research_ledger")
+        .insert({
+            "session_id": str(session_id),
+            "agent_run_id": run_id,
+            "hypothesis": proposal.hypothesis,
+            "hypothesis_family": None,
+            "status": "proposed",
+            "approval_status": "pending",
+            "proposal": proposal_data,
+            "decision": {},
+            "evidence_summary": {},
+        })
+        .execute()
+    )
+
+    ledger_rows = ledger_response.data or []
+
+    if not ledger_rows:
+        db.table("agent_runs").update({
+            "status": "failed",
+            "current_step": "ledger_persistence_failed",
+            "updated_at": _now(),
+        }).eq("id", run_id).execute()
+
+        raise RuntimeError(
+            "The proposal could not be saved to the research ledger."
+        )
+
+    ledger = ledger_rows[0]
+
+    # Mark the run as awaiting approval. The approval endpoint
+    # will later queue it using the existing execution pipeline.
+    db.table("agent_runs").update({
+        "status": "awaiting_approval",
+        "current_step": "awaiting_human_approval",
+        "completed_at": _now(),
+        "updated_at": _now(),
+    }).eq("id", run_id).execute()
+
+    assistant_text = (
+        f"Experiment proposal: {proposal.research_question}\n\n"
+        f"Hypothesis: {proposal.hypothesis}\n\n"
+        f"Rationale: {proposal.rationale}\n\n"
+        f"Expected learning: {proposal.expected_learning}\n\n"
+        f"Design details: {workflow_result.get('assistant_message', '')}\n\n"
+        "The proposed configuration passed deterministic validation. "
+        "It has NOT been executed. Explicit approval is required."
+    )
+
+    return {
+        "status": "proposal_saved",
+        "assistant_message": assistant_text,
+        "agent_run_id": run_id,
+        "ledger_id": ledger["id"],
+        "proposal": proposal_data,
+    }
+
+
 @router.post("/sessions/{session_id}/chat")
 def chat_with_research_assistant(
     session_id: UUID,
@@ -415,7 +588,7 @@ def chat_with_research_assistant(
         messages = _load_recent_messages(session_id)
         available_experiments = _load_session_experiments(session_id)
 
-        routed, usage = _call_research_router(
+        routed, router_usage = _call_research_router(
             messages,
             message,
             available_experiments,
@@ -429,7 +602,25 @@ def chat_with_research_assistant(
             "clarification_question": None,
         }
 
+        workflow_status = None
+        agent_run_id = None
+        ledger_id = None
+
+        assistant_text = routed["response"]
+        needs_follow_up = routed["needs_follow_up"]
+        follow_up_question = routed["follow_up_question"]
+
+        response_usage = {
+            "router": router_usage,
+            "designer": None,
+        }
+
+        # --------------------------------------------------------
+        # Proposal intent: resolve initial vs follow-up first.
+        # --------------------------------------------------------
+
         if routed["intent"] == "propose_experiment":
+
             routing = resolve_research_action(
                 classifier_action=routed["research_action"],
                 referenced_experiment_id=(
@@ -439,24 +630,89 @@ def chat_with_research_assistant(
             )
 
             if routing["research_action"] == "clarification_required":
-                clarification = routing["clarification_question"]
-                routed["response"] = clarification
-                routed["needs_follow_up"] = True
-                routed["follow_up_question"] = clarification
+                assistant_text = routing["clarification_question"]
+                needs_follow_up = True
+                follow_up_question = assistant_text
 
-        assistant_text = routed["response"]
+            else:
+                workflow_kwargs = {
+                    "session_id": str(session_id),
+                    "user_message": message,
+                    "conversation_history": messages,
+                }
+
+                # ------------------------------------------------
+                # LangGraph initial or follow-up design.
+                # ------------------------------------------------
+
+                if routing["research_action"] == "follow_up":
+                    workflow_result = run_follow_up_research_design(
+                        **workflow_kwargs,
+                        prior_research_request=(
+                            routing["prior_research_request"]
+                        ),
+                        evidence_summary=routing["evidence_summary"],
+                        previous_experiment_id=(
+                            routing["referenced_experiment_id"]
+                        ),
+                    )
+
+                elif routing["research_action"] == "new_research":
+                    workflow_result = run_initial_research_design(
+                        **workflow_kwargs,
+                    )
+
+                else:
+                    raise RuntimeError(
+                        "Research action was not resolved before "
+                        "invoking LangGraph."
+                    )
+
+                response_usage["designer"] = (
+                    workflow_result.get("usage") or {}
+                )
+
+                persisted = _persist_langgraph_proposal(
+                    session_id=session_id,
+                    routing=routing,
+                    workflow_result=workflow_result,
+                )
+
+                workflow_status = persisted["status"]
+                assistant_text = persisted["assistant_message"]
+                agent_run_id = persisted.get("agent_run_id")
+                ledger_id = persisted.get("ledger_id")
+
+                if workflow_status == "needs_clarification":
+                    needs_follow_up = True
+                    follow_up_question = assistant_text
+
+                elif workflow_status == "validation_failed":
+                    needs_follow_up = True
+                    follow_up_question = ""
+
+                else:
+                    needs_follow_up = False
+                    follow_up_question = ""
+
+        # --------------------------------------------------------
+        # Persist the assistant message exactly once.
+        # --------------------------------------------------------
 
         metadata = {
             "intent": routed["intent"],
-            "needs_follow_up": routed["needs_follow_up"],
-            "follow_up_question": routed["follow_up_question"],
+            "needs_follow_up": needs_follow_up,
+            "follow_up_question": follow_up_question,
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
             "research_action": routing["research_action"],
             "referenced_experiment_id": (
                 routing["referenced_experiment_id"]
             ),
-            "usage": usage,
+            "workflow_status": workflow_status,
+            "agent_run_id": agent_run_id,
+            "ledger_id": ledger_id,
+            "usage": response_usage,
         }
 
         db.table("chat_messages").insert({
@@ -475,15 +731,18 @@ def chat_with_research_assistant(
             "session_id": str(session_id),
             "intent": routed["intent"],
             "response": assistant_text,
-            "needs_follow_up": routed["needs_follow_up"],
-            "follow_up_question": routed["follow_up_question"],
+            "needs_follow_up": needs_follow_up,
+            "follow_up_question": follow_up_question,
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
             "research_action": routing["research_action"],
             "referenced_experiment_id": (
                 routing["referenced_experiment_id"]
             ),
-            "usage": usage,
+            "workflow_status": workflow_status,
+            "agent_run_id": agent_run_id,
+            "ledger_id": ledger_id,
+            "usage": response_usage,
         }
 
     except HTTPException:

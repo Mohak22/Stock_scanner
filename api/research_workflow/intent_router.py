@@ -1,3 +1,4 @@
+
 # -*- coding: utf-8 -*-
 """
 Created on Mon Nov 23 23:33:44 2026
@@ -17,6 +18,51 @@ ResearchAction = Literal[
 ]
 
 
+def _has_saved_result_stages(evidence: dict[str, Any]) -> bool:
+    """
+    Confirm that evidence contains substantive saved output
+    from at least the development stage.
+
+    The current research executor always evaluates development.
+    Validation and final holdout may be absent for development-only runs.
+    """
+
+    stages = evidence.get("stages")
+
+    if not isinstance(stages, dict):
+        return False
+
+    development = stages.get("development")
+
+    if not isinstance(development, dict) or not development:
+        return False
+
+    # These fields are populated by the existing _compact_evidence()
+    # function from the deterministic executor's saved stage output.
+    evidence_fields = (
+        "summary",
+        "performance",
+        "diagnostics",
+        "random_baseline",
+    )
+
+    for field in evidence_fields:
+        value = development.get(field)
+
+        if isinstance(value, dict) and value:
+            return True
+
+        if isinstance(value, list) and value:
+            return True
+
+    warnings = development.get("warnings")
+
+    if isinstance(warnings, list) and warnings:
+        return True
+
+    return False
+
+
 def resolve_research_action(
     *,
     classifier_action: str,
@@ -26,9 +72,12 @@ def resolve_research_action(
     """
     Resolve the model's classification against real session experiments.
 
-    The model cannot create or invent an experiment reference.
-    A follow-up requires a matching saved experiment, evidence and
-    a complete previous ResearchRequest.
+    A follow-up requires:
+    - A matching experiment in the current session.
+    - Completed execution.
+    - Explicit approval.
+    - A saved ResearchRequest.
+    - Substantive saved development-stage evidence.
     """
 
     if classifier_action == "new_research":
@@ -110,6 +159,32 @@ def resolve_research_action(
 
     matched = matches[0]
 
+    if matched.get("status") != "completed":
+        return {
+            "research_action": "clarification_required",
+            "referenced_experiment_id": None,
+            "prior_research_request": None,
+            "evidence_summary": None,
+            "clarification_question": (
+                "That experiment has not completed successfully. "
+                "Only completed experiments can be used as a follow-up "
+                "baseline. Would you like to start a new experiment?"
+            ),
+        }
+
+    if matched.get("approval_status") != "approved":
+        return {
+            "research_action": "clarification_required",
+            "referenced_experiment_id": None,
+            "prior_research_request": None,
+            "evidence_summary": None,
+            "clarification_question": (
+                "That experiment does not have an approved execution "
+                "record. Please select a completed, approved experiment "
+                "or start a new experiment."
+            ),
+        }
+
     prior_request = matched.get("prior_research_request")
     evidence = matched.get("evidence_summary")
     experiment_id = matched.get("experiment_id")
@@ -127,16 +202,19 @@ def resolve_research_action(
             ),
         }
 
-    if not isinstance(evidence, dict) or not evidence:
+    if not isinstance(evidence, dict) or not _has_saved_result_stages(
+        evidence
+    ):
         return {
             "research_action": "clarification_required",
             "referenced_experiment_id": None,
             "prior_research_request": None,
             "evidence_summary": None,
             "clarification_question": (
-                "I found that experiment, but its result evidence is "
-                "unavailable. I can't safely design a follow-up from it. "
-                "Would you like to start a new experiment?"
+                "I found that experiment, but its saved result-stage "
+                "evidence is incomplete. I can't safely design a "
+                "follow-up from it. Would you like to start a new "
+                "experiment?"
             ),
         }
 
@@ -155,14 +233,21 @@ def build_experiment_context(
     """
     Convert research_ledger rows into compact, trusted session context.
 
-    Only rows with a saved experiment ID and evidence are eligible.
+    Only completed, approved experiments with a saved request and
+    substantive development-stage evidence are eligible.
     """
 
     available: list[dict[str, Any]] = []
 
     for row in ledger_rows:
-        evidence = row.get("evidence_summary") or {}
-        proposal = row.get("proposal") or {}
+        if row.get("status") != "completed":
+            continue
+
+        if row.get("approval_status") != "approved":
+            continue
+
+        evidence = row.get("evidence_summary")
+        proposal = row.get("proposal")
 
         if not isinstance(evidence, dict):
             continue
@@ -172,27 +257,23 @@ def build_experiment_context(
 
         experiment_id = evidence.get("experiment_id")
 
-        if not experiment_id:
+        if not isinstance(experiment_id, str) or not experiment_id.strip():
             continue
 
-        # Support the two likely proposal field names, but do not
-        # manufacture a request if neither is present.
-        prior_request = (
-            proposal.get("research_request")
-            or proposal.get("base_research_request")
-        )
+        prior_request = proposal.get("research_request")
 
-        if not isinstance(prior_request, dict):
+        if not isinstance(prior_request, dict) or not prior_request:
+            continue
+
+        if not _has_saved_result_stages(evidence):
             continue
 
         available.append({
             "ledger_id": str(row.get("id") or ""),
-            "experiment_id": str(experiment_id),
+            "experiment_id": experiment_id,
             "hypothesis": str(row.get("hypothesis") or ""),
-            "status": str(row.get("status") or ""),
-            "approval_status": str(
-                row.get("approval_status") or ""
-            ),
+            "status": "completed",
+            "approval_status": "approved",
             "prior_research_request": prior_request,
             "evidence_summary": evidence,
         })
