@@ -78,6 +78,14 @@ function UniverseConfig({ value, onChange }) {
     })
   }
 
+  const snapshotWarning = (
+    <span className="field-help">
+      This uses the current constituent list to filter historical data.
+      It does not reconstruct historical index membership. Results may
+      contain survivorship bias.
+    </span>
+  )
+
   return (
     <div className="config-card">
       <label>Universe</label>
@@ -87,7 +95,8 @@ function UniverseConfig({ value, onChange }) {
         onChange={(event) => updateType(event.target.value)}
       >
         <option value="all_stocks">All Stocks</option>
-        <option value="major_stocks">Major Stocks</option>
+        <option value="nifty_50">Nifty 50</option>
+        <option value="major_stocks">Nifty 500</option>
         <option value="macro_sector">Macro Sector</option>
         <option value="sector">Sector</option>
         <option value="industry">Industry</option>
@@ -114,12 +123,15 @@ function UniverseConfig({ value, onChange }) {
           </select>
 
           <span className="field-help">
-            Point-in-time mode uses symbols present in the historical
-            bhavcopy for each date. Current-snapshot mode filters using
+            Point-in-time mode uses symbols present in historical
+            EQ-bhavcopy records. Current-snapshot mode filters using
             today's research universe and may introduce survivorship bias.
           </span>
         </>
       )}
+
+      {(type === 'nifty_50' || type === 'major_stocks') &&
+        snapshotWarning}
 
       {loading && (
         <span className="field-help">
@@ -136,6 +148,7 @@ function UniverseConfig({ value, onChange }) {
       {type !== 'all_stocks' &&
         type !== 'symbols' &&
         type !== 'major_stocks' &&
+        type !== 'nifty_50' &&
         !loading && (
           <select
             value={selectedValue}
@@ -179,7 +192,9 @@ function UniverseConfig({ value, onChange }) {
           ? `${universeData?.total_stocks || 0} stocks in current research universe (display count only)`
           : type === 'major_stocks'
             ? `${universeData?.major_stocks_total || 0} current Nifty 500 constituents`
-            : 'Filter the current research universe.'}
+            : type === 'nifty_50'
+              ? `${universeData?.nifty_50_total || 0} current Nifty 50 constituents`
+              : 'Filter the current research universe.'}
       </span>
     </div>
   )

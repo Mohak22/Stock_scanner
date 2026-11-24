@@ -169,3 +169,32 @@ def test_session_coverage_fails_when_a_session_is_missing():
             observed_dates=["2020-01-02"],
             expected_dates=["2020-01-02", "2020-01-03"],
         )
+
+
+def test_nifty_50_filter_uses_current_constituent_snapshot(monkeypatch):
+    from api.research import universe as universe_module
+
+    constituents = pd.DataFrame({
+        "SYMBOL": ["RELIANCE", "TCS", "INFY"],
+        "COMPANY_NAME": ["Reliance", "TCS", "Infosys"],
+    })
+
+    monkeypatch.setattr(
+        universe_module,
+        "load_nifty_50_universe_dataframe",
+        lambda: constituents,
+    )
+
+    data = pd.DataFrame({
+        "SYMBOL": ["RELIANCE", "TCS", "INFY", "HDFCBANK"],
+        "CLOSE": [100, 200, 300, 400],
+    })
+
+    result = universe_module.apply_nifty_50_universe(data)
+
+    assert set(result["SYMBOL"]) == {
+        "RELIANCE",
+        "TCS",
+        "INFY",
+    }
+    assert "HDFCBANK" not in set(result["SYMBOL"])

@@ -22,6 +22,7 @@ from api.research.universe import (
     apply_research_universe,
     load_research_universe_dataframe,
     validate_bhavcopy_session_coverage,
+    apply_nifty_50_universe,
 )
 from research.engine.cost_model import apply_transaction_costs
 from research.engine.random_baseline import build_random_baseline
@@ -878,6 +879,26 @@ def execute_research(
                 status_code=502,
                 detail=str(exc),
             ) from exc
+
+
+    elif request.universe.type == "nifty_50":
+
+        try:
+
+            data = apply_nifty_50_universe(data)
+
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=str(exc),
+            ) from exc
+
+        except RuntimeError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc),
+            ) from exc
+
             
     elif request.universe.type == "symbols":
 
@@ -1765,22 +1786,43 @@ def execute_research(
                 "run_timestamp":
                     run_timestamp,
             },
+
             "universe_membership_note": (
                 (
-                    "Point-in-time all-stocks universe is derived from symbol/date "
-                    "records in the archived historical NSE bhavcopy files. "
-                    "Today's research_universe.csv is not used to filter these "
-                    "historical rows. Validity depends on completeness of the "
-                    "archived bhavcopy files and their historical symbol coverage."
+                    "Point-in-time all-stocks universe is derived from "
+                    "symbol/date records in the archived historical NSE "
+                    "bhavcopy files. Today's research_universe.csv is not "
+                    "used to filter these historical rows. Validity depends "
+                    "on completeness of the archived bhavcopy files and "
+                    "their historical symbol coverage."
                 )
                 if membership_basis == "point_in_time"
                 else
                 (
-                    "research_universe.csv is a current-universe snapshot; "
-                    "it is not point-in-time historical membership. Results may "
-                    "be affected by survivorship bias."
+                    "Nifty 50 research uses the current Nifty 50 constituent "
+                    "snapshot to filter historical stock data. It does not "
+                    "reconstruct historical index membership. Historical "
+                    "results may therefore contain survivorship bias."
+                    if request.universe.type == "nifty_50"
+                    else
+                    (
+                        "Nifty 500 research uses the current Nifty 500 "
+                        "constituent snapshot to filter historical stock "
+                        "data. It does not reconstruct historical index "
+                        "membership. Historical results may therefore "
+                        "contain survivorship bias."
+                        if request.universe.type == "major_stocks"
+                        else
+                        (
+                            "research_universe.csv is a current-universe "
+                            "snapshot; it is not point-in-time historical "
+                            "membership. Results may be affected by "
+                            "survivorship bias."
+                        )
+                    )
                 )
             ),
+
             "market_benchmark": {
                 "name": "NIFTY 50",
                 "file": "nifty_50.parquet",

@@ -29,6 +29,17 @@ ExperimentType = Literal[
 ]
 
 
+SUPPORTED_UNIVERSES = [
+    "all_stocks",
+    "macro_sector",
+    "sector",
+    "industry",
+    "basic_industry",
+    "major_stocks",
+    "nifty_50",
+    "symbols",
+]
+
 class ResearchDesignerOutput(BaseModel):
     status: Literal["needs_clarification", "proposal"]
     assistant_message: str = Field(min_length=1)
@@ -101,6 +112,25 @@ GENERAL RULES
 10. Do not silently invent dates, symbols, universe or horizons.
 11. Do not invent performance results or claim expected profitability.
 12. Do not add complexity merely to make an experiment look advanced.
+
+
+SUPPORTED UNIVERSES
+
+Use only the universe types supplied in supported_universes.
+
+- all_stocks: historical EQ-bhavcopy membership when membership_basis is point_in_time.
+- major_stocks: current Nifty 500 constituent snapshot.
+- nifty_50: current Nifty 50 constituent snapshot.
+- macro_sector, sector, industry, basic_industry: current classification-based filters.
+- symbols: explicitly supplied stock symbols.
+
+For nifty_50:
+- Set universe.type to "nifty_50".
+- Set universe.membership_basis to "current_snapshot".
+- Never set membership_basis to "point_in_time".
+- Explain that historical experiments use today's Nifty 50 constituents.
+- Disclose potential survivorship bias.
+- Do not invent a historical constituent list.
 
 SUPPORTED EXPERIMENT TYPES
 
@@ -276,6 +306,7 @@ def design_experiment(
     context = {
         "conversation_history": conversation_history or [],
         "latest_user_message": user_message,
+        "supported_universes": SUPPORTED_UNIVERSES,
         "supported_features": get_feature_registry(),
         "research_request_schema": ResearchRequest.model_json_schema(),
         "supported_experiment_types": [

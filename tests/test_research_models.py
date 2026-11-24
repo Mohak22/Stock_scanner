@@ -104,3 +104,22 @@ def test_point_in_time_rejects_current_constituent_universes():
             type="major_stocks",
             membership_basis="point_in_time",
         )
+
+
+def test_nifty_50_defaults_to_current_snapshot():
+    config = UniverseConfig(type="nifty_50")
+
+    assert config.membership_basis == "current_snapshot"
+
+
+def test_nifty_50_rejects_point_in_time_membership():
+    with pytest.raises(ValueError, match="only"):
+        UniverseConfig(
+            type="nifty_50",
+            membership_basis="point_in_time",
+        )
+
+
+def test_unsupported_universe_type_is_rejected():
+    with pytest.raises(ValidationError):
+        UniverseConfig(type="nifty_250")
