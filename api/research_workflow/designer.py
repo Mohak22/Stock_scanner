@@ -223,6 +223,36 @@ Do not invent missing values. Ask focused questions.
 """
 
 
+REVISION_DESIGNER_PROMPT = """
+DESIGN MODE: PROPOSAL REVISION
+
+The user wants to modify an existing proposal configuration.
+
+The input contains:
+- prior_research_request: the exact previous validated configuration.
+- previous_ledger_id: the proposal being revised.
+- previous_experiment_id: present only if a saved experiment exists.
+
+IMPORTANT:
+- A revision does NOT require completed research evidence.
+- The previous proposal may be pending, rejected or failed.
+- Never claim that the previous proposal produced research results.
+- Treat prior_research_request as the baseline.
+- Change only the fields explicitly requested by the user.
+- Preserve all other settings exactly: dates, thresholds, features,
+  conditions, horizons, timing and evaluation configuration.
+- If the user says "keep everything else the same", preserve every
+  field not explicitly requested.
+- Return a COMPLETE ResearchRequest, not a partial patch.
+- Do not copy any execution status into the new proposal.
+- Explain exactly what changed.
+- The revised proposal will require fresh human approval.
+- Do not overwrite the original proposal.
+- If the requested universe or feature is unsupported, ask one
+  focused clarification question rather than inventing a value.
+"""
+
+
 FOLLOW_UP_DESIGNER_PROMPT = """
 DESIGN MODE: FOLLOW-UP EXPERIMENT
 
@@ -252,7 +282,7 @@ Rules:
 
 
 def build_designer_system_prompt(
-    design_mode: Literal["initial", "follow_up"],
+    design_mode: Literal["initial", "revision", "follow_up"],
 ) -> str:
     if design_mode == "initial":
         mode_prompt = INITIAL_DESIGNER_PROMPT
@@ -268,7 +298,7 @@ def design_experiment(
     *,
     user_message: str,
     conversation_history: list[dict[str, str]] | None = None,
-    design_mode: Literal["initial", "follow_up"] = "initial",
+    design_mode: Literal["initial", "revision", "follow_up"] = "initial",
     prior_research_request: dict[str, Any] | None = None,
     evidence_summary: dict[str, Any] | None = None,
     previous_experiment_id: str | None = None,

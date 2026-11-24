@@ -15,15 +15,15 @@ class ResearchWorkflowState(TypedDict, total=False):
     """State carried between LangGraph nodes."""
 
     session_id: str
-    design_mode: Literal["initial", "follow_up"]
+    design_mode: Literal["initial", "revision", "follow_up"]
 
     user_message: str
     conversation_history: list[dict[str, str]]
 
-    # Follow-up context: compact, factual evidence only.
     prior_research_request: dict[str, Any] | None
     evidence_summary: dict[str, Any] | None
     previous_experiment_id: str | None
+    previous_ledger_id: str | None
 
     status: Literal[
         "started",

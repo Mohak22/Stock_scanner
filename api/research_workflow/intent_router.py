@@ -13,54 +13,61 @@ from typing import Any, Literal
 
 ResearchAction = Literal[
     "new_research",
+    "revise_proposal",
     "follow_up",
     "clarification_required",
 ]
 
 
 def _has_saved_result_stages(evidence: dict[str, Any]) -> bool:
-    """
-    Confirm that evidence contains substantive saved output
-    from at least the development stage.
-
-    The current research executor always evaluates development.
-    Validation and final holdout may be absent for development-only runs.
-    """
-
     stages = evidence.get("stages")
-
     if not isinstance(stages, dict):
         return False
 
     development = stages.get("development")
-
     if not isinstance(development, dict) or not development:
         return False
 
-    # These fields are populated by the existing _compact_evidence()
-    # function from the deterministic executor's saved stage output.
-    evidence_fields = (
-        "summary",
-        "performance",
-        "diagnostics",
-        "random_baseline",
-    )
-
-    for field in evidence_fields:
+    for field in ("summary", "performance", "diagnostics", "random_baseline"):
         value = development.get(field)
-
-        if isinstance(value, dict) and value:
-            return True
-
-        if isinstance(value, list) and value:
+        if isinstance(value, (dict, list)) and value:
             return True
 
     warnings = development.get("warnings")
+    return isinstance(warnings, list) and bool(warnings)
 
-    if isinstance(warnings, list) and warnings:
-        return True
 
-    return False
+def _empty_resolution(action: str, question: str | None = None) -> dict:
+    return {
+        "research_action": action,
+        "referenced_experiment_id": None,
+        "referenced_ledger_id": None,
+        "prior_research_request": None,
+        "evidence_summary": None,
+        "clarification_question": question,
+    }
+
+
+def _match_reference(
+    reference: str,
+    experiments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    reference = str(reference or "").strip().lower()
+    if not reference:
+        return []
+
+    matches = []
+
+    for item in experiments:
+        identifiers = {
+            str(item.get("experiment_id") or "").strip().lower(),
+            str(item.get("ledger_id") or "").strip().lower(),
+        }
+
+        if reference in identifiers:
+            matches.append(item)
+
+    return matches
 
 
 def resolve_research_action(
@@ -69,158 +76,106 @@ def resolve_research_action(
     referenced_experiment_id: str | None,
     experiments: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """
-    Resolve the model's classification against real session experiments.
-
-    A follow-up requires:
-    - A matching experiment in the current session.
-    - Completed execution.
-    - Explicit approval.
-    - A saved ResearchRequest.
-    - Substantive saved development-stage evidence.
-    """
 
     if classifier_action == "new_research":
+        return _empty_resolution("new_research")
+
+    if classifier_action not in {"revise_proposal", "follow_up"}:
+        return _empty_resolution(
+            "clarification_required",
+            (
+                "Would you like to start a new independent experiment, "
+                "or modify the most recent proposal? You can also provide "
+                "the Ledger ID shown on the proposal card."
+            ),
+        )
+
+    reference = str(referenced_experiment_id or "").strip()
+    matches = _match_reference(reference, experiments) if reference else []
+
+    # If the user clearly asks to revise the previous proposal but
+    # provides no ID, use the latest proposal in this chat.
+    if not reference and classifier_action == "revise_proposal":
+        candidates = [
+            item for item in experiments
+            if item.get("can_revise")
+        ]
+        if candidates:
+            matches = [candidates[0]]
+
+    if len(matches) != 1:
+        choices = []
+        for item in experiments[:5]:
+            choices.append(
+                f"- Ledger ID: {item.get('ledger_id')} | "
+                f"Status: {item.get('status')} | "
+                f"Hypothesis: {item.get('hypothesis', '')}"
+            )
+
+        choices_text = "\n".join(choices) or "No proposals were found."
+
+        return _empty_resolution(
+            "clarification_required",
+            (
+                "I couldn't identify which proposal you mean. "
+                "You can reply with the Ledger ID shown below, for example: "
+                "'Revise proposal <Ledger ID>'.\n\n"
+                f"{choices_text}\n\n"
+                "Or say 'use the latest proposal'."
+            ),
+        )
+
+    matched = matches[0]
+    prior_request = matched.get("prior_research_request")
+
+    if not isinstance(prior_request, dict) or not prior_request:
+        return _empty_resolution(
+            "clarification_required",
+            "I found the proposal, but its original configuration is unavailable.",
+        )
+
+    experiment_id = matched.get("experiment_id")
+    ledger_id = matched.get("ledger_id")
+    evidence = matched.get("evidence_summary")
+
+    if classifier_action == "revise_proposal":
         return {
-            "research_action": "new_research",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
+            "research_action": "revise_proposal",
+            "referenced_experiment_id": experiment_id,
+            "referenced_ledger_id": ledger_id,
+            "prior_research_request": prior_request,
             "evidence_summary": None,
             "clarification_question": None,
         }
 
-    if classifier_action == "ambiguous":
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "Do you want to start a different, independent experiment, "
-                "or improve one of your previous experiments? If you want "
-                "an improvement, which experiment should we build on?"
-            ),
-        }
-
-    if classifier_action != "follow_up":
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "Should this be a new independent experiment, or a "
-                "follow-up improvement to a previous experiment?"
-            ),
-        }
-
-    reference = str(referenced_experiment_id or "").strip()
-
-    if not reference:
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "Which previous experiment do you want to improve? "
-                "You can provide its experiment ID. Or tell me if this "
-                "is a completely new experiment."
-            ),
-        }
-
-    matches = []
-
-    for experiment in experiments:
-        experiment_id = str(
-            experiment.get("experiment_id") or ""
-        ).strip()
-
-        ledger_id = str(
-            experiment.get("ledger_id") or ""
-        ).strip()
-
-        if reference in {experiment_id, ledger_id}:
-            matches.append(experiment)
-
-    if len(matches) != 1:
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                f"I couldn't identify a completed experiment matching "
-                f"'{reference}' in this chat. Do you want to start a new "
-                "experiment, or provide the ID of the experiment you "
-                "want to improve?"
-            ),
-        }
-
-    matched = matches[0]
-
+    # A scientific follow-up is different: it requires actual completed
+    # evidence and must never use a failed proposal as factual evidence.
     if matched.get("status") != "completed":
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "That experiment has not completed successfully. "
-                "Only completed experiments can be used as a follow-up "
-                "baseline. Would you like to start a new experiment?"
+        return _empty_resolution(
+            "clarification_required",
+            (
+                "This proposal has not completed successfully. I can revise "
+                "its configuration, but I cannot use it as completed "
+                "research evidence. Say 'revise this proposal' to modify it."
             ),
-        }
+        )
 
     if matched.get("approval_status") != "approved":
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "That experiment does not have an approved execution "
-                "record. Please select a completed, approved experiment "
-                "or start a new experiment."
-            ),
-        }
+        return _empty_resolution(
+            "clarification_required",
+            "The experiment does not have an approved execution record.",
+        )
 
-    prior_request = matched.get("prior_research_request")
-    evidence = matched.get("evidence_summary")
-    experiment_id = matched.get("experiment_id")
-
-    if not isinstance(prior_request, dict) or not prior_request:
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "I found that experiment, but its original validated "
-                "configuration is unavailable. Please start a new "
-                "experiment rather than building on incomplete context."
-            ),
-        }
-
-    if not isinstance(evidence, dict) or not _has_saved_result_stages(
-        evidence
-    ):
-        return {
-            "research_action": "clarification_required",
-            "referenced_experiment_id": None,
-            "prior_research_request": None,
-            "evidence_summary": None,
-            "clarification_question": (
-                "I found that experiment, but its saved result-stage "
-                "evidence is incomplete. I can't safely design a "
-                "follow-up from it. Would you like to start a new "
-                "experiment?"
-            ),
-        }
+    if not isinstance(evidence, dict) or not _has_saved_result_stages(evidence):
+        return _empty_resolution(
+            "clarification_required",
+            "The experiment's saved result evidence is incomplete.",
+        )
 
     return {
         "research_action": "follow_up",
-        "referenced_experiment_id": str(experiment_id),
+        "referenced_experiment_id": experiment_id,
+        "referenced_ledger_id": ledger_id,
         "prior_research_request": prior_request,
         "evidence_summary": evidence,
         "clarification_question": None,
@@ -230,52 +185,42 @@ def resolve_research_action(
 def build_experiment_context(
     ledger_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """
-    Convert research_ledger rows into compact, trusted session context.
 
-    Only completed, approved experiments with a saved request and
-    substantive development-stage evidence are eligible.
-    """
-
-    available: list[dict[str, Any]] = []
+    available = []
 
     for row in ledger_rows:
-        if row.get("status") != "completed":
-            continue
-
-        if row.get("approval_status") != "approved":
-            continue
-
-        evidence = row.get("evidence_summary")
-        proposal = row.get("proposal")
-
-        if not isinstance(evidence, dict):
-            continue
+        proposal = row.get("proposal") or {}
+        evidence = row.get("evidence_summary") or {}
 
         if not isinstance(proposal, dict):
             continue
 
-        experiment_id = evidence.get("experiment_id")
-
-        if not isinstance(experiment_id, str) or not experiment_id.strip():
-            continue
-
         prior_request = proposal.get("research_request")
-
         if not isinstance(prior_request, dict) or not prior_request:
             continue
 
-        if not _has_saved_result_stages(evidence):
-            continue
+        experiment_id = evidence.get("experiment_id")
+        status = str(row.get("status") or "proposed")
+        approval_status = str(row.get("approval_status") or "pending")
+
+        can_follow_up = (
+            status == "completed"
+            and approval_status == "approved"
+            and isinstance(evidence, dict)
+            and _has_saved_result_stages(evidence)
+        )
 
         available.append({
             "ledger_id": str(row.get("id") or ""),
             "experiment_id": experiment_id,
             "hypothesis": str(row.get("hypothesis") or ""),
-            "status": "completed",
-            "approval_status": "approved",
+            "status": status,
+            "approval_status": approval_status,
             "prior_research_request": prior_request,
-            "evidence_summary": evidence,
+            "evidence_summary": evidence if can_follow_up else None,
+            "can_revise": True,
+            "can_follow_up": can_follow_up,
         })
 
+    # The database query orders newest first; preserve that order.
     return available
