@@ -55,6 +55,36 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _build_saved_chat_response(
+    *,
+    session_id: UUID,
+    content: str,
+    metadata: dict,
+) -> dict:
+    """Reconstruct the original API response for an idempotent retry."""
+
+    metadata = metadata or {}
+
+    return {
+        "success": True,
+        "session_id": str(session_id),
+        "intent": metadata.get("intent"),
+        "response": content,
+        "needs_follow_up": metadata.get("needs_follow_up", False),
+        "follow_up_question": metadata.get("follow_up_question", ""),
+        "research_question": metadata.get("research_question", ""),
+        "hypothesis": metadata.get("hypothesis", ""),
+        "research_action": metadata.get("research_action"),
+        "referenced_experiment_id": metadata.get(
+            "referenced_experiment_id"
+        ),
+        "workflow_status": metadata.get("workflow_status"),
+        "agent_run_id": metadata.get("agent_run_id"),
+        "ledger_id": metadata.get("ledger_id"),
+        "usage": metadata.get("usage", {}),
+    }
+
+
 def _get_active_session(session_id: UUID) -> dict:
     response = (
         get_supabase_client()
@@ -386,12 +416,16 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
 def _persist_langgraph_proposal(
     *,
     session_id: UUID,
+    client_message_id: str,
     routing: dict,
     workflow_result: dict,
 ) -> dict:
     """
-    Persist a LangGraph proposal in the same format used by the
-    existing Agent 2 approval and execution endpoints.
+    Persist a validated LangGraph proposal atomically through
+    the idempotent PostgreSQL RPC function.
+
+    Repeated calls with the same session and client message ID
+    reuse the original agent run and ledger record.
 
     This function never approves or executes an experiment.
     """
@@ -437,8 +471,12 @@ def _persist_langgraph_proposal(
             f"{workflow_status}"
         )
 
+    if not client_message_id:
+        raise ValueError(
+            "client_message_id is required for proposal persistence."
+        )
+
     # Validate compatibility with the existing approval pipeline.
-    # This is a schema validation only; no experiment is executed.
     proposal = Agent2Proposal.model_validate({
         "research_question": workflow_result.get("research_question", ""),
         "hypothesis": workflow_result.get("hypothesis", ""),
@@ -457,79 +495,70 @@ def _persist_langgraph_proposal(
 
     run_id = str(uuid4())
     now = _now()
-    db = get_supabase_client()
 
-    # Create the durable agent-run record.
-    db.table("agent_runs").insert({
-        "id": run_id,
-        "session_id": str(session_id),
-        "thread_id": str(session_id),
-        "status": "running",
-        "current_step": "saving_proposal",
-        "provider": usage.get("provider", "gemini"),
-        "model": usage.get("model"),
-        "tokens_used": int(usage.get("total_tokens") or 0),
-        "input_data": {
-            "research_question": proposal.research_question,
-            "hypothesis": proposal.hypothesis,
-            "design_mode": (
-                "follow_up"
-                if routing.get("research_action") == "follow_up"
-                else "initial"
-            ),
-            "referenced_experiment_id": routing.get(
-                "referenced_experiment_id"
-            ),
-        },
-        "output_data": {
-            "proposal": proposal_data,
-            "usage": usage,
-            "workflow": "langgraph",
-        },
-        "started_at": now,
-    }).execute()
+    input_data = {
+        "research_question": proposal.research_question,
+        "hypothesis": proposal.hypothesis,
+        "design_mode": (
+            "follow_up"
+            if routing.get("research_action") == "follow_up"
+            else "initial"
+        ),
+        "referenced_experiment_id": routing.get(
+            "referenced_experiment_id"
+        ),
+        "client_message_id": client_message_id,
+    }
 
-    # Persist in the same ledger shape used by the existing
-    # /propose endpoint.
-    ledger_response = (
-        db.table("research_ledger")
-        .insert({
-            "session_id": str(session_id),
-            "agent_run_id": run_id,
-            "hypothesis": proposal.hypothesis,
-            "hypothesis_family": None,
-            "status": "proposed",
-            "approval_status": "pending",
-            "proposal": proposal_data,
-            "decision": {},
-            "evidence_summary": {},
-        })
+    output_data = {
+        "proposal": proposal_data,
+        "usage": usage,
+        "workflow": "langgraph",
+    }
+
+    # The PostgreSQL function serializes identical request IDs and
+    # returns the original IDs when this request was already persisted.
+    rpc_response = (
+        get_supabase_client()
+        .rpc(
+            "persist_langgraph_proposal_idempotent",
+            {
+                "p_run_id": run_id,
+                "p_session_id": str(session_id),
+                "p_thread_id": str(session_id),
+                "p_provider": usage.get("provider", "gemini"),
+                "p_model": usage.get("model"),
+                "p_tokens_used": int(
+                    usage.get("total_tokens") or 0
+                ),
+                "p_input_data": input_data,
+                "p_output_data": output_data,
+                "p_started_at": now,
+                "p_hypothesis": proposal.hypothesis,
+                "p_proposal": proposal_data,
+                "p_client_message_id": client_message_id,
+            },
+        )
         .execute()
     )
 
-    ledger_rows = ledger_response.data or []
+    result = rpc_response.data
 
-    if not ledger_rows:
-        db.table("agent_runs").update({
-            "status": "failed",
-            "current_step": "ledger_persistence_failed",
-            "updated_at": _now(),
-        }).eq("id", run_id).execute()
+    if isinstance(result, list) and result:
+        result = result[0]
 
+    if not isinstance(result, dict):
         raise RuntimeError(
-            "The proposal could not be saved to the research ledger."
+            "The proposal persistence RPC returned an invalid response."
         )
 
-    ledger = ledger_rows[0]
+    persisted_run_id = result.get("agent_run_id")
+    ledger_id = result.get("ledger_id")
 
-    # Mark the run as awaiting approval. The approval endpoint
-    # will later queue it using the existing execution pipeline.
-    db.table("agent_runs").update({
-        "status": "awaiting_approval",
-        "current_step": "awaiting_human_approval",
-        "completed_at": _now(),
-        "updated_at": _now(),
-    }).eq("id", run_id).execute()
+    if not persisted_run_id or not ledger_id:
+        raise RuntimeError(
+            "The proposal persistence RPC did not return both identifiers."
+        )
 
     assistant_text = (
         f"Experiment proposal: {proposal.research_question}\n\n"
@@ -544,8 +573,8 @@ def _persist_langgraph_proposal(
     return {
         "status": "proposal_saved",
         "assistant_message": assistant_text,
-        "agent_run_id": run_id,
-        "ledger_id": ledger["id"],
+        "agent_run_id": persisted_run_id,
+        "ledger_id": ledger_id,
         "proposal": proposal_data,
     }
 
@@ -560,30 +589,117 @@ def chat_with_research_assistant(
 
     db = get_supabase_client()
     message = request.message.strip()
+    client_message_id = request.client_message_id
 
     try:
-        existing = (
+        # --------------------------------------------------------
+        # 1. Check whether this user message was already received.
+        # --------------------------------------------------------
+
+        existing_user = (
             db.table("chat_messages")
-            .select("id")
+            .select("id,content")
             .eq("session_id", str(session_id))
             .eq("role", "user")
             .contains(
                 "metadata",
-                {"client_message_id": request.client_message_id},
+                {"client_message_id": client_message_id},
             )
             .limit(1)
             .execute()
         )
 
-        if not existing.data:
-            db.table("chat_messages").insert({
-                "session_id": str(session_id),
-                "role": "user",
-                "content": message,
-                "metadata": {
-                    "client_message_id": request.client_message_id,
-                },
-            }).execute()
+        existing_user_rows = existing_user.data or []
+
+        if existing_user_rows:
+            saved_user = existing_user_rows[0]
+
+            if saved_user["content"].strip() != message:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "IDEMPOTENCY_KEY_REUSED",
+                        "message": (
+                            "This client_message_id was already used "
+                            "for a different message."
+                        ),
+                    },
+                )
+
+        else:
+            try:
+                db.table("chat_messages").insert({
+                    "session_id": str(session_id),
+                    "role": "user",
+                    "content": message,
+                    "metadata": {
+                        "client_message_id": client_message_id,
+                    },
+                }).execute()
+
+            except Exception:
+                # A concurrent request may have inserted this message first.
+                existing_user = (
+                    db.table("chat_messages")
+                    .select("id,content")
+                    .eq("session_id", str(session_id))
+                    .eq("role", "user")
+                    .contains(
+                        "metadata",
+                        {"client_message_id": client_message_id},
+                    )
+                    .limit(1)
+                    .execute()
+                )
+
+                rows = existing_user.data or []
+
+                if not rows:
+                    raise
+
+                if rows[0]["content"].strip() != message:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "IDEMPOTENCY_KEY_REUSED",
+                            "message": (
+                                "This client_message_id was already used "
+                                "for a different message."
+                            ),
+                        },
+                    )
+
+        # --------------------------------------------------------
+        # 2. Return an already completed response on retry.
+        # --------------------------------------------------------
+
+        existing_assistant = (
+            db.table("chat_messages")
+            .select("content,metadata")
+            .eq("session_id", str(session_id))
+            .eq("role", "assistant")
+            .contains(
+                "metadata",
+                {"client_message_id": client_message_id},
+            )
+            .limit(1)
+            .execute()
+        )
+
+        assistant_rows = existing_assistant.data or []
+
+        if assistant_rows:
+            saved = assistant_rows[0]
+
+            return _build_saved_chat_response(
+                session_id=session_id,
+                content=saved["content"],
+                metadata=saved.get("metadata") or {},
+            )
+
+        # --------------------------------------------------------
+        # 3. Load context and invoke the conversational router.
+        # --------------------------------------------------------
 
         messages = _load_recent_messages(session_id)
         available_experiments = _load_session_experiments(session_id)
@@ -616,7 +732,7 @@ def chat_with_research_assistant(
         }
 
         # --------------------------------------------------------
-        # Proposal intent: resolve initial vs follow-up first.
+        # 4. Proposal intent: resolve initial vs follow-up.
         # --------------------------------------------------------
 
         if routed["intent"] == "propose_experiment":
@@ -642,7 +758,7 @@ def chat_with_research_assistant(
                 }
 
                 # ------------------------------------------------
-                # LangGraph initial or follow-up design.
+                # 5. Invoke the appropriate LangGraph workflow.
                 # ------------------------------------------------
 
                 if routing["research_action"] == "follow_up":
@@ -672,8 +788,13 @@ def chat_with_research_assistant(
                     workflow_result.get("usage") or {}
                 )
 
+                # ------------------------------------------------
+                # 6. Persist the validated proposal idempotently.
+                # ------------------------------------------------
+
                 persisted = _persist_langgraph_proposal(
                     session_id=session_id,
+                    client_message_id=client_message_id,
                     routing=routing,
                     workflow_result=workflow_result,
                 )
@@ -696,10 +817,11 @@ def chat_with_research_assistant(
                     follow_up_question = ""
 
         # --------------------------------------------------------
-        # Persist the assistant message exactly once.
+        # 7. Persist the assistant response with the same ID.
         # --------------------------------------------------------
 
         metadata = {
+            "client_message_id": client_message_id,
             "intent": routed["intent"],
             "needs_follow_up": needs_follow_up,
             "follow_up_question": follow_up_question,
@@ -715,16 +837,49 @@ def chat_with_research_assistant(
             "usage": response_usage,
         }
 
-        db.table("chat_messages").insert({
-            "session_id": str(session_id),
-            "role": "assistant",
-            "content": assistant_text,
-            "metadata": metadata,
-        }).execute()
+        try:
+            db.table("chat_messages").insert({
+                "session_id": str(session_id),
+                "role": "assistant",
+                "content": assistant_text,
+                "metadata": metadata,
+            }).execute()
+
+        except Exception:
+            # A concurrent request may have completed this same message.
+            existing_assistant = (
+                db.table("chat_messages")
+                .select("content,metadata")
+                .eq("session_id", str(session_id))
+                .eq("role", "assistant")
+                .contains(
+                    "metadata",
+                    {"client_message_id": client_message_id},
+                )
+                .limit(1)
+                .execute()
+            )
+
+            rows = existing_assistant.data or []
+
+            if not rows:
+                raise
+
+            saved = rows[0]
+
+            return _build_saved_chat_response(
+                session_id=session_id,
+                content=saved["content"],
+                metadata=saved.get("metadata") or {},
+            )
 
         db.table("chat_sessions").update({
             "updated_at": _now(),
         }).eq("id", str(session_id)).execute()
+
+        # --------------------------------------------------------
+        # 8. Return the API response.
+        # --------------------------------------------------------
 
         return {
             "success": True,
