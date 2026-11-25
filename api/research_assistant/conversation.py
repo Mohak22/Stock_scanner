@@ -21,6 +21,7 @@ from api.research_agent.models import Agent2Proposal
 from api.research_workflow.graph import (
     run_follow_up_research_design,
     run_initial_research_design,
+    run_revision_research_design,
 )
 from api.research_workflow.intent_router import (
     build_experiment_context,
@@ -41,6 +42,7 @@ ALLOWED_INTENTS = {
 
 ALLOWED_RESEARCH_ACTIONS = {
     "new_research",
+    "revise_proposal",
     "follow_up",
     "ambiguous",
 }
@@ -75,9 +77,11 @@ def _build_saved_chat_response(
         "research_question": metadata.get("research_question", ""),
         "hypothesis": metadata.get("hypothesis", ""),
         "research_action": metadata.get("research_action"),
+        "design_mode": metadata.get("design_mode"),
         "referenced_experiment_id": metadata.get(
             "referenced_experiment_id"
         ),
+        "referenced_ledger_id": metadata.get("referenced_ledger_id"),
         "workflow_status": metadata.get("workflow_status"),
         "agent_run_id": metadata.get("agent_run_id"),
         "ledger_id": metadata.get("ledger_id"),
@@ -127,12 +131,7 @@ def _load_session_experiments(
     session_id: UUID,
     limit: int = 15,
 ) -> list[dict]:
-    """
-    Load only this session's experiment ledger records.
-
-    The LLM receives a compact reference list. The full validated
-    request and evidence remain server-side.
-    """
+    """Load this session's experiment records and build compact context."""
 
     response = (
         get_supabase_client()
@@ -180,6 +179,87 @@ def _response_budget(message: str) -> int:
     return 900
 
 
+def _find_explicit_reference(
+    message: str,
+    experiments: list[dict],
+) -> str | None:
+    """
+    Prefer an exact ID mentioned by the user over the classifier's guess.
+    Both Ledger IDs and Experiment IDs are accepted.
+    """
+
+    message_lower = message.lower()
+
+    for item in experiments:
+        for key in ("ledger_id", "experiment_id"):
+            reference = item.get(key)
+
+            if reference and str(reference).lower() in message_lower:
+                return str(reference)
+
+    return None
+
+
+def _apply_deterministic_action_cues(
+    *,
+    message: str,
+    action: str | None,
+) -> str | None:
+    """
+    Apply clear language cues without overriding evidence-based follow-ups.
+    The LLM remains responsible for interpreting less obvious requests.
+    """
+
+    text = message.lower()
+
+    follow_up_cues = (
+        "based on the results",
+        "based on results",
+        "according to the results",
+        "based on its results",
+        "follow-up",
+        "follow up",
+        "use the evidence",
+        "using the evidence",
+        "what did the results suggest",
+        "extend the completed experiment",
+    )
+
+    revision_cues = (
+        "revise",
+        "revision",
+        "modify",
+        "change the",
+        "update the",
+        "adjust the",
+        "keep everything else",
+        "same settings",
+        "same configuration",
+        "replace the",
+        "add a condition",
+        "remove the filter",
+    )
+
+    new_research_cues = (
+        "new independent experiment",
+        "independent experiment",
+        "completely new experiment",
+        "different hypothesis",
+        "start a new experiment",
+    )
+
+    if any(cue in text for cue in new_research_cues):
+        return "new_research"
+
+    if any(cue in text for cue in follow_up_cues):
+        return "follow_up"
+
+    if any(cue in text for cue in revision_cues):
+        return "revise_proposal"
+
+    return action
+
+
 def _call_research_router(
     messages: list[dict],
     latest_user_message: str,
@@ -196,20 +276,20 @@ def _call_research_router(
 
     model = os.getenv(
         "RESEARCH_ROUTER_MODEL",
-        os.getenv(
-            "RESEARCH_AGENT_MODEL",
-            "gemini-3.5-flash-lite",
-        ),
+        os.getenv("RESEARCH_AGENT_MODEL", "gemini-3.5-flash-lite"),
     )
 
     client = genai.Client(api_key=api_key)
 
-    # Expose only identifiers and short descriptions to the classifier.
     experiment_references = [
         {
-            "experiment_id": item["experiment_id"],
+            "ledger_id": item.get("ledger_id"),
+            "experiment_id": item.get("experiment_id"),
             "hypothesis": item.get("hypothesis", ""),
             "status": item.get("status", ""),
+            "approval_status": item.get("approval_status", ""),
+            "can_revise": item.get("can_revise", False),
+            "can_follow_up": item.get("can_follow_up", False),
         }
         for item in (available_experiments or [])
     ]
@@ -217,86 +297,82 @@ def _call_research_router(
     system_prompt = """
 You are the conversational research assistant for Stock Scanner.
 
-Your role is to help the user understand markets, statistics,
-research methodology, hypotheses and the Stock Scanner platform.
+Help the user understand markets, statistics, hypotheses,
+research methodology and the Stock Scanner platform.
 
-You are a knowledgeable technical assistant, not a generic chatbot.
+You are a technical assistant, not a generic chatbot.
 
 CAPABILITIES:
-- Explain finance, stock-market and technical-analysis concepts.
-- Explain statistics, probability, hypothesis testing and ML concepts.
+- Explain finance, statistics, probability and ML concepts.
 - Discuss backtesting, temporal validation, leakage and research design.
 - Help formulate and critique research hypotheses.
-- Discuss existing experiments only when their evidence is available.
-- Identify whether the user wants a new experiment or a follow-up.
+- Discuss saved experiments using only available saved context.
 
 LIMITATIONS:
 - Live web search and current market data are not connected.
 - Do not claim to have executed an experiment from this chat.
-- Do not invent experiment results, stock prices, financial figures,
-  historical data or unsupported feature-engine capabilities.
+- Do not invent experiment results, prices, financial figures or
+  unsupported feature-engine capabilities.
 - The deterministic Python research engine owns all calculations.
 
 ANSWER QUALITY:
 1. Answer the actual question first.
-2. Explain intuition before technical terminology where useful.
-3. Explain assumptions and limitations for statistical questions.
-4. For hypotheses, discuss rationale, measurable outcome,
-   comparison/baseline, confounders and failure modes.
-5. Ask one focused clarification only when essential information
-   is missing. Do not turn every question into an experiment.
-6. Never invent capabilities that the application does not have.
-7. Be honest when evidence is insufficient.
-8. Avoid unnecessary repetition and filler.
+2. Explain intuition before terminology where useful.
+3. Explain assumptions and limitations.
+4. Ask one focused clarification only when essential.
+5. Do not turn every question into an experiment.
+6. Never invent capabilities or evidence.
 
 INTENT CLASSIFICATION:
-- research_question: conceptual or technical research discussion.
+- research_question: conceptual or technical discussion.
 - propose_experiment: the user wants an experiment proposal.
-- explain_experiment: the user asks about an existing experiment.
-- compare_experiments: the user wants experiments compared.
+- explain_experiment: asks about an existing experiment.
+- compare_experiments: wants experiments compared.
 - out_of_scope: unrelated request.
 - needs_clarification: essential information is missing.
 
-RESEARCH ACTION CLASSIFICATION:
+For propose_experiment, classify research_action:
 
-When intent is "propose_experiment", also classify research_action:
+1. new_research:
+   A new, independent experiment or different hypothesis.
+   Previous experiments are not being used as the baseline.
 
-1. "new_research":
-   The user clearly wants a new, independent experiment or a different
-   hypothesis. Previous experiments are not the baseline.
+2. revise_proposal:
+   The user wants to change an existing proposal's configuration.
+   This can apply to pending, rejected, failed or unapproved proposals.
+   It does NOT require completed experiment evidence.
+   Examples:
+   - "Change the RSI threshold in the previous proposal."
+   - "Keep everything else but add a volume filter."
+   - "Revise proposal ledger-123."
+   - "Use the same configuration but change the holding period."
 
-2. "follow_up":
-   The user clearly wants to improve, modify, extend or retest a
-   specific previous experiment. Examples:
-   - "Add a volume filter to EXP-123."
-   - "Can we improve the previous RSI experiment?"
-   - "Test the same setup but with a different threshold."
+3. follow_up:
+   The user wants a new investigation informed by the results/evidence
+   of a previously completed experiment.
+   Follow-up requires completed, approved experiment evidence.
+   Examples:
+   - "Based on the results, test whether the effect holds in another regime."
+   - "What do the results suggest we should investigate next?"
 
-   If the user clearly refers to a previous experiment, set
-   referenced_experiment_id to its exact ID from AVAILABLE EXPERIMENTS.
+4. ambiguous:
+   Use when the intended action or target cannot be identified.
 
-3. "ambiguous":
-   Use this when you cannot confidently distinguish a new experiment
-   from an improvement, or cannot identify which previous experiment
-   the user means.
+IMPORTANT DISTINCTIONS:
+- Revising a proposal is NOT the same as following up on results.
+- A revision changes the proposed configuration; it does not use
+  completed experiment evidence.
+- A follow-up uses evidence from a completed, approved experiment.
+- Do not classify every mention of a previous experiment as a revision.
+- If the user clearly requests a new independent experiment, use
+  new_research even if previous experiments exist.
+- If the target of a revision or follow-up is unclear, use ambiguous.
+- Never invent an ID. Only select IDs in AVAILABLE EXPERIMENTS.
+- IDs may be Ledger IDs or Experiment IDs.
+- For non-proposal intents, research_action and referenced_experiment_id
+  must be null.
 
-IMPORTANT:
-- Do not assume that every new hypothesis is a follow-up.
-- Do not assume that every message mentioning a previous experiment
-  means the user wants to modify it.
-- "Let's test something else" is normally new_research if it clearly
-  means a separate investigation; otherwise use ambiguous.
-- "Improve it" without a clear antecedent is ambiguous.
-- Never invent an experiment ID.
-- Only select IDs present in AVAILABLE EXPERIMENTS.
-- If the user says "new experiment" or "independent experiment",
-  choose new_research even if prior experiments exist.
-- If the user says "improve", "modify", "extend" or "add a condition"
-  but the target is unclear, choose ambiguous.
-- For non-proposal intents, set research_action to null and
-  referenced_experiment_id to null.
-
-Return one valid JSON object with exactly these keys:
+Return exactly these JSON keys:
 {
   "intent": "...",
   "response": "Markdown answer shown to the user",
@@ -308,26 +384,18 @@ Return one valid JSON object with exactly these keys:
   "referenced_experiment_id": null
 }
 
-A proposed experiment is only a research idea. Do not claim it has
-been configured, approved or executed.
+A proposal is only a research idea. Do not claim it has been
+configured, approved or executed.
 
-Return valid JSON only. Do not use Markdown fences around the JSON.
+Return valid JSON only. Do not use Markdown fences.
 """
 
     prompt = (
         system_prompt
         + "\n\nAVAILABLE EXPERIMENTS:\n"
-        + json.dumps(
-            experiment_references,
-            ensure_ascii=False,
-            default=str,
-        )
+        + json.dumps(experiment_references, ensure_ascii=False, default=str)
         + "\n\nRECENT CONVERSATION:\n"
-        + json.dumps(
-            messages,
-            ensure_ascii=False,
-            default=str,
-        )
+        + json.dumps(messages, ensure_ascii=False, default=str)
         + "\n\nLATEST USER MESSAGE:\n"
         + latest_user_message
     )
@@ -345,53 +413,51 @@ Return valid JSON only. Do not use Markdown fences around the JSON.
     raw_text = getattr(response, "text", None)
 
     if not raw_text:
-        raise RuntimeError(
-            "The research assistant returned an empty response."
-        )
+        raise RuntimeError("The research assistant returned an empty response.")
 
     result = json.loads(raw_text)
 
     intent = result.get("intent")
 
     if intent not in ALLOWED_INTENTS:
-        raise ValueError(
-            "The research assistant returned an invalid intent."
-        )
+        raise ValueError("The research assistant returned an invalid intent.")
 
     assistant_text = str(result.get("response", "")).strip()
 
     if not assistant_text:
-        raise RuntimeError(
-            "The research assistant returned an empty answer."
-        )
+        raise RuntimeError("The research assistant returned an empty answer.")
 
     result["response"] = assistant_text
-    result["needs_follow_up"] = bool(
-        result.get("needs_follow_up", False)
-    )
-    result["follow_up_question"] = str(
-        result.get("follow_up_question", "")
-    )
-    result["research_question"] = str(
-        result.get("research_question", "")
-    )
-    result["hypothesis"] = str(
-        result.get("hypothesis", "")
-    )
+    result["needs_follow_up"] = bool(result.get("needs_follow_up", False))
+    result["follow_up_question"] = str(result.get("follow_up_question", ""))
+    result["research_question"] = str(result.get("research_question", ""))
+    result["hypothesis"] = str(result.get("hypothesis", ""))
 
     action = result.get("research_action")
 
     if intent == "propose_experiment":
         if action not in ALLOWED_RESEARCH_ACTIONS:
             action = "ambiguous"
+
+        action = _apply_deterministic_action_cues(
+            message=latest_user_message,
+            action=action,
+        )
     else:
         action = None
 
     result["research_action"] = action
 
     reference = result.get("referenced_experiment_id")
+    reference = str(reference).strip() if reference else None
+
+    explicit_reference = _find_explicit_reference(
+        latest_user_message,
+        available_experiments or [],
+    )
+
     result["referenced_experiment_id"] = (
-        str(reference).strip() if reference else None
+        explicit_reference or reference
     )
 
     usage_metadata = getattr(response, "usage_metadata", None)
@@ -420,15 +486,7 @@ def _persist_langgraph_proposal(
     routing: dict,
     workflow_result: dict,
 ) -> dict:
-    """
-    Persist a validated LangGraph proposal atomically through
-    the idempotent PostgreSQL RPC function.
-
-    Repeated calls with the same session and client message ID
-    reuse the original agent run and ledger record.
-
-    This function never approves or executes an experiment.
-    """
+    """Persist a validated proposal through the existing idempotent RPC."""
 
     workflow_status = workflow_result.get("status")
 
@@ -445,10 +503,7 @@ def _persist_langgraph_proposal(
 
     if workflow_status == "validation_failed":
         errors = workflow_result.get("validation_errors") or []
-
-        error_text = "\n".join(
-            f"- {error}" for error in errors
-        )
+        error_text = "\n".join(f"- {error}" for error in errors)
 
         message = (
             workflow_result.get("assistant_message")
@@ -467,16 +522,22 @@ def _persist_langgraph_proposal(
 
     if workflow_status != "proposal_validated":
         raise RuntimeError(
-            "Unexpected LangGraph workflow status: "
-            f"{workflow_status}"
+            f"Unexpected LangGraph workflow status: {workflow_status}"
         )
 
     if not client_message_id:
-        raise ValueError(
-            "client_message_id is required for proposal persistence."
-        )
+        raise ValueError("client_message_id is required for persistence.")
 
-    # Validate compatibility with the existing approval pipeline.
+    research_action = routing.get("research_action")
+
+    # A revision is not a child experiment. Only an evidence-based
+    # follow-up receives the previous experiment as its parent.
+    parent_experiment_id = (
+        routing.get("referenced_experiment_id")
+        if research_action == "follow_up"
+        else None
+    )
+
     proposal = Agent2Proposal.model_validate({
         "research_question": workflow_result.get("research_question", ""),
         "hypothesis": workflow_result.get("hypothesis", ""),
@@ -485,9 +546,7 @@ def _persist_langgraph_proposal(
         "experiment_type": workflow_result.get("experiment_type"),
         "confidence": workflow_result.get("confidence", "medium"),
         "research_request": workflow_result.get("validated_request"),
-        "parent_experiment_id": routing.get(
-            "referenced_experiment_id"
-        ),
+        "parent_experiment_id": parent_experiment_id,
     })
 
     proposal_data = proposal.model_dump(mode="json")
@@ -496,17 +555,20 @@ def _persist_langgraph_proposal(
     run_id = str(uuid4())
     now = _now()
 
+    design_mode = {
+        "new_research": "initial",
+        "revise_proposal": "revision",
+        "follow_up": "follow_up",
+    }.get(research_action, "initial")
+
     input_data = {
         "research_question": proposal.research_question,
         "hypothesis": proposal.hypothesis,
-        "design_mode": (
-            "follow_up"
-            if routing.get("research_action") == "follow_up"
-            else "initial"
-        ),
+        "design_mode": design_mode,
         "referenced_experiment_id": routing.get(
             "referenced_experiment_id"
         ),
+        "referenced_ledger_id": routing.get("referenced_ledger_id"),
         "client_message_id": client_message_id,
     }
 
@@ -516,8 +578,6 @@ def _persist_langgraph_proposal(
         "workflow": "langgraph",
     }
 
-    # The PostgreSQL function serializes identical request IDs and
-    # returns the original IDs when this request was already persisted.
     rpc_response = (
         get_supabase_client()
         .rpc(
@@ -528,9 +588,7 @@ def _persist_langgraph_proposal(
                 "p_thread_id": str(session_id),
                 "p_provider": usage.get("provider", "gemini"),
                 "p_model": usage.get("model"),
-                "p_tokens_used": int(
-                    usage.get("total_tokens") or 0
-                ),
+                "p_tokens_used": int(usage.get("total_tokens") or 0),
                 "p_input_data": input_data,
                 "p_output_data": output_data,
                 "p_started_at": now,
@@ -560,8 +618,19 @@ def _persist_langgraph_proposal(
             "The proposal persistence RPC did not return both identifiers."
         )
 
+    if design_mode == "revision":
+        lead = (
+            "Revised experiment proposal. The original proposal remains "
+            "unchanged; this is a new proposal for your review."
+        )
+    elif design_mode == "follow_up":
+        lead = "Follow-up experiment proposal based on the previous evidence."
+    else:
+        lead = "New experiment proposal."
+
     assistant_text = (
-        f"Experiment proposal: {proposal.research_question}\n\n"
+        f"{lead}\n\n"
+        f"Research question: {proposal.research_question}\n\n"
         f"Hypothesis: {proposal.hypothesis}\n\n"
         f"Rationale: {proposal.rationale}\n\n"
         f"Expected learning: {proposal.expected_learning}\n\n"
@@ -592,19 +661,13 @@ def chat_with_research_assistant(
     client_message_id = request.client_message_id
 
     try:
-        # --------------------------------------------------------
         # 1. Check whether this user message was already received.
-        # --------------------------------------------------------
-
         existing_user = (
             db.table("chat_messages")
             .select("id,content")
             .eq("session_id", str(session_id))
             .eq("role", "user")
-            .contains(
-                "metadata",
-                {"client_message_id": client_message_id},
-            )
+            .contains("metadata", {"client_message_id": client_message_id})
             .limit(1)
             .execute()
         )
@@ -625,7 +688,6 @@ def chat_with_research_assistant(
                         ),
                     },
                 )
-
         else:
             try:
                 db.table("chat_messages").insert({
@@ -638,7 +700,7 @@ def chat_with_research_assistant(
                 }).execute()
 
             except Exception:
-                # A concurrent request may have inserted this message first.
+                # A concurrent request may have inserted the message first.
                 existing_user = (
                     db.table("chat_messages")
                     .select("id,content")
@@ -669,19 +731,13 @@ def chat_with_research_assistant(
                         },
                     )
 
-        # --------------------------------------------------------
         # 2. Return an already completed response on retry.
-        # --------------------------------------------------------
-
         existing_assistant = (
             db.table("chat_messages")
             .select("content,metadata")
             .eq("session_id", str(session_id))
             .eq("role", "assistant")
-            .contains(
-                "metadata",
-                {"client_message_id": client_message_id},
-            )
+            .contains("metadata", {"client_message_id": client_message_id})
             .limit(1)
             .execute()
         )
@@ -690,17 +746,13 @@ def chat_with_research_assistant(
 
         if assistant_rows:
             saved = assistant_rows[0]
-
             return _build_saved_chat_response(
                 session_id=session_id,
                 content=saved["content"],
                 metadata=saved.get("metadata") or {},
             )
 
-        # --------------------------------------------------------
         # 3. Load context and invoke the conversational router.
-        # --------------------------------------------------------
-
         messages = _load_recent_messages(session_id)
         available_experiments = _load_session_experiments(session_id)
 
@@ -713,6 +765,7 @@ def chat_with_research_assistant(
         routing = {
             "research_action": None,
             "referenced_experiment_id": None,
+            "referenced_ledger_id": None,
             "prior_research_request": None,
             "evidence_summary": None,
             "clarification_question": None,
@@ -731,10 +784,7 @@ def chat_with_research_assistant(
             "designer": None,
         }
 
-        # --------------------------------------------------------
-        # 4. Proposal intent: resolve initial vs follow-up.
-        # --------------------------------------------------------
-
+        # 4. Proposal intent: resolve new, revision or evidence follow-up.
         if routed["intent"] == "propose_experiment":
 
             routing = resolve_research_action(
@@ -757,11 +807,10 @@ def chat_with_research_assistant(
                     "conversation_history": messages,
                 }
 
-                # ------------------------------------------------
-                # 5. Invoke the appropriate LangGraph workflow.
-                # ------------------------------------------------
+                action = routing["research_action"]
 
-                if routing["research_action"] == "follow_up":
+                # 5. Invoke the correct LangGraph design mode.
+                if action == "follow_up":
                     workflow_result = run_follow_up_research_design(
                         **workflow_kwargs,
                         prior_research_request=(
@@ -771,9 +820,26 @@ def chat_with_research_assistant(
                         previous_experiment_id=(
                             routing["referenced_experiment_id"]
                         ),
+                        previous_ledger_id=(
+                            routing.get("referenced_ledger_id")
+                        ),
                     )
 
-                elif routing["research_action"] == "new_research":
+                elif action == "revise_proposal":
+                    workflow_result = run_revision_research_design(
+                        **workflow_kwargs,
+                        prior_research_request=(
+                            routing["prior_research_request"]
+                        ),
+                        previous_experiment_id=(
+                            routing.get("referenced_experiment_id")
+                        ),
+                        previous_ledger_id=(
+                            routing.get("referenced_ledger_id")
+                        ),
+                    )
+
+                elif action == "new_research":
                     workflow_result = run_initial_research_design(
                         **workflow_kwargs,
                     )
@@ -788,10 +854,7 @@ def chat_with_research_assistant(
                     workflow_result.get("usage") or {}
                 )
 
-                # ------------------------------------------------
                 # 6. Persist the validated proposal idempotently.
-                # ------------------------------------------------
-
                 persisted = _persist_langgraph_proposal(
                     session_id=session_id,
                     client_message_id=client_message_id,
@@ -804,22 +867,21 @@ def chat_with_research_assistant(
                 agent_run_id = persisted.get("agent_run_id")
                 ledger_id = persisted.get("ledger_id")
 
-                if workflow_status == "needs_clarification":
+                if workflow_status in {
+                    "needs_clarification",
+                    "validation_failed",
+                }:
                     needs_follow_up = True
-                    follow_up_question = assistant_text
-
-                elif workflow_status == "validation_failed":
-                    needs_follow_up = True
-                    follow_up_question = ""
-
+                    follow_up_question = (
+                        assistant_text
+                        if workflow_status == "needs_clarification"
+                        else ""
+                    )
                 else:
                     needs_follow_up = False
                     follow_up_question = ""
 
-        # --------------------------------------------------------
-        # 7. Persist the assistant response with the same ID.
-        # --------------------------------------------------------
-
+        # 7. Persist assistant response with the same idempotency key.
         metadata = {
             "client_message_id": client_message_id,
             "intent": routed["intent"],
@@ -828,9 +890,15 @@ def chat_with_research_assistant(
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
             "research_action": routing["research_action"],
+            "design_mode": {
+                "new_research": "initial",
+                "revise_proposal": "revision",
+                "follow_up": "follow_up",
+            }.get(routing["research_action"]),
             "referenced_experiment_id": (
-                routing["referenced_experiment_id"]
+                routing.get("referenced_experiment_id")
             ),
+            "referenced_ledger_id": routing.get("referenced_ledger_id"),
             "workflow_status": workflow_status,
             "agent_run_id": agent_run_id,
             "ledger_id": ledger_id,
@@ -866,7 +934,6 @@ def chat_with_research_assistant(
                 raise
 
             saved = rows[0]
-
             return _build_saved_chat_response(
                 session_id=session_id,
                 content=saved["content"],
@@ -877,10 +944,7 @@ def chat_with_research_assistant(
             "updated_at": _now(),
         }).eq("id", str(session_id)).execute()
 
-        # --------------------------------------------------------
-        # 8. Return the API response.
-        # --------------------------------------------------------
-
+        # 8. Return API response.
         return {
             "success": True,
             "session_id": str(session_id),
@@ -891,9 +955,11 @@ def chat_with_research_assistant(
             "research_question": routed["research_question"],
             "hypothesis": routed["hypothesis"],
             "research_action": routing["research_action"],
+            "design_mode": metadata["design_mode"],
             "referenced_experiment_id": (
-                routing["referenced_experiment_id"]
+                routing.get("referenced_experiment_id")
             ),
+            "referenced_ledger_id": routing.get("referenced_ledger_id"),
             "workflow_status": workflow_status,
             "agent_run_id": agent_run_id,
             "ledger_id": ledger_id,
@@ -904,9 +970,7 @@ def chat_with_research_assistant(
         raise
 
     except Exception as exc:
-        logger.exception(
-            "Conversational research request failed."
-        )
+        logger.exception("Conversational research request failed.")
 
         error_text = str(exc).lower()
 

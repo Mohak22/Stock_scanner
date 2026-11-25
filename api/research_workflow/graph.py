@@ -76,7 +76,9 @@ def validate_research_request_node(state: ResearchWorkflowState) -> dict[str, An
     if not proposed_request:
         return {
             "status": "validation_failed",
-            "validation_errors": ["The designer did not provide a research request."],
+            "validation_errors": [
+                "The designer did not provide a research request."
+            ],
             "validated_request": None,
         }
 
@@ -100,6 +102,7 @@ def validate_research_request_node(state: ResearchWorkflowState) -> dict[str, An
             f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
             for error in exc.errors()
         ]
+
         return {
             "status": "validation_failed",
             "validated_request": None,
@@ -123,7 +126,11 @@ def validate_research_request_node(state: ResearchWorkflowState) -> dict[str, An
 
 
 def route_after_design(state: ResearchWorkflowState) -> str:
-    return "validate_request" if state.get("status") == "proposal_generated" else END
+    return (
+        "validate_request"
+        if state.get("status") == "proposal_generated"
+        else END
+    )
 
 
 def build_research_graph(
@@ -162,10 +169,31 @@ def _run_design(
 ) -> dict[str, Any]:
 
     if design_mode in {"revision", "follow_up"} and not prior_research_request:
-        raise ValueError("A revision or follow-up requires the previous ResearchRequest.")
+        raise ValueError(
+            "A revision or follow-up requires the previous ResearchRequest."
+        )
 
     if design_mode == "follow_up" and not evidence_summary:
-        raise ValueError("A follow-up requires completed research evidence.")
+        raise ValueError(
+            "A follow-up requires a non-empty evidence summary "
+            "from completed research."
+        )
+
+    if design_mode == "revision" and evidence_summary:
+        raise ValueError(
+            "A revision changes a proposal and must not receive "
+            "completed experiment evidence."
+        )
+
+    if design_mode == "initial" and (
+        prior_research_request
+        or evidence_summary
+        or previous_experiment_id
+        or previous_ledger_id
+    ):
+        raise ValueError(
+            "An initial experiment must not receive previous experiment context."
+        )
 
     graph = build_research_graph(designer_function)
 

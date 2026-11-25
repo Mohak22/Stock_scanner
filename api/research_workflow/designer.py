@@ -28,6 +28,7 @@ ExperimentType = Literal[
     "feature_interaction",
 ]
 
+DesignMode = Literal["initial", "revision", "follow_up"]
 
 SUPPORTED_UNIVERSES = [
     "all_stocks",
@@ -39,6 +40,7 @@ SUPPORTED_UNIVERSES = [
     "nifty_50",
     "symbols",
 ]
+
 
 class ResearchDesignerOutput(BaseModel):
     status: Literal["needs_clarification", "proposal"]
@@ -112,7 +114,6 @@ GENERAL RULES
 10. Do not silently invent dates, symbols, universe or horizons.
 11. Do not invent performance results or claim expected profitability.
 12. Do not add complexity merely to make an experiment look advanced.
-
 
 SUPPORTED UNIVERSES
 
@@ -234,33 +235,38 @@ The input contains:
 - previous_experiment_id: present only if a saved experiment exists.
 
 IMPORTANT:
-- A revision does NOT require completed research evidence.
-- The previous proposal may be pending, rejected or failed.
-- Never claim that the previous proposal produced research results.
-- Treat prior_research_request as the baseline.
-- Change only the fields explicitly requested by the user.
-- Preserve all other settings exactly: dates, thresholds, features,
-  conditions, horizons, timing and evaluation configuration.
-- If the user says "keep everything else the same", preserve every
-  field not explicitly requested.
-- Return a COMPLETE ResearchRequest, not a partial patch.
-- Do not copy any execution status into the new proposal.
-- Explain exactly what changed.
-- The revised proposal will require fresh human approval.
-- Do not overwrite the original proposal.
-- If the requested universe or feature is unsupported, ask one
-  focused clarification question rather than inventing a value.
+
+1. A revision does NOT require completed research evidence.
+2. The previous proposal may be pending, rejected or failed.
+3. Never claim that the previous proposal produced research results.
+4. Treat prior_research_request as the baseline.
+5. Change only fields explicitly requested by the user.
+6. Preserve all other settings exactly:
+   dates, thresholds, features, conditions, horizons,
+   timing and evaluation configuration.
+7. If the user says "keep everything else the same",
+   preserve every field not explicitly requested.
+8. Return a COMPLETE ResearchRequest, not a partial patch.
+9. Do not copy execution status into the new proposal.
+10. Explain exactly what changed.
+11. The revised proposal requires fresh human approval.
+12. Do not overwrite the original proposal.
+13. If the requested universe or feature is unsupported,
+    ask one focused clarification question.
+14. Never fabricate an experiment ID or Ledger ID.
+15. The new proposal must be independently persisted.
 """
 
 
 FOLLOW_UP_DESIGNER_PROMPT = """
 DESIGN MODE: FOLLOW-UP EXPERIMENT
 
-The user explicitly wants to improve or modify a previous experiment.
+The user explicitly wants to improve or extend a previous
+completed experiment using its actual saved evidence.
 
 The input contains:
 - prior_research_request: the previous validated configuration.
-- evidence_summary: compact factual evidence from the previous run.
+- evidence_summary: factual evidence from the previous run.
 - previous_experiment_id: the saved experiment identifier.
 
 Rules:
@@ -281,15 +287,19 @@ Rules:
 """
 
 
-def build_designer_system_prompt(
-    design_mode: Literal["initial", "revision", "follow_up"],
-) -> str:
-    if design_mode == "initial":
-        mode_prompt = INITIAL_DESIGNER_PROMPT
-    elif design_mode == "follow_up":
-        mode_prompt = FOLLOW_UP_DESIGNER_PROMPT
-    else:
-        raise ValueError(f"Unsupported design mode: {design_mode}")
+def build_designer_system_prompt(design_mode: DesignMode) -> str:
+    prompts = {
+        "initial": INITIAL_DESIGNER_PROMPT,
+        "revision": REVISION_DESIGNER_PROMPT,
+        "follow_up": FOLLOW_UP_DESIGNER_PROMPT,
+    }
+
+    try:
+        mode_prompt = prompts[design_mode]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported design mode: {design_mode}"
+        ) from exc
 
     return SHARED_DESIGNER_RULES + "\n\n" + mode_prompt
 
@@ -298,26 +308,39 @@ def design_experiment(
     *,
     user_message: str,
     conversation_history: list[dict[str, str]] | None = None,
-    design_mode: Literal["initial", "revision", "follow_up"] = "initial",
+    design_mode: DesignMode = "initial",
     prior_research_request: dict[str, Any] | None = None,
     evidence_summary: dict[str, Any] | None = None,
     previous_experiment_id: str | None = None,
+    previous_ledger_id: str | None = None,
 ) -> tuple[ResearchDesignerOutput, dict[str, Any]]:
 
-    if design_mode == "follow_up":
-        if not prior_research_request or not evidence_summary:
+    if design_mode in {"revision", "follow_up"}:
+        if not isinstance(prior_research_request, dict) or not prior_research_request:
             raise ValueError(
-                "Follow-up design requires the previous request "
-                "and its evidence summary."
+                f"{design_mode.capitalize()} design requires "
+                "the previous ResearchRequest."
             )
+
+    if design_mode == "follow_up":
+        if not isinstance(evidence_summary, dict) or not evidence_summary:
+            raise ValueError(
+                "Follow-up design requires completed research evidence."
+            )
+
+    if design_mode == "revision" and evidence_summary:
+        raise ValueError(
+            "Revision design must not use previous execution evidence."
+        )
 
     if design_mode == "initial" and any([
         prior_research_request,
         evidence_summary,
         previous_experiment_id,
+        previous_ledger_id,
     ]):
         raise ValueError(
-            "Initial design must not receive previous experiment context."
+            "Initial design must not receive previous proposal context."
         )
 
     api_key = os.getenv("GEMINI_API_KEY")
@@ -336,6 +359,7 @@ def design_experiment(
     context = {
         "conversation_history": conversation_history or [],
         "latest_user_message": user_message,
+        "design_mode": design_mode,
         "supported_universes": SUPPORTED_UNIVERSES,
         "supported_features": get_feature_registry(),
         "research_request_schema": ResearchRequest.model_json_schema(),
@@ -350,12 +374,15 @@ def design_experiment(
         ],
     }
 
-    if design_mode == "follow_up":
+    if design_mode in {"revision", "follow_up"}:
         context.update({
             "previous_experiment_id": previous_experiment_id,
+            "previous_ledger_id": previous_ledger_id,
             "prior_research_request": prior_research_request,
-            "evidence_summary": evidence_summary,
         })
+
+    if design_mode == "follow_up":
+        context["evidence_summary"] = evidence_summary
 
     system_prompt = build_designer_system_prompt(design_mode)
 
@@ -408,6 +435,13 @@ def design_experiment(
 def design_initial_experiment(**kwargs):
     return design_experiment(
         design_mode="initial",
+        **kwargs,
+    )
+
+
+def design_revision_experiment(**kwargs):
+    return design_experiment(
+        design_mode="revision",
         **kwargs,
     )
 
